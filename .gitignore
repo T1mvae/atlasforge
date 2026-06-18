@@ -1,0 +1,15 @@
+# build inputs / scratch — not part of the published site
+tools/cache/
+screenshots/
+uploads/
+*.log
+
+# large source datasets kept locally; the app loads from data/ only
+/*.geojson
+/*.zip
+/*.png
+/*.txt
+
+# editor / OS noise
+.DS_Store
+.claude/settings.local.json

@@ -1,0 +1,3950 @@
+[
+{
+"name": "Iceland",
+"name_ru": "Исландия",
+"lat": 64.9,
+"lon": -18.6,
+"type": "geographical"
+},
+{
+"name": "Faroe Islands",
+"name_ru": "Фарерские острова",
+"lat": 62.0,
+"lon": -6.9,
+"type": "geographical"
+},
+{
+"name": "Svalbard",
+"name_ru": "Шпицберген",
+"lat": 78.5,
+"lon": 18.0,
+"type": "geographical"
+},
+{
+"name": "Scottish Highlands",
+"name_ru": "Шотландское высокогорье",
+"lat": 57.3,
+"lon": -4.7,
+"type": "cultural"
+},
+{
+"name": "Scottish Lowlands",
+"name_ru": "Шотландская низменность",
+"lat": 55.7,
+"lon": -3.8,
+"type": "geographical"
+},
+{
+"name": "Northumbria",
+"name_ru": "Нортумбрия",
+"lat": 54.9,
+"lon": -2.0,
+"type": "historical"
+},
+{
+"name": "Yorkshire",
+"name_ru": "Йоркшир",
+"lat": 53.9,
+"lon": -1.2,
+"type": "geographical"
+},
+{
+"name": "Lancashire",
+"name_ru": "Ланкашир",
+"lat": 53.7,
+"lon": -2.7,
+"type": "geographical"
+},
+{
+"name": "Wales",
+"name_ru": "Уэльс",
+"lat": 52.3,
+"lon": -3.7,
+"type": "cultural"
+},
+{
+"name": "Mercia",
+"name_ru": "Мерсия",
+"lat": 52.6,
+"lon": -1.6,
+"type": "historical"
+},
+{
+"name": "East Anglia",
+"name_ru": "Восточная Англия",
+"lat": 52.4,
+"lon": 0.8,
+"type": "historical"
+},
+{
+"name": "Wessex",
+"name_ru": "Уэссекс",
+"lat": 51.0,
+"lon": -2.4,
+"type": "historical"
+},
+{
+"name": "Cornwall",
+"name_ru": "Корнуолл",
+"lat": 50.4,
+"lon": -4.8,
+"type": "cultural"
+},
+{
+"name": "Greater London",
+"name_ru": "Большой Лондон",
+"lat": 51.5,
+"lon": -0.1,
+"type": "geographical"
+},
+{
+"name": "Ulster",
+"name_ru": "Ольстер",
+"lat": 54.7,
+"lon": -6.9,
+"type": "historical"
+},
+{
+"name": "Connacht",
+"name_ru": "Коннахт",
+"lat": 53.6,
+"lon": -8.9,
+"type": "historical"
+},
+{
+"name": "Leinster",
+"name_ru": "Ленстер",
+"lat": 53.0,
+"lon": -6.9,
+"type": "historical"
+},
+{
+"name": "Munster",
+"name_ru": "Манстер",
+"lat": 52.2,
+"lon": -8.6,
+"type": "historical"
+},
+{
+"name": "Brittany",
+"name_ru": "Бретань",
+"lat": 48.2,
+"lon": -3.0,
+"type": "historical"
+},
+{
+"name": "Normandy",
+"name_ru": "Нормандия",
+"lat": 49.0,
+"lon": 0.2,
+"type": "historical"
+},
+{
+"name": "Ile-de-France",
+"name_ru": "Иль-де-Франс",
+"lat": 48.8,
+"lon": 2.5,
+"type": "historical"
+},
+{
+"name": "Picardy",
+"name_ru": "Пикардия",
+"lat": 49.9,
+"lon": 2.8,
+"type": "historical"
+},
+{
+"name": "Champagne",
+"name_ru": "Шампань",
+"lat": 48.9,
+"lon": 4.3,
+"type": "historical"
+},
+{
+"name": "Lorraine",
+"name_ru": "Лотарингия",
+"lat": 48.8,
+"lon": 6.2,
+"type": "historical"
+},
+{
+"name": "Alsace",
+"name_ru": "Эльзас",
+"lat": 48.4,
+"lon": 7.5,
+"type": "historical"
+},
+{
+"name": "Burgundy",
+"name_ru": "Бургундия",
+"lat": 47.2,
+"lon": 4.6,
+"type": "historical"
+},
+{
+"name": "Anjou",
+"name_ru": "Анжу",
+"lat": 47.4,
+"lon": -0.6,
+"type": "historical"
+},
+{
+"name": "Poitou",
+"name_ru": "Пуату",
+"lat": 46.6,
+"lon": -0.4,
+"type": "historical"
+},
+{
+"name": "Aquitaine",
+"name_ru": "Аквитания",
+"lat": 44.8,
+"lon": 0.2,
+"type": "historical"
+},
+{
+"name": "Gascony",
+"name_ru": "Гасконь",
+"lat": 43.6,
+"lon": -0.2,
+"type": "historical"
+},
+{
+"name": "Languedoc",
+"name_ru": "Лангедок",
+"lat": 43.6,
+"lon": 3.0,
+"type": "historical"
+},
+{
+"name": "Provence",
+"name_ru": "Прованс",
+"lat": 43.7,
+"lon": 5.8,
+"type": "historical"
+},
+{
+"name": "Auvergne",
+"name_ru": "Овернь",
+"lat": 45.4,
+"lon": 3.1,
+"type": "historical"
+},
+{
+"name": "Savoy",
+"name_ru": "Савойя",
+"lat": 45.6,
+"lon": 6.4,
+"type": "historical"
+},
+{
+"name": "Corsica",
+"name_ru": "Корсика",
+"lat": 42.1,
+"lon": 9.1,
+"type": "geographical"
+},
+{
+"name": "Galicia",
+"name_ru": "Галисия",
+"lat": 42.7,
+"lon": -8.1,
+"type": "historical"
+},
+{
+"name": "Asturias",
+"name_ru": "Астурия",
+"lat": 43.3,
+"lon": -6.0,
+"type": "historical"
+},
+{
+"name": "Basque Country",
+"name_ru": "Страна Басков",
+"lat": 43.0,
+"lon": -2.6,
+"type": "cultural"
+},
+{
+"name": "Old Castile",
+"name_ru": "Старая Кастилия",
+"lat": 41.7,
+"lon": -4.2,
+"type": "historical"
+},
+{
+"name": "New Castile",
+"name_ru": "Новая Кастилия",
+"lat": 39.8,
+"lon": -3.5,
+"type": "historical"
+},
+{
+"name": "Aragon",
+"name_ru": "Арагон",
+"lat": 41.7,
+"lon": -0.8,
+"type": "historical"
+},
+{
+"name": "Catalonia",
+"name_ru": "Каталония",
+"lat": 41.8,
+"lon": 1.6,
+"type": "historical"
+},
+{
+"name": "Valencia",
+"name_ru": "Валенсия",
+"lat": 39.4,
+"lon": -0.6,
+"type": "historical"
+},
+{
+"name": "Murcia",
+"name_ru": "Мурсия",
+"lat": 38.0,
+"lon": -1.6,
+"type": "historical"
+},
+{
+"name": "Andalusia",
+"name_ru": "Андалусия",
+"lat": 37.4,
+"lon": -4.7,
+"type": "historical"
+},
+{
+"name": "Extremadura",
+"name_ru": "Эстремадура",
+"lat": 39.2,
+"lon": -6.2,
+"type": "historical"
+},
+{
+"name": "Northern Portugal",
+"name_ru": "Северная Португалия",
+"lat": 41.3,
+"lon": -8.0,
+"type": "historical"
+},
+{
+"name": "Southern Portugal",
+"name_ru": "Южная Португалия",
+"lat": 38.3,
+"lon": -8.0,
+"type": "historical"
+},
+{
+"name": "Balearic Islands",
+"name_ru": "Балеарские острова",
+"lat": 39.6,
+"lon": 2.9,
+"type": "geographical"
+},
+{
+"name": "Piedmont",
+"name_ru": "Пьемонт",
+"lat": 45.0,
+"lon": 7.9,
+"type": "historical"
+},
+{
+"name": "Lombardy",
+"name_ru": "Ломбардия",
+"lat": 45.5,
+"lon": 9.6,
+"type": "historical"
+},
+{
+"name": "Venetia",
+"name_ru": "Венеция",
+"lat": 45.6,
+"lon": 11.9,
+"type": "historical"
+},
+{
+"name": "Liguria",
+"name_ru": "Лигурия",
+"lat": 44.3,
+"lon": 8.7,
+"type": "historical"
+},
+{
+"name": "Emilia",
+"name_ru": "Эмилия",
+"lat": 44.6,
+"lon": 11.0,
+"type": "historical"
+},
+{
+"name": "Tuscany",
+"name_ru": "Тоскана",
+"lat": 43.4,
+"lon": 11.1,
+"type": "historical"
+},
+{
+"name": "Latium",
+"name_ru": "Лацио",
+"lat": 41.9,
+"lon": 12.7,
+"type": "historical"
+},
+{
+"name": "Umbria",
+"name_ru": "Умбрия",
+"lat": 43.1,
+"lon": 12.7,
+"type": "historical"
+},
+{
+"name": "Abruzzo",
+"name_ru": "Абруццо",
+"lat": 42.2,
+"lon": 13.8,
+"type": "historical"
+},
+{
+"name": "Campania",
+"name_ru": "Кампания",
+"lat": 40.9,
+"lon": 14.8,
+"type": "historical"
+},
+{
+"name": "Apulia",
+"name_ru": "Апулия",
+"lat": 40.9,
+"lon": 16.6,
+"type": "historical"
+},
+{
+"name": "Calabria",
+"name_ru": "Калабрия",
+"lat": 39.0,
+"lon": 16.4,
+"type": "historical"
+},
+{
+"name": "Sicily",
+"name_ru": "Сицилия",
+"lat": 37.5,
+"lon": 14.2,
+"type": "geographical"
+},
+{
+"name": "Sardinia",
+"name_ru": "Сардиния",
+"lat": 40.0,
+"lon": 9.0,
+"type": "geographical"
+},
+{
+"name": "Malta",
+"name_ru": "Мальта",
+"lat": 35.9,
+"lon": 14.4,
+"type": "geographical"
+},
+{
+"name": "Switzerland",
+"name_ru": "Швейцария",
+"lat": 46.8,
+"lon": 8.2,
+"type": "geographical"
+},
+{
+"name": "Tyrol",
+"name_ru": "Тироль",
+"lat": 47.2,
+"lon": 11.4,
+"type": "historical"
+},
+{
+"name": "Austria",
+"name_ru": "Австрия",
+"lat": 48.1,
+"lon": 15.3,
+"type": "historical"
+},
+{
+"name": "Styria",
+"name_ru": "Штирия",
+"lat": 47.1,
+"lon": 15.1,
+"type": "historical"
+},
+{
+"name": "Flanders",
+"name_ru": "Фландрия",
+"lat": 51.0,
+"lon": 3.8,
+"type": "historical"
+},
+{
+"name": "Wallonia",
+"name_ru": "Валлония",
+"lat": 50.4,
+"lon": 4.9,
+"type": "historical"
+},
+{
+"name": "Holland",
+"name_ru": "Голландия",
+"lat": 52.3,
+"lon": 4.9,
+"type": "historical"
+},
+{
+"name": "Frisia",
+"name_ru": "Фризия",
+"lat": 53.1,
+"lon": 5.9,
+"type": "historical"
+},
+{
+"name": "Rhineland",
+"name_ru": "Рейнланд",
+"lat": 50.7,
+"lon": 7.1,
+"type": "historical"
+},
+{
+"name": "Westphalia",
+"name_ru": "Вестфалия",
+"lat": 51.8,
+"lon": 7.9,
+"type": "historical"
+},
+{
+"name": "Lower Saxony",
+"name_ru": "Нижняя Саксония",
+"lat": 52.8,
+"lon": 9.3,
+"type": "historical"
+},
+{
+"name": "Schleswig-Holstein",
+"name_ru": "Шлезвиг-Гольштейн",
+"lat": 54.3,
+"lon": 9.8,
+"type": "historical"
+},
+{
+"name": "Mecklenburg",
+"name_ru": "Мекленбург",
+"lat": 53.7,
+"lon": 12.0,
+"type": "historical"
+},
+{
+"name": "Brandenburg",
+"name_ru": "Бранденбург",
+"lat": 52.5,
+"lon": 13.3,
+"type": "historical"
+},
+{
+"name": "Saxony",
+"name_ru": "Саксония",
+"lat": 51.1,
+"lon": 13.4,
+"type": "historical"
+},
+{
+"name": "Thuringia",
+"name_ru": "Тюрингия",
+"lat": 50.9,
+"lon": 11.0,
+"type": "historical"
+},
+{
+"name": "Hesse",
+"name_ru": "Гессен",
+"lat": 50.5,
+"lon": 9.0,
+"type": "historical"
+},
+{
+"name": "Franconia",
+"name_ru": "Франкония",
+"lat": 49.8,
+"lon": 10.8,
+"type": "historical"
+},
+{
+"name": "Swabia",
+"name_ru": "Швабия",
+"lat": 48.4,
+"lon": 9.8,
+"type": "historical"
+},
+{
+"name": "Bavaria",
+"name_ru": "Бавария",
+"lat": 48.7,
+"lon": 12.0,
+"type": "historical"
+},
+{
+"name": "Pomerania",
+"name_ru": "Померания",
+"lat": 53.7,
+"lon": 15.5,
+"type": "historical"
+},
+{
+"name": "Silesia",
+"name_ru": "Силезия",
+"lat": 51.0,
+"lon": 17.2,
+"type": "historical"
+},
+{
+"name": "East Prussia",
+"name_ru": "Восточная Пруссия",
+"lat": 54.2,
+"lon": 21.0,
+"type": "historical"
+},
+{
+"name": "Danish Isles",
+"name_ru": "Датские острова",
+"lat": 55.4,
+"lon": 11.8,
+"type": "geographical"
+},
+{
+"name": "Jutland",
+"name_ru": "Ютландия",
+"lat": 56.2,
+"lon": 9.2,
+"type": "geographical"
+},
+{
+"name": "Scania",
+"name_ru": "Сконе",
+"lat": 55.9,
+"lon": 13.6,
+"type": "historical"
+},
+{
+"name": "Gotaland",
+"name_ru": "Гёталанд",
+"lat": 57.8,
+"lon": 13.8,
+"type": "historical"
+},
+{
+"name": "Svealand",
+"name_ru": "Свеаланд",
+"lat": 59.7,
+"lon": 15.5,
+"type": "historical"
+},
+{
+"name": "Norrland",
+"name_ru": "Норрланд",
+"lat": 64.0,
+"lon": 18.0,
+"type": "geographical"
+},
+{
+"name": "Western Norway",
+"name_ru": "Западная Норвегия",
+"lat": 60.9,
+"lon": 6.4,
+"type": "geographical"
+},
+{
+"name": "Eastern Norway",
+"name_ru": "Восточная Норвегия",
+"lat": 60.5,
+"lon": 10.5,
+"type": "geographical"
+},
+{
+"name": "Trondelag",
+"name_ru": "Трёнделаг",
+"lat": 63.6,
+"lon": 10.8,
+"type": "geographical"
+},
+{
+"name": "Northern Norway",
+"name_ru": "Северная Норвегия",
+"lat": 69.0,
+"lon": 18.5,
+"type": "geographical"
+},
+{
+"name": "Southern Finland",
+"name_ru": "Южная Финляндия",
+"lat": 60.7,
+"lon": 24.8,
+"type": "geographical"
+},
+{
+"name": "Finnish Lakeland",
+"name_ru": "Озёрная Финляндия",
+"lat": 62.3,
+"lon": 28.0,
+"type": "geographical"
+},
+{
+"name": "Ostrobothnia",
+"name_ru": "Остроботния",
+"lat": 64.3,
+"lon": 26.5,
+"type": "geographical"
+},
+{
+"name": "Lapland",
+"name_ru": "Лапландия",
+"lat": 67.8,
+"lon": 25.5,
+"type": "geographical"
+},
+{
+"name": "Estonia",
+"name_ru": "Эстония",
+"lat": 58.8,
+"lon": 25.5,
+"type": "historical"
+},
+{
+"name": "Livonia",
+"name_ru": "Ливония",
+"lat": 57.2,
+"lon": 25.0,
+"type": "historical"
+},
+{
+"name": "Courland",
+"name_ru": "Курляндия",
+"lat": 56.7,
+"lon": 22.5,
+"type": "historical"
+},
+{
+"name": "Lithuania",
+"name_ru": "Литва",
+"lat": 55.3,
+"lon": 24.0,
+"type": "historical"
+},
+{
+"name": "Greater Poland",
+"name_ru": "Великая Польша",
+"lat": 52.3,
+"lon": 17.0,
+"type": "historical"
+},
+{
+"name": "Mazovia",
+"name_ru": "Мазовия",
+"lat": 52.4,
+"lon": 21.0,
+"type": "historical"
+},
+{
+"name": "Lesser Poland",
+"name_ru": "Малая Польша",
+"lat": 50.4,
+"lon": 20.4,
+"type": "historical"
+},
+{
+"name": "Bohemia",
+"name_ru": "Богемия",
+"lat": 50.0,
+"lon": 14.6,
+"type": "historical"
+},
+{
+"name": "Moravia",
+"name_ru": "Моравия",
+"lat": 49.3,
+"lon": 17.0,
+"type": "historical"
+},
+{
+"name": "Slovakia",
+"name_ru": "Словакия",
+"lat": 48.8,
+"lon": 19.5,
+"type": "historical"
+},
+{
+"name": "Transdanubia",
+"name_ru": "Задунавье",
+"lat": 47.0,
+"lon": 17.8,
+"type": "historical"
+},
+{
+"name": "Alfold",
+"name_ru": "Альфёльд",
+"lat": 47.1,
+"lon": 20.5,
+"type": "geographical"
+},
+{
+"name": "Transylvania",
+"name_ru": "Трансильвания",
+"lat": 46.6,
+"lon": 24.2,
+"type": "historical"
+},
+{
+"name": "Banat",
+"name_ru": "Банат",
+"lat": 45.7,
+"lon": 21.2,
+"type": "historical"
+},
+{
+"name": "Slovenia",
+"name_ru": "Словения",
+"lat": 46.1,
+"lon": 14.8,
+"type": "historical"
+},
+{
+"name": "Croatia",
+"name_ru": "Хорватия",
+"lat": 45.7,
+"lon": 16.4,
+"type": "historical"
+},
+{
+"name": "Dalmatia",
+"name_ru": "Далмация",
+"lat": 43.8,
+"lon": 16.5,
+"type": "historical"
+},
+{
+"name": "Bosnia",
+"name_ru": "Босния",
+"lat": 44.2,
+"lon": 17.8,
+"type": "historical"
+},
+{
+"name": "Serbia",
+"name_ru": "Сербия",
+"lat": 44.1,
+"lon": 20.8,
+"type": "historical"
+},
+{
+"name": "Montenegro",
+"name_ru": "Черногория",
+"lat": 42.8,
+"lon": 19.3,
+"type": "historical"
+},
+{
+"name": "Macedonia",
+"name_ru": "Македония",
+"lat": 41.6,
+"lon": 21.7,
+"type": "historical"
+},
+{
+"name": "Albania",
+"name_ru": "Албания",
+"lat": 41.1,
+"lon": 20.1,
+"type": "historical"
+},
+{
+"name": "Epirus",
+"name_ru": "Эпир",
+"lat": 39.7,
+"lon": 20.8,
+"type": "historical"
+},
+{
+"name": "Thessaly",
+"name_ru": "Фессалия",
+"lat": 39.5,
+"lon": 22.2,
+"type": "historical"
+},
+{
+"name": "Central Greece",
+"name_ru": "Средняя Греция",
+"lat": 38.5,
+"lon": 23.0,
+"type": "historical"
+},
+{
+"name": "Peloponnese",
+"name_ru": "Пелопоннес",
+"lat": 37.5,
+"lon": 22.3,
+"type": "historical"
+},
+{
+"name": "Aegean Islands",
+"name_ru": "Эгейские острова",
+"lat": 37.5,
+"lon": 25.3,
+"type": "geographical"
+},
+{
+"name": "Crete",
+"name_ru": "Крит",
+"lat": 35.2,
+"lon": 24.9,
+"type": "geographical"
+},
+{
+"name": "Thrace",
+"name_ru": "Фракия",
+"lat": 41.5,
+"lon": 26.8,
+"type": "historical"
+},
+{
+"name": "Moesia",
+"name_ru": "Мёзия",
+"lat": 43.4,
+"lon": 25.2,
+"type": "historical"
+},
+{
+"name": "Rumelia",
+"name_ru": "Румелия",
+"lat": 42.2,
+"lon": 24.8,
+"type": "historical"
+},
+{
+"name": "Wallachia",
+"name_ru": "Валахия",
+"lat": 44.5,
+"lon": 25.5,
+"type": "historical"
+},
+{
+"name": "Moldavia",
+"name_ru": "Молдавия",
+"lat": 47.0,
+"lon": 27.5,
+"type": "historical"
+},
+{
+"name": "Dobruja",
+"name_ru": "Добруджа",
+"lat": 44.4,
+"lon": 28.3,
+"type": "historical"
+},
+{
+"name": "Bessarabia",
+"name_ru": "Бессарабия",
+"lat": 46.5,
+"lon": 29.0,
+"type": "historical"
+},
+{
+"name": "Carpathian Ruthenia",
+"name_ru": "Закарпатье",
+"lat": 48.4,
+"lon": 23.2,
+"type": "historical"
+},
+{
+"name": "Eastern Galicia",
+"name_ru": "Восточная Галиция",
+"lat": 49.6,
+"lon": 24.6,
+"type": "historical"
+},
+{
+"name": "Volhynia",
+"name_ru": "Волынь",
+"lat": 50.9,
+"lon": 25.9,
+"type": "historical"
+},
+{
+"name": "Podolia",
+"name_ru": "Подолье",
+"lat": 48.9,
+"lon": 27.8,
+"type": "historical"
+},
+{
+"name": "Polesia",
+"name_ru": "Полесье",
+"lat": 52.0,
+"lon": 27.0,
+"type": "geographical"
+},
+{
+"name": "White Ruthenia",
+"name_ru": "Белая Русь",
+"lat": 53.9,
+"lon": 28.0,
+"type": "historical"
+},
+{
+"name": "Dnieper Ukraine",
+"name_ru": "Поднепровье",
+"lat": 49.9,
+"lon": 31.0,
+"type": "historical"
+},
+{
+"name": "Sloboda Ukraine",
+"name_ru": "Слобожанщина",
+"lat": 49.9,
+"lon": 36.0,
+"type": "historical"
+},
+{
+"name": "Zaporizhia",
+"name_ru": "Запорожье",
+"lat": 47.6,
+"lon": 35.4,
+"type": "historical"
+},
+{
+"name": "Tavria",
+"name_ru": "Таврия",
+"lat": 46.5,
+"lon": 33.5,
+"type": "historical"
+},
+{
+"name": "Crimea",
+"name_ru": "Крым",
+"lat": 45.2,
+"lon": 34.2,
+"type": "historical"
+},
+{
+"name": "Donets Basin",
+"name_ru": "Донбасс",
+"lat": 48.2,
+"lon": 38.0,
+"type": "geographical"
+},
+{
+"name": "Smolensk Land",
+"name_ru": "Смоленщина",
+"lat": 54.8,
+"lon": 32.5,
+"type": "historical"
+},
+{
+"name": "Novgorod Land",
+"name_ru": "Новгородчина",
+"lat": 58.4,
+"lon": 31.5,
+"type": "historical"
+},
+{
+"name": "Ingria",
+"name_ru": "Ингрия",
+"lat": 59.6,
+"lon": 30.5,
+"type": "historical"
+},
+{
+"name": "Karelia",
+"name_ru": "Карелия",
+"lat": 62.5,
+"lon": 33.5,
+"type": "geographical"
+},
+{
+"name": "Kola Peninsula",
+"name_ru": "Кольский полуостров",
+"lat": 67.8,
+"lon": 36.0,
+"type": "geographical"
+},
+{
+"name": "Muscovy",
+"name_ru": "Московия",
+"lat": 55.7,
+"lon": 37.7,
+"type": "historical"
+},
+{
+"name": "Upper Volga",
+"name_ru": "Верхневолжье",
+"lat": 57.5,
+"lon": 40.0,
+"type": "geographical"
+},
+{
+"name": "Ryazan Land",
+"name_ru": "Рязанщина",
+"lat": 54.4,
+"lon": 40.5,
+"type": "historical"
+},
+{
+"name": "Black Earth",
+"name_ru": "Черноземье",
+"lat": 51.8,
+"lon": 37.0,
+"type": "geographical"
+},
+{
+"name": "Don Steppe",
+"name_ru": "Донская степь",
+"lat": 47.8,
+"lon": 41.0,
+"type": "geographical"
+},
+{
+"name": "Kuban",
+"name_ru": "Кубань",
+"lat": 45.2,
+"lon": 39.7,
+"type": "geographical"
+},
+{
+"name": "North Caucasus",
+"name_ru": "Северный Кавказ",
+"lat": 43.9,
+"lon": 43.5,
+"type": "geographical"
+},
+{
+"name": "Dagestan",
+"name_ru": "Дагестан",
+"lat": 42.8,
+"lon": 47.0,
+"type": "cultural"
+},
+{
+"name": "Kalmyk Steppe",
+"name_ru": "Калмыцкая степь",
+"lat": 46.3,
+"lon": 45.3,
+"type": "geographical"
+},
+{
+"name": "Lower Volga",
+"name_ru": "Нижневолжье",
+"lat": 49.0,
+"lon": 45.5,
+"type": "geographical"
+},
+{
+"name": "Middle Volga",
+"name_ru": "Средневолжье",
+"lat": 53.3,
+"lon": 49.5,
+"type": "geographical"
+},
+{
+"name": "Volga-Kama",
+"name_ru": "Волго-Камье",
+"lat": 55.6,
+"lon": 50.5,
+"type": "geographical"
+},
+{
+"name": "Vyatka Land",
+"name_ru": "Вятский край",
+"lat": 58.5,
+"lon": 50.0,
+"type": "geographical"
+},
+{
+"name": "Pomorye",
+"name_ru": "Поморье",
+"lat": 64.0,
+"lon": 41.0,
+"type": "geographical"
+},
+{
+"name": "Pechora",
+"name_ru": "Печора",
+"lat": 65.5,
+"lon": 53.5,
+"type": "geographical"
+},
+{
+"name": "Kama Urals",
+"name_ru": "Прикамье",
+"lat": 58.2,
+"lon": 56.5,
+"type": "geographical"
+},
+{
+"name": "Bashkiria",
+"name_ru": "Башкирия",
+"lat": 54.5,
+"lon": 56.5,
+"type": "cultural"
+},
+{
+"name": "Middle Urals",
+"name_ru": "Средний Урал",
+"lat": 57.2,
+"lon": 60.5,
+"type": "geographical"
+},
+{
+"name": "Southern Urals",
+"name_ru": "Южный Урал",
+"lat": 53.3,
+"lon": 59.0,
+"type": "geographical"
+},
+{
+"name": "Georgia",
+"name_ru": "Грузия",
+"lat": 42.0,
+"lon": 43.5,
+"type": "cultural"
+},
+{
+"name": "Armenia",
+"name_ru": "Армения",
+"lat": 40.3,
+"lon": 44.9,
+"type": "cultural"
+},
+{
+"name": "Azerbaijan",
+"name_ru": "Азербайджан",
+"lat": 40.5,
+"lon": 48.0,
+"type": "cultural"
+},
+{
+"name": "Polar Urals",
+"name_ru": "Полярный Урал",
+"lat": 66.5,
+"lon": 63.0,
+"type": "geographical"
+},
+{
+"name": "Yamal",
+"name_ru": "Ямал",
+"lat": 68.0,
+"lon": 72.0,
+"type": "geographical"
+},
+{
+"name": "Ob-Irtysh",
+"name_ru": "Обь-Иртышье",
+"lat": 58.5,
+"lon": 70.0,
+"type": "geographical"
+},
+{
+"name": "Baraba Steppe",
+"name_ru": "Барабинская степь",
+"lat": 55.0,
+"lon": 78.0,
+"type": "geographical"
+},
+{
+"name": "Altai",
+"name_ru": "Алтай",
+"lat": 51.0,
+"lon": 86.0,
+"type": "geographical"
+},
+{
+"name": "Kuznetsk Basin",
+"name_ru": "Кузбасс",
+"lat": 54.8,
+"lon": 87.0,
+"type": "geographical"
+},
+{
+"name": "Yenisei Siberia",
+"name_ru": "Енисейская Сибирь",
+"lat": 57.5,
+"lon": 92.5,
+"type": "geographical"
+},
+{
+"name": "Tuva",
+"name_ru": "Тува",
+"lat": 51.7,
+"lon": 94.4,
+"type": "cultural"
+},
+{
+"name": "Angara Land",
+"name_ru": "Приангарье",
+"lat": 56.5,
+"lon": 101.5,
+"type": "geographical"
+},
+{
+"name": "Baikal",
+"name_ru": "Прибайкалье",
+"lat": 53.0,
+"lon": 108.0,
+"type": "geographical"
+},
+{
+"name": "Transbaikalia",
+"name_ru": "Забайкалье",
+"lat": 51.5,
+"lon": 115.0,
+"type": "geographical"
+},
+{
+"name": "Taimyr",
+"name_ru": "Таймыр",
+"lat": 73.0,
+"lon": 98.0,
+"type": "geographical"
+},
+{
+"name": "Putorana",
+"name_ru": "Путорана",
+"lat": 69.0,
+"lon": 94.0,
+"type": "geographical"
+},
+{
+"name": "Vilyuy",
+"name_ru": "Вилюй",
+"lat": 64.0,
+"lon": 121.0,
+"type": "geographical"
+},
+{
+"name": "Central Yakutia",
+"name_ru": "Центральная Якутия",
+"lat": 62.5,
+"lon": 130.0,
+"type": "geographical"
+},
+{
+"name": "Verkhoyansk Range",
+"name_ru": "Верхоянский хребет",
+"lat": 67.0,
+"lon": 133.0,
+"type": "geographical"
+},
+{
+"name": "Kolyma",
+"name_ru": "Колыма",
+"lat": 66.0,
+"lon": 152.0,
+"type": "geographical"
+},
+{
+"name": "Chukotka",
+"name_ru": "Чукотка",
+"lat": 66.5,
+"lon": -175.0,
+"type": "cultural"
+},
+{
+"name": "Kamchatka",
+"name_ru": "Камчатка",
+"lat": 55.5,
+"lon": 158.5,
+"type": "geographical"
+},
+{
+"name": "Okhotsk Coast",
+"name_ru": "Охотское побережье",
+"lat": 58.5,
+"lon": 141.5,
+"type": "geographical"
+},
+{
+"name": "Amur Land",
+"name_ru": "Приамурье",
+"lat": 50.5,
+"lon": 128.0,
+"type": "geographical"
+},
+{
+"name": "Primorye",
+"name_ru": "Приморье",
+"lat": 44.8,
+"lon": 133.5,
+"type": "geographical"
+},
+{
+"name": "Sakhalin",
+"name_ru": "Сахалин",
+"lat": 50.0,
+"lon": 142.8,
+"type": "geographical"
+},
+{
+"name": "Kuril Islands",
+"name_ru": "Курильские острова",
+"lat": 46.5,
+"lon": 151.0,
+"type": "geographical"
+},
+{
+"name": "Turgai Steppe",
+"name_ru": "Тургайская степь",
+"lat": 50.5,
+"lon": 64.0,
+"type": "geographical"
+},
+{
+"name": "Kazakh Uplands",
+"name_ru": "Казахский мелкосопочник",
+"lat": 48.5,
+"lon": 72.0,
+"type": "geographical"
+},
+{
+"name": "Irtysh Steppe",
+"name_ru": "Прииртышская степь",
+"lat": 52.0,
+"lon": 77.5,
+"type": "geographical"
+},
+{
+"name": "Semirechye",
+"name_ru": "Семиречье",
+"lat": 44.5,
+"lon": 77.5,
+"type": "geographical"
+},
+{
+"name": "Syr Darya",
+"name_ru": "Сырдарья",
+"lat": 43.5,
+"lon": 67.0,
+"type": "geographical"
+},
+{
+"name": "Aral Region",
+"name_ru": "Приаралье",
+"lat": 45.5,
+"lon": 60.0,
+"type": "geographical"
+},
+{
+"name": "Mangyshlak",
+"name_ru": "Мангышлак",
+"lat": 43.8,
+"lon": 52.5,
+"type": "geographical"
+},
+{
+"name": "Khwarezm",
+"name_ru": "Хорезм",
+"lat": 41.5,
+"lon": 60.5,
+"type": "historical"
+},
+{
+"name": "Transoxiana",
+"name_ru": "Мавераннахр",
+"lat": 40.0,
+"lon": 66.0,
+"type": "historical"
+},
+{
+"name": "Fergana Valley",
+"name_ru": "Ферганская долина",
+"lat": 40.6,
+"lon": 71.5,
+"type": "historical"
+},
+{
+"name": "Pamir",
+"name_ru": "Памир",
+"lat": 38.4,
+"lon": 73.0,
+"type": "geographical"
+},
+{
+"name": "Tian Shan",
+"name_ru": "Тянь-Шань",
+"lat": 42.0,
+"lon": 75.5,
+"type": "geographical"
+},
+{
+"name": "Karakum",
+"name_ru": "Каракумы",
+"lat": 39.0,
+"lon": 59.0,
+"type": "geographical"
+},
+{
+"name": "Ionia",
+"name_ru": "Иония",
+"lat": 38.5,
+"lon": 27.5,
+"type": "historical"
+},
+{
+"name": "Bithynia",
+"name_ru": "Вифиния",
+"lat": 40.2,
+"lon": 29.8,
+"type": "historical"
+},
+{
+"name": "Pontus",
+"name_ru": "Понт",
+"lat": 40.9,
+"lon": 38.5,
+"type": "historical"
+},
+{
+"name": "Cappadocia",
+"name_ru": "Каппадокия",
+"lat": 38.7,
+"lon": 35.0,
+"type": "historical"
+},
+{
+"name": "Central Anatolia",
+"name_ru": "Центральная Анатолия",
+"lat": 39.2,
+"lon": 32.8,
+"type": "geographical"
+},
+{
+"name": "Cilicia",
+"name_ru": "Киликия",
+"lat": 37.0,
+"lon": 35.2,
+"type": "historical"
+},
+{
+"name": "Eastern Anatolia",
+"name_ru": "Восточная Анатолия",
+"lat": 39.5,
+"lon": 41.5,
+"type": "geographical"
+},
+{
+"name": "Kurdistan",
+"name_ru": "Курдистан",
+"lat": 37.3,
+"lon": 43.5,
+"type": "cultural"
+},
+{
+"name": "Cyprus",
+"name_ru": "Кипр",
+"lat": 35.1,
+"lon": 33.3,
+"type": "geographical"
+},
+{
+"name": "Aleppo",
+"name_ru": "Алеппо",
+"lat": 36.2,
+"lon": 37.3,
+"type": "historical"
+},
+{
+"name": "Damascus",
+"name_ru": "Дамаск",
+"lat": 33.5,
+"lon": 36.5,
+"type": "historical"
+},
+{
+"name": "Phoenicia",
+"name_ru": "Финикия",
+"lat": 34.0,
+"lon": 35.8,
+"type": "historical"
+},
+{
+"name": "Palestine",
+"name_ru": "Палестина",
+"lat": 31.8,
+"lon": 35.1,
+"type": "historical"
+},
+{
+"name": "Transjordan",
+"name_ru": "Трансиордания",
+"lat": 31.0,
+"lon": 36.5,
+"type": "historical"
+},
+{
+"name": "Sinai",
+"name_ru": "Синай",
+"lat": 29.6,
+"lon": 33.8,
+"type": "geographical"
+},
+{
+"name": "Upper Mesopotamia",
+"name_ru": "Верхняя Месопотамия",
+"lat": 36.0,
+"lon": 40.5,
+"type": "historical"
+},
+{
+"name": "Mesopotamia",
+"name_ru": "Месопотамия",
+"lat": 33.0,
+"lon": 44.0,
+"type": "historical"
+},
+{
+"name": "Lower Mesopotamia",
+"name_ru": "Нижняя Месопотамия",
+"lat": 30.8,
+"lon": 47.3,
+"type": "historical"
+},
+{
+"name": "Syrian Desert",
+"name_ru": "Сирийская пустыня",
+"lat": 32.5,
+"lon": 39.5,
+"type": "geographical"
+},
+{
+"name": "Hejaz",
+"name_ru": "Хиджаз",
+"lat": 24.5,
+"lon": 39.0,
+"type": "historical"
+},
+{
+"name": "Nejd",
+"name_ru": "Неджд",
+"lat": 25.0,
+"lon": 45.5,
+"type": "historical"
+},
+{
+"name": "Rub al Khali",
+"name_ru": "Руб-эль-Хали",
+"lat": 20.5,
+"lon": 50.0,
+"type": "geographical"
+},
+{
+"name": "Al-Hasa",
+"name_ru": "Эль-Хаса",
+"lat": 26.5,
+"lon": 49.0,
+"type": "geographical"
+},
+{
+"name": "Yemen Highlands",
+"name_ru": "Йеменское нагорье",
+"lat": 15.4,
+"lon": 44.2,
+"type": "cultural"
+},
+{
+"name": "Hadhramaut",
+"name_ru": "Хадрамаут",
+"lat": 15.7,
+"lon": 48.8,
+"type": "cultural"
+},
+{
+"name": "Oman",
+"name_ru": "Оман",
+"lat": 22.5,
+"lon": 57.0,
+"type": "geographical"
+},
+{
+"name": "Socotra",
+"name_ru": "Сокотра",
+"lat": 12.5,
+"lon": 53.9,
+"type": "geographical"
+},
+{
+"name": "Tabriz",
+"name_ru": "Тебриз",
+"lat": 38.0,
+"lon": 46.3,
+"type": "cultural"
+},
+{
+"name": "Gilan",
+"name_ru": "Гилян",
+"lat": 37.0,
+"lon": 49.5,
+"type": "cultural"
+},
+{
+"name": "Mazandaran",
+"name_ru": "Мазендеран",
+"lat": 36.5,
+"lon": 53.0,
+"type": "cultural"
+},
+{
+"name": "Media",
+"name_ru": "Мидия",
+"lat": 34.8,
+"lon": 48.0,
+"type": "historical"
+},
+{
+"name": "Isfahan",
+"name_ru": "Исфахан",
+"lat": 32.7,
+"lon": 51.7,
+"type": "historical"
+},
+{
+"name": "Fars",
+"name_ru": "Фарс",
+"lat": 29.6,
+"lon": 52.6,
+"type": "historical"
+},
+{
+"name": "Kerman",
+"name_ru": "Керман",
+"lat": 30.0,
+"lon": 57.0,
+"type": "historical"
+},
+{
+"name": "Khorasan",
+"name_ru": "Хорасан",
+"lat": 36.0,
+"lon": 59.0,
+"type": "historical"
+},
+{
+"name": "Sistan",
+"name_ru": "Систан",
+"lat": 30.8,
+"lon": 61.5,
+"type": "historical"
+},
+{
+"name": "Baluchistan",
+"name_ru": "Белуджистан",
+"lat": 27.5,
+"lon": 64.5,
+"type": "cultural"
+},
+{
+"name": "Herat",
+"name_ru": "Герат",
+"lat": 34.3,
+"lon": 62.2,
+"type": "historical"
+},
+{
+"name": "Bactria",
+"name_ru": "Бактрия",
+"lat": 36.7,
+"lon": 67.5,
+"type": "historical"
+},
+{
+"name": "Kabulistan",
+"name_ru": "Кабулистан",
+"lat": 34.4,
+"lon": 69.3,
+"type": "historical"
+},
+{
+"name": "Kandahar",
+"name_ru": "Кандагар",
+"lat": 31.6,
+"lon": 65.8,
+"type": "historical"
+},
+{
+"name": "Punjab",
+"name_ru": "Пенджаб",
+"lat": 31.2,
+"lon": 73.5,
+"type": "historical"
+},
+{
+"name": "Sindh",
+"name_ru": "Синд",
+"lat": 26.0,
+"lon": 68.7,
+"type": "historical"
+},
+{
+"name": "Rajputana",
+"name_ru": "Раджпутана",
+"lat": 26.5,
+"lon": 73.5,
+"type": "historical"
+},
+{
+"name": "Gujarat",
+"name_ru": "Гуджарат",
+"lat": 22.7,
+"lon": 72.2,
+"type": "historical"
+},
+{
+"name": "Kashmir",
+"name_ru": "Кашмир",
+"lat": 34.3,
+"lon": 75.0,
+"type": "cultural"
+},
+{
+"name": "Doab",
+"name_ru": "Доаб",
+"lat": 28.3,
+"lon": 78.0,
+"type": "historical"
+},
+{
+"name": "Awadh",
+"name_ru": "Авадх",
+"lat": 26.8,
+"lon": 81.2,
+"type": "historical"
+},
+{
+"name": "Bihar",
+"name_ru": "Бихар",
+"lat": 25.3,
+"lon": 85.6,
+"type": "historical"
+},
+{
+"name": "Bengal",
+"name_ru": "Бенгалия",
+"lat": 23.6,
+"lon": 89.0,
+"type": "historical"
+},
+{
+"name": "Assam",
+"name_ru": "Ассам",
+"lat": 26.3,
+"lon": 92.7,
+"type": "cultural"
+},
+{
+"name": "Nepal",
+"name_ru": "Непал",
+"lat": 28.2,
+"lon": 84.0,
+"type": "cultural"
+},
+{
+"name": "Tibet",
+"name_ru": "Тибет",
+"lat": 30.5,
+"lon": 88.0,
+"type": "cultural"
+},
+{
+"name": "Kham",
+"name_ru": "Кам",
+"lat": 30.8,
+"lon": 97.5,
+"type": "cultural"
+},
+{
+"name": "Amdo",
+"name_ru": "Амдо",
+"lat": 35.5,
+"lon": 98.5,
+"type": "cultural"
+},
+{
+"name": "Malwa",
+"name_ru": "Мальва",
+"lat": 23.4,
+"lon": 76.5,
+"type": "historical"
+},
+{
+"name": "Gondwana",
+"name_ru": "Гондвана",
+"lat": 21.5,
+"lon": 79.5,
+"type": "historical"
+},
+{
+"name": "Kalinga",
+"name_ru": "Калинга",
+"lat": 20.4,
+"lon": 84.8,
+"type": "historical"
+},
+{
+"name": "Deccan",
+"name_ru": "Декан",
+"lat": 17.6,
+"lon": 76.5,
+"type": "geographical"
+},
+{
+"name": "Golconda",
+"name_ru": "Голконда",
+"lat": 16.8,
+"lon": 79.5,
+"type": "historical"
+},
+{
+"name": "Konkan",
+"name_ru": "Конкан",
+"lat": 16.8,
+"lon": 73.7,
+"type": "cultural"
+},
+{
+"name": "Mysore",
+"name_ru": "Майсур",
+"lat": 13.0,
+"lon": 76.5,
+"type": "historical"
+},
+{
+"name": "Malabar",
+"name_ru": "Малабар",
+"lat": 10.8,
+"lon": 76.2,
+"type": "cultural"
+},
+{
+"name": "Tamilakam",
+"name_ru": "Тамилакам",
+"lat": 10.6,
+"lon": 78.5,
+"type": "cultural"
+},
+{
+"name": "Ceylon",
+"name_ru": "Цейлон",
+"lat": 7.8,
+"lon": 80.7,
+"type": "historical"
+},
+{
+"name": "Maldives",
+"name_ru": "Мальдивы",
+"lat": 3.0,
+"lon": 73.0,
+"type": "geographical"
+},
+{
+"name": "Andaman Islands",
+"name_ru": "Андаманские острова",
+"lat": 11.5,
+"lon": 92.7,
+"type": "geographical"
+},
+{
+"name": "Irrawaddy",
+"name_ru": "Иравади",
+"lat": 19.8,
+"lon": 95.2,
+"type": "geographical"
+},
+{
+"name": "Arakan",
+"name_ru": "Аракан",
+"lat": 19.8,
+"lon": 94.0,
+"type": "historical"
+},
+{
+"name": "Shan Highlands",
+"name_ru": "Шанское нагорье",
+"lat": 21.8,
+"lon": 98.0,
+"type": "cultural"
+},
+{
+"name": "Tenasserim",
+"name_ru": "Тенассерим",
+"lat": 13.0,
+"lon": 98.5,
+"type": "geographical"
+},
+{
+"name": "Siam",
+"name_ru": "Сиам",
+"lat": 15.0,
+"lon": 100.3,
+"type": "historical"
+},
+{
+"name": "Isan",
+"name_ru": "Исан",
+"lat": 16.3,
+"lon": 103.5,
+"type": "geographical"
+},
+{
+"name": "Lanna",
+"name_ru": "Ланна",
+"lat": 19.0,
+"lon": 99.2,
+"type": "historical"
+},
+{
+"name": "Laos",
+"name_ru": "Лаос",
+"lat": 19.5,
+"lon": 103.0,
+"type": "geographical"
+},
+{
+"name": "Khmer",
+"name_ru": "Кхмер",
+"lat": 12.6,
+"lon": 105.0,
+"type": "historical"
+},
+{
+"name": "Tonkin",
+"name_ru": "Тонкин",
+"lat": 21.2,
+"lon": 105.5,
+"type": "historical"
+},
+{
+"name": "Annam",
+"name_ru": "Аннам",
+"lat": 16.5,
+"lon": 107.5,
+"type": "historical"
+},
+{
+"name": "Cochinchina",
+"name_ru": "Кохинхина",
+"lat": 10.6,
+"lon": 106.3,
+"type": "historical"
+},
+{
+"name": "Malaya",
+"name_ru": "Малайя",
+"lat": 4.5,
+"lon": 102.0,
+"type": "geographical"
+},
+{
+"name": "Aceh",
+"name_ru": "Ачех",
+"lat": 4.6,
+"lon": 96.8,
+"type": "historical"
+},
+{
+"name": "Minangkabau",
+"name_ru": "Минангкабау",
+"lat": -0.5,
+"lon": 100.8,
+"type": "cultural"
+},
+{
+"name": "Southern Sumatra",
+"name_ru": "Южная Суматра",
+"lat": -3.6,
+"lon": 104.2,
+"type": "geographical"
+},
+{
+"name": "Sunda",
+"name_ru": "Сунда",
+"lat": -6.8,
+"lon": 107.3,
+"type": "cultural"
+},
+{
+"name": "Mataram",
+"name_ru": "Матарам",
+"lat": -7.5,
+"lon": 110.3,
+"type": "historical"
+},
+{
+"name": "Eastern Java",
+"name_ru": "Восточная Ява",
+"lat": -7.8,
+"lon": 112.9,
+"type": "geographical"
+},
+{
+"name": "Sarawak",
+"name_ru": "Саравак",
+"lat": 2.0,
+"lon": 112.5,
+"type": "geographical"
+},
+{
+"name": "Sabah",
+"name_ru": "Сабах",
+"lat": 5.4,
+"lon": 117.0,
+"type": "geographical"
+},
+{
+"name": "Kalimantan",
+"name_ru": "Калимантан",
+"lat": -1.0,
+"lon": 114.5,
+"type": "geographical"
+},
+{
+"name": "Celebes",
+"name_ru": "Целебес",
+"lat": -2.0,
+"lon": 120.5,
+"type": "geographical"
+},
+{
+"name": "Moluccas",
+"name_ru": "Молуккские острова",
+"lat": -3.2,
+"lon": 128.3,
+"type": "cultural"
+},
+{
+"name": "Lesser Sunda Islands",
+"name_ru": "Малые Зондские острова",
+"lat": -8.8,
+"lon": 119.5,
+"type": "geographical"
+},
+{
+"name": "Luzon",
+"name_ru": "Лусон",
+"lat": 16.2,
+"lon": 121.0,
+"type": "geographical"
+},
+{
+"name": "Visayas",
+"name_ru": "Висайи",
+"lat": 10.7,
+"lon": 123.5,
+"type": "cultural"
+},
+{
+"name": "Mindanao",
+"name_ru": "Минданао",
+"lat": 7.8,
+"lon": 124.8,
+"type": "geographical"
+},
+{
+"name": "Western New Guinea",
+"name_ru": "Западная Новая Гвинея",
+"lat": -3.9,
+"lon": 137.0,
+"type": "geographical"
+},
+{
+"name": "Eastern New Guinea",
+"name_ru": "Восточная Новая Гвинея",
+"lat": -6.6,
+"lon": 145.5,
+"type": "geographical"
+},
+{
+"name": "Dzungaria",
+"name_ru": "Джунгария",
+"lat": 45.0,
+"lon": 86.0,
+"type": "geographical"
+},
+{
+"name": "Kashgaria",
+"name_ru": "Кашгария",
+"lat": 39.0,
+"lon": 80.0,
+"type": "historical"
+},
+{
+"name": "Hexi Corridor",
+"name_ru": "Коридор Хэси",
+"lat": 39.5,
+"lon": 98.5,
+"type": "geographical"
+},
+{
+"name": "Khalkha",
+"name_ru": "Халха",
+"lat": 47.5,
+"lon": 103.0,
+"type": "cultural"
+},
+{
+"name": "Gobi",
+"name_ru": "Гоби",
+"lat": 43.0,
+"lon": 106.0,
+"type": "geographical"
+},
+{
+"name": "Ordos",
+"name_ru": "Ордос",
+"lat": 39.0,
+"lon": 108.5,
+"type": "geographical"
+},
+{
+"name": "Hulunbuir",
+"name_ru": "Хулун-Буир",
+"lat": 49.0,
+"lon": 120.0,
+"type": "geographical"
+},
+{
+"name": "Northern Manchuria",
+"name_ru": "Северная Маньчжурия",
+"lat": 47.5,
+"lon": 127.0,
+"type": "geographical"
+},
+{
+"name": "Southern Manchuria",
+"name_ru": "Южная Маньчжурия",
+"lat": 42.0,
+"lon": 124.5,
+"type": "geographical"
+},
+{
+"name": "Zhili",
+"name_ru": "Чжили",
+"lat": 39.5,
+"lon": 116.0,
+"type": "historical"
+},
+{
+"name": "Shanxi",
+"name_ru": "Шаньси",
+"lat": 37.6,
+"lon": 112.3,
+"type": "historical"
+},
+{
+"name": "Guanzhong",
+"name_ru": "Гуаньчжун",
+"lat": 34.4,
+"lon": 108.8,
+"type": "historical"
+},
+{
+"name": "Shandong",
+"name_ru": "Шаньдун",
+"lat": 36.3,
+"lon": 118.5,
+"type": "historical"
+},
+{
+"name": "Central Plain",
+"name_ru": "Центральная равнина",
+"lat": 34.0,
+"lon": 113.6,
+"type": "geographical"
+},
+{
+"name": "Jiangnan",
+"name_ru": "Цзяннань",
+"lat": 31.3,
+"lon": 119.8,
+"type": "historical"
+},
+{
+"name": "Huai Valley",
+"name_ru": "Долина Хуайхэ",
+"lat": 32.8,
+"lon": 116.8,
+"type": "geographical"
+},
+{
+"name": "Middle Yangtze",
+"name_ru": "Среднее Янцзы",
+"lat": 30.7,
+"lon": 112.8,
+"type": "geographical"
+},
+{
+"name": "Hunan",
+"name_ru": "Хунань",
+"lat": 27.8,
+"lon": 111.7,
+"type": "geographical"
+},
+{
+"name": "Jiangxi",
+"name_ru": "Цзянси",
+"lat": 28.4,
+"lon": 115.8,
+"type": "geographical"
+},
+{
+"name": "Zhejiang",
+"name_ru": "Чжэцзян",
+"lat": 29.2,
+"lon": 120.3,
+"type": "geographical"
+},
+{
+"name": "Fujian",
+"name_ru": "Фуцзянь",
+"lat": 26.0,
+"lon": 118.0,
+"type": "geographical"
+},
+{
+"name": "Lingnan",
+"name_ru": "Линнань",
+"lat": 23.4,
+"lon": 113.4,
+"type": "historical"
+},
+{
+"name": "Guangxi",
+"name_ru": "Гуанси",
+"lat": 23.6,
+"lon": 108.8,
+"type": "geographical"
+},
+{
+"name": "Guizhou",
+"name_ru": "Гуйчжоу",
+"lat": 26.8,
+"lon": 106.8,
+"type": "geographical"
+},
+{
+"name": "Yunnan",
+"name_ru": "Юньнань",
+"lat": 25.0,
+"lon": 102.0,
+"type": "historical"
+},
+{
+"name": "Sichuan",
+"name_ru": "Сычуань",
+"lat": 30.6,
+"lon": 104.2,
+"type": "historical"
+},
+{
+"name": "Hainan",
+"name_ru": "Хайнань",
+"lat": 19.2,
+"lon": 109.7,
+"type": "geographical"
+},
+{
+"name": "Formosa",
+"name_ru": "Формоза",
+"lat": 23.8,
+"lon": 121.0,
+"type": "geographical"
+},
+{
+"name": "Northern Korea",
+"name_ru": "Северная Корея",
+"lat": 40.0,
+"lon": 127.2,
+"type": "historical"
+},
+{
+"name": "Southern Korea",
+"name_ru": "Южная Корея",
+"lat": 36.2,
+"lon": 127.8,
+"type": "historical"
+},
+{
+"name": "Hokkaido",
+"name_ru": "Хоккайдо",
+"lat": 43.4,
+"lon": 142.8,
+"type": "geographical"
+},
+{
+"name": "Tohoku",
+"name_ru": "Тохоку",
+"lat": 39.6,
+"lon": 140.8,
+"type": "historical"
+},
+{
+"name": "Kanto",
+"name_ru": "Канто",
+"lat": 36.1,
+"lon": 139.7,
+"type": "historical"
+},
+{
+"name": "Chubu",
+"name_ru": "Тюбу",
+"lat": 36.0,
+"lon": 137.7,
+"type": "geographical"
+},
+{
+"name": "Kansai",
+"name_ru": "Кансай",
+"lat": 34.8,
+"lon": 135.6,
+"type": "historical"
+},
+{
+"name": "Chugoku",
+"name_ru": "Тюгоку",
+"lat": 34.9,
+"lon": 132.9,
+"type": "geographical"
+},
+{
+"name": "Shikoku",
+"name_ru": "Сикоку",
+"lat": 33.7,
+"lon": 133.4,
+"type": "geographical"
+},
+{
+"name": "Kyushu",
+"name_ru": "Кюсю",
+"lat": 32.7,
+"lon": 130.9,
+"type": "historical"
+},
+{
+"name": "Ryukyu",
+"name_ru": "Рюкю",
+"lat": 26.5,
+"lon": 127.9,
+"type": "historical"
+},
+{
+"name": "Morocco",
+"name_ru": "Марокко",
+"lat": 33.4,
+"lon": -6.5,
+"type": "geographical"
+},
+{
+"name": "Sous",
+"name_ru": "Сус",
+"lat": 30.4,
+"lon": -8.5,
+"type": "geographical"
+},
+{
+"name": "Western Sahara",
+"name_ru": "Западная Сахара",
+"lat": 24.5,
+"lon": -13.5,
+"type": "geographical"
+},
+{
+"name": "Tell Atlas",
+"name_ru": "Телль-Атлас",
+"lat": 36.0,
+"lon": 2.5,
+"type": "geographical"
+},
+{
+"name": "Algerian Sahara",
+"name_ru": "Алжирская Сахара",
+"lat": 27.5,
+"lon": 2.5,
+"type": "geographical"
+},
+{
+"name": "Tunisia",
+"name_ru": "Тунис",
+"lat": 35.0,
+"lon": 9.5,
+"type": "geographical"
+},
+{
+"name": "Tripolitania",
+"name_ru": "Триполитания",
+"lat": 31.0,
+"lon": 13.5,
+"type": "geographical"
+},
+{
+"name": "Cyrenaica",
+"name_ru": "Киренаика",
+"lat": 31.0,
+"lon": 21.8,
+"type": "geographical"
+},
+{
+"name": "Fezzan",
+"name_ru": "Феццан",
+"lat": 26.0,
+"lon": 14.5,
+"type": "geographical"
+},
+{
+"name": "Libyan Desert",
+"name_ru": "Ливийская пустыня",
+"lat": 24.0,
+"lon": 25.0,
+"type": "geographical"
+},
+{
+"name": "Nile Delta",
+"name_ru": "Дельта Нила",
+"lat": 30.6,
+"lon": 31.0,
+"type": "geographical"
+},
+{
+"name": "Upper Egypt",
+"name_ru": "Верхний Египет",
+"lat": 26.0,
+"lon": 32.0,
+"type": "historical"
+},
+{
+"name": "Nubia",
+"name_ru": "Нубия",
+"lat": 19.5,
+"lon": 31.0,
+"type": "historical"
+},
+{
+"name": "Gezira",
+"name_ru": "Гезира",
+"lat": 14.3,
+"lon": 33.3,
+"type": "geographical"
+},
+{
+"name": "Kordofan",
+"name_ru": "Кордофан",
+"lat": 13.0,
+"lon": 29.5,
+"type": "geographical"
+},
+{
+"name": "Darfur",
+"name_ru": "Дарфур",
+"lat": 13.5,
+"lon": 24.5,
+"type": "geographical"
+},
+{
+"name": "Ahaggar",
+"name_ru": "Ахаггар",
+"lat": 23.0,
+"lon": 5.5,
+"type": "geographical"
+},
+{
+"name": "Tibesti",
+"name_ru": "Тибести",
+"lat": 21.0,
+"lon": 17.5,
+"type": "geographical"
+},
+{
+"name": "Azawad",
+"name_ru": "Азавад",
+"lat": 18.5,
+"lon": -1.5,
+"type": "geographical"
+},
+{
+"name": "Adrar",
+"name_ru": "Адрар",
+"lat": 20.3,
+"lon": -11.5,
+"type": "geographical"
+},
+{
+"name": "Senegambia",
+"name_ru": "Сенегамбия",
+"lat": 14.5,
+"lon": -15.0,
+"type": "cultural"
+},
+{
+"name": "Futa Jallon",
+"name_ru": "Фута-Джаллон",
+"lat": 10.8,
+"lon": -12.0,
+"type": "cultural"
+},
+{
+"name": "Sierra Leone",
+"name_ru": "Сьерра-Леоне",
+"lat": 8.5,
+"lon": -11.8,
+"type": "geographical"
+},
+{
+"name": "Grain Coast",
+"name_ru": "Перцовый берег",
+"lat": 6.4,
+"lon": -9.5,
+"type": "cultural"
+},
+{
+"name": "Ivory Coast",
+"name_ru": "Берег Слоновой Кости",
+"lat": 6.8,
+"lon": -5.5,
+"type": "geographical"
+},
+{
+"name": "Ashanti",
+"name_ru": "Ашанти",
+"lat": 6.8,
+"lon": -1.5,
+"type": "historical"
+},
+{
+"name": "Dahomey",
+"name_ru": "Дагомея",
+"lat": 8.0,
+"lon": 2.2,
+"type": "historical"
+},
+{
+"name": "Yorubaland",
+"name_ru": "Земля йоруба",
+"lat": 8.0,
+"lon": 4.5,
+"type": "cultural"
+},
+{
+"name": "Hausaland",
+"name_ru": "Страна хауса",
+"lat": 12.0,
+"lon": 8.0,
+"type": "cultural"
+},
+{
+"name": "Bornu",
+"name_ru": "Борну",
+"lat": 12.3,
+"lon": 13.0,
+"type": "historical"
+},
+{
+"name": "Niger Delta",
+"name_ru": "Дельта Нигера",
+"lat": 5.5,
+"lon": 6.5,
+"type": "geographical"
+},
+{
+"name": "Manding",
+"name_ru": "Мандинг",
+"lat": 12.8,
+"lon": -8.0,
+"type": "cultural"
+},
+{
+"name": "Mossi",
+"name_ru": "Моси",
+"lat": 12.3,
+"lon": -1.3,
+"type": "cultural"
+},
+{
+"name": "Chad Basin",
+"name_ru": "Чадская котловина",
+"lat": 13.0,
+"lon": 16.5,
+"type": "geographical"
+},
+{
+"name": "Wadai",
+"name_ru": "Вадаи",
+"lat": 13.3,
+"lon": 20.8,
+"type": "historical"
+},
+{
+"name": "Adamawa",
+"name_ru": "Адамава",
+"lat": 7.2,
+"lon": 12.2,
+"type": "cultural"
+},
+{
+"name": "Cameroon",
+"name_ru": "Камерун",
+"lat": 4.5,
+"lon": 10.2,
+"type": "geographical"
+},
+{
+"name": "Ubangi-Shari",
+"name_ru": "Убанги-Шари",
+"lat": 6.3,
+"lon": 20.0,
+"type": "geographical"
+},
+{
+"name": "Gabon",
+"name_ru": "Габон",
+"lat": -0.6,
+"lon": 11.7,
+"type": "geographical"
+},
+{
+"name": "Lower Congo",
+"name_ru": "Нижнее Конго",
+"lat": -5.2,
+"lon": 14.5,
+"type": "historical"
+},
+{
+"name": "Congo Basin",
+"name_ru": "Бассейн Конго",
+"lat": 0.5,
+"lon": 22.0,
+"type": "geographical"
+},
+{
+"name": "Kasai",
+"name_ru": "Касаи",
+"lat": -5.5,
+"lon": 22.5,
+"type": "geographical"
+},
+{
+"name": "Katanga",
+"name_ru": "Катанга",
+"lat": -10.5,
+"lon": 26.5,
+"type": "geographical"
+},
+{
+"name": "Kivu",
+"name_ru": "Киву",
+"lat": -2.5,
+"lon": 28.0,
+"type": "cultural"
+},
+{
+"name": "Sao Tome",
+"name_ru": "Сан-Томе",
+"lat": 0.2,
+"lon": 6.6,
+"type": "geographical"
+},
+{
+"name": "Buganda",
+"name_ru": "Буганда",
+"lat": 0.8,
+"lon": 32.4,
+"type": "historical"
+},
+{
+"name": "Rwanda-Burundi",
+"name_ru": "Руанда-Бурунди",
+"lat": -2.8,
+"lon": 29.9,
+"type": "cultural"
+},
+{
+"name": "Kenya Highlands",
+"name_ru": "Кенийское нагорье",
+"lat": 0.3,
+"lon": 36.8,
+"type": "geographical"
+},
+{
+"name": "Swahili Coast",
+"name_ru": "Берег суахили",
+"lat": -5.5,
+"lon": 39.0,
+"type": "cultural"
+},
+{
+"name": "Tanganyika",
+"name_ru": "Танганьика",
+"lat": -6.0,
+"lon": 34.5,
+"type": "geographical"
+},
+{
+"name": "Eritrea",
+"name_ru": "Эритрея",
+"lat": 15.3,
+"lon": 38.8,
+"type": "geographical"
+},
+{
+"name": "Abyssinia",
+"name_ru": "Абиссиния",
+"lat": 11.0,
+"lon": 38.8,
+"type": "historical"
+},
+{
+"name": "Afar",
+"name_ru": "Афар",
+"lat": 12.0,
+"lon": 41.3,
+"type": "cultural"
+},
+{
+"name": "Ogaden",
+"name_ru": "Огаден",
+"lat": 7.0,
+"lon": 44.5,
+"type": "cultural"
+},
+{
+"name": "Somaliland",
+"name_ru": "Сомалиленд",
+"lat": 9.7,
+"lon": 46.0,
+"type": "cultural"
+},
+{
+"name": "Benadir",
+"name_ru": "Бенадир",
+"lat": 3.0,
+"lon": 45.0,
+"type": "cultural"
+},
+{
+"name": "Zambezi Valley",
+"name_ru": "Долина Замбези",
+"lat": -16.0,
+"lon": 33.5,
+"type": "geographical"
+},
+{
+"name": "Mozambique Coast",
+"name_ru": "Мозамбикское побережье",
+"lat": -14.0,
+"lon": 39.5,
+"type": "geographical"
+},
+{
+"name": "Nyasaland",
+"name_ru": "Ньясаленд",
+"lat": -13.3,
+"lon": 34.0,
+"type": "geographical"
+},
+{
+"name": "Barotseland",
+"name_ru": "Баротселенд",
+"lat": -15.8,
+"lon": 23.5,
+"type": "historical"
+},
+{
+"name": "Zambia Plateau",
+"name_ru": "Замбийское плато",
+"lat": -13.5,
+"lon": 28.5,
+"type": "geographical"
+},
+{
+"name": "Mashonaland",
+"name_ru": "Машоналенд",
+"lat": -17.8,
+"lon": 31.0,
+"type": "historical"
+},
+{
+"name": "Matabeleland",
+"name_ru": "Матабелеленд",
+"lat": -20.0,
+"lon": 28.5,
+"type": "historical"
+},
+{
+"name": "Kalahari",
+"name_ru": "Калахари",
+"lat": -23.0,
+"lon": 23.0,
+"type": "geographical"
+},
+{
+"name": "Ovamboland",
+"name_ru": "Овамболенд",
+"lat": -18.5,
+"lon": 16.5,
+"type": "cultural"
+},
+{
+"name": "Namib",
+"name_ru": "Намиб",
+"lat": -23.5,
+"lon": 15.5,
+"type": "geographical"
+},
+{
+"name": "Cape",
+"name_ru": "Капская земля",
+"lat": -32.5,
+"lon": 21.0,
+"type": "historical"
+},
+{
+"name": "Natal",
+"name_ru": "Наталь",
+"lat": -29.0,
+"lon": 30.5,
+"type": "historical"
+},
+{
+"name": "Transvaal",
+"name_ru": "Трансвааль",
+"lat": -25.5,
+"lon": 29.0,
+"type": "historical"
+},
+{
+"name": "Orange Free State",
+"name_ru": "Оранжевая республика",
+"lat": -29.0,
+"lon": 26.5,
+"type": "historical"
+},
+{
+"name": "Angola Coast",
+"name_ru": "Ангольское побережье",
+"lat": -10.5,
+"lon": 14.0,
+"type": "geographical"
+},
+{
+"name": "Benguela",
+"name_ru": "Бенгела",
+"lat": -12.8,
+"lon": 16.0,
+"type": "historical"
+},
+{
+"name": "Madagascar",
+"name_ru": "Мадагаскар",
+"lat": -19.5,
+"lon": 46.8,
+"type": "geographical"
+},
+{
+"name": "Mascarenes",
+"name_ru": "Маскаренские острова",
+"lat": -20.5,
+"lon": 56.5,
+"type": "geographical"
+},
+{
+"name": "Comoros",
+"name_ru": "Коморы",
+"lat": -12.0,
+"lon": 44.3,
+"type": "geographical"
+},
+{
+"name": "Seychelles",
+"name_ru": "Сейшелы",
+"lat": -4.6,
+"lon": 55.45,
+"type": "geographical"
+},
+{
+"name": "Greenland",
+"name_ru": "Гренландия",
+"lat": 70.0,
+"lon": -42.0,
+"type": "geographical"
+},
+{
+"name": "Arctic Archipelago",
+"name_ru": "Арктический архипелаг",
+"lat": 72.5,
+"lon": -95.0,
+"type": "geographical"
+},
+{
+"name": "Newfoundland",
+"name_ru": "Ньюфаундленд",
+"lat": 48.7,
+"lon": -56.5,
+"type": "geographical"
+},
+{
+"name": "Acadia",
+"name_ru": "Акадия",
+"lat": 46.0,
+"lon": -64.5,
+"type": "historical"
+},
+{
+"name": "Lower Canada",
+"name_ru": "Нижняя Канада",
+"lat": 46.9,
+"lon": -71.8,
+"type": "historical"
+},
+{
+"name": "Upper Canada",
+"name_ru": "Верхняя Канада",
+"lat": 44.3,
+"lon": -79.8,
+"type": "historical"
+},
+{
+"name": "Ungava",
+"name_ru": "Унгава",
+"lat": 55.5,
+"lon": -71.0,
+"type": "geographical"
+},
+{
+"name": "Labrador",
+"name_ru": "Лабрадор",
+"lat": 54.0,
+"lon": -62.0,
+"type": "geographical"
+},
+{
+"name": "Canadian Shield",
+"name_ru": "Канадский щит",
+"lat": 49.5,
+"lon": -86.0,
+"type": "geographical"
+},
+{
+"name": "Manitoba",
+"name_ru": "Манитоба",
+"lat": 51.0,
+"lon": -98.0,
+"type": "geographical"
+},
+{
+"name": "Saskatchewan",
+"name_ru": "Саскачеван",
+"lat": 52.0,
+"lon": -106.0,
+"type": "geographical"
+},
+{
+"name": "Alberta",
+"name_ru": "Альберта",
+"lat": 53.0,
+"lon": -114.0,
+"type": "geographical"
+},
+{
+"name": "British Columbia",
+"name_ru": "Британская Колумбия",
+"lat": 53.0,
+"lon": -123.0,
+"type": "geographical"
+},
+{
+"name": "Yukon",
+"name_ru": "Юкон",
+"lat": 63.5,
+"lon": -136.0,
+"type": "geographical"
+},
+{
+"name": "Mackenzie",
+"name_ru": "Маккензи",
+"lat": 63.0,
+"lon": -120.0,
+"type": "geographical"
+},
+{
+"name": "Barren Grounds",
+"name_ru": "Бесплодные земли",
+"lat": 64.0,
+"lon": -98.0,
+"type": "geographical"
+},
+{
+"name": "Alaska",
+"name_ru": "Аляска",
+"lat": 64.0,
+"lon": -152.0,
+"type": "geographical"
+},
+{
+"name": "Aleutians",
+"name_ru": "Алеутские острова",
+"lat": 54.0,
+"lon": -166.5,
+"type": "geographical"
+},
+{
+"name": "New England",
+"name_ru": "Новая Англия",
+"lat": 43.6,
+"lon": -71.5,
+"type": "historical"
+},
+{
+"name": "Hudson Valley",
+"name_ru": "Долина Гудзона",
+"lat": 42.8,
+"lon": -74.8,
+"type": "geographical"
+},
+{
+"name": "Mid-Atlantic",
+"name_ru": "Среднеатлантические штаты",
+"lat": 40.7,
+"lon": -77.5,
+"type": "geographical"
+},
+{
+"name": "Chesapeake",
+"name_ru": "Чесапик",
+"lat": 37.8,
+"lon": -77.8,
+"type": "geographical"
+},
+{
+"name": "Carolinas",
+"name_ru": "Каролина",
+"lat": 35.0,
+"lon": -79.8,
+"type": "geographical"
+},
+{
+"name": "Deep South",
+"name_ru": "Глубокий Юг",
+"lat": 32.8,
+"lon": -85.0,
+"type": "geographical"
+},
+{
+"name": "Florida",
+"name_ru": "Флорида",
+"lat": 28.5,
+"lon": -81.8,
+"type": "geographical"
+},
+{
+"name": "Appalachia",
+"name_ru": "Аппалачи",
+"lat": 37.3,
+"lon": -82.0,
+"type": "geographical"
+},
+{
+"name": "Ohio Valley",
+"name_ru": "Долина Огайо",
+"lat": 40.0,
+"lon": -83.5,
+"type": "geographical"
+},
+{
+"name": "Michigan",
+"name_ru": "Мичиган",
+"lat": 44.0,
+"lon": -85.0,
+"type": "geographical"
+},
+{
+"name": "Upper Midwest",
+"name_ru": "Верхний Средний Запад",
+"lat": 45.3,
+"lon": -90.5,
+"type": "geographical"
+},
+{
+"name": "Corn Belt",
+"name_ru": "Кукурузный пояс",
+"lat": 41.0,
+"lon": -90.5,
+"type": "geographical"
+},
+{
+"name": "Missouri Valley",
+"name_ru": "Долина Миссури",
+"lat": 38.8,
+"lon": -93.0,
+"type": "geographical"
+},
+{
+"name": "Tennessee Valley",
+"name_ru": "Долина Теннесси",
+"lat": 35.8,
+"lon": -86.8,
+"type": "geographical"
+},
+{
+"name": "Mississippi Delta",
+"name_ru": "Дельта Миссисипи",
+"lat": 32.8,
+"lon": -90.8,
+"type": "geographical"
+},
+{
+"name": "Louisiana",
+"name_ru": "Луизиана",
+"lat": 30.8,
+"lon": -91.8,
+"type": "geographical"
+},
+{
+"name": "Ozarks",
+"name_ru": "Озарк",
+"lat": 36.3,
+"lon": -92.8,
+"type": "geographical"
+},
+{
+"name": "East Texas",
+"name_ru": "Восточный Техас",
+"lat": 31.5,
+"lon": -95.3,
+"type": "geographical"
+},
+{
+"name": "Texas Plains",
+"name_ru": "Техасские равнины",
+"lat": 32.5,
+"lon": -100.5,
+"type": "geographical"
+},
+{
+"name": "South Texas",
+"name_ru": "Южный Техас",
+"lat": 27.8,
+"lon": -98.5,
+"type": "geographical"
+},
+{
+"name": "High Plains",
+"name_ru": "Высокие равнины",
+"lat": 36.0,
+"lon": -101.8,
+"type": "geographical"
+},
+{
+"name": "Northern Plains",
+"name_ru": "Северные равнины",
+"lat": 46.0,
+"lon": -100.5,
+"type": "geographical"
+},
+{
+"name": "Central Plains",
+"name_ru": "Центральные равнины",
+"lat": 38.8,
+"lon": -98.5,
+"type": "geographical"
+},
+{
+"name": "Montana",
+"name_ru": "Монтана",
+"lat": 47.0,
+"lon": -109.5,
+"type": "geographical"
+},
+{
+"name": "Snake River Plain",
+"name_ru": "Равнина Снейк",
+"lat": 43.5,
+"lon": -114.5,
+"type": "geographical"
+},
+{
+"name": "Southern Rockies",
+"name_ru": "Южные Скалистые горы",
+"lat": 39.0,
+"lon": -106.0,
+"type": "geographical"
+},
+{
+"name": "Great Basin",
+"name_ru": "Большой Бассейн",
+"lat": 39.8,
+"lon": -116.8,
+"type": "geographical"
+},
+{
+"name": "Deseret",
+"name_ru": "Дезерет",
+"lat": 39.5,
+"lon": -111.5,
+"type": "historical"
+},
+{
+"name": "Arizona",
+"name_ru": "Аризона",
+"lat": 34.2,
+"lon": -111.8,
+"type": "geographical"
+},
+{
+"name": "Rio Grande Valley",
+"name_ru": "Долина Рио-Гранде",
+"lat": 34.5,
+"lon": -106.3,
+"type": "geographical"
+},
+{
+"name": "Washington",
+"name_ru": "Вашингтон",
+"lat": 47.5,
+"lon": -120.6,
+"type": "geographical"
+},
+{
+"name": "Oregon",
+"name_ru": "Орегон",
+"lat": 43.9,
+"lon": -120.6,
+"type": "geographical"
+},
+{
+"name": "Northern California",
+"name_ru": "Северная Калифорния",
+"lat": 40.0,
+"lon": -122.3,
+"type": "geographical"
+},
+{
+"name": "Central Valley",
+"name_ru": "Центральная долина",
+"lat": 36.8,
+"lon": -119.8,
+"type": "geographical"
+},
+{
+"name": "Southern California",
+"name_ru": "Южная Калифорния",
+"lat": 34.2,
+"lon": -117.0,
+"type": "geographical"
+},
+{
+"name": "Baja California",
+"name_ru": "Нижняя Калифорния",
+"lat": 27.5,
+"lon": -113.3,
+"type": "geographical"
+},
+{
+"name": "Sonora",
+"name_ru": "Сонора",
+"lat": 29.5,
+"lon": -110.7,
+"type": "geographical"
+},
+{
+"name": "Chihuahua",
+"name_ru": "Чиуауа",
+"lat": 28.7,
+"lon": -106.0,
+"type": "geographical"
+},
+{
+"name": "Rio Bravo",
+"name_ru": "Рио-Браво",
+"lat": 26.5,
+"lon": -100.5,
+"type": "geographical"
+},
+{
+"name": "Sinaloa",
+"name_ru": "Синалоа",
+"lat": 24.5,
+"lon": -107.0,
+"type": "geographical"
+},
+{
+"name": "Bajio",
+"name_ru": "Бахио",
+"lat": 21.0,
+"lon": -101.6,
+"type": "geographical"
+},
+{
+"name": "Anahuac",
+"name_ru": "Анауак",
+"lat": 19.4,
+"lon": -99.0,
+"type": "historical"
+},
+{
+"name": "Michoacan",
+"name_ru": "Мичоакан",
+"lat": 19.2,
+"lon": -101.8,
+"type": "geographical"
+},
+{
+"name": "Mixteca",
+"name_ru": "Миштека",
+"lat": 17.5,
+"lon": -99.3,
+"type": "cultural"
+},
+{
+"name": "Veracruz",
+"name_ru": "Веракрус",
+"lat": 19.5,
+"lon": -96.7,
+"type": "geographical"
+},
+{
+"name": "Oaxaca",
+"name_ru": "Оахака",
+"lat": 16.9,
+"lon": -96.5,
+"type": "geographical"
+},
+{
+"name": "Yucatan",
+"name_ru": "Юкатан",
+"lat": 20.3,
+"lon": -89.0,
+"type": "geographical"
+},
+{
+"name": "Maya Highlands",
+"name_ru": "Нагорье майя",
+"lat": 15.8,
+"lon": -91.5,
+"type": "cultural"
+},
+{
+"name": "Honduras",
+"name_ru": "Гондурас",
+"lat": 14.8,
+"lon": -87.0,
+"type": "geographical"
+},
+{
+"name": "Mosquito Coast",
+"name_ru": "Москитовый берег",
+"lat": 13.0,
+"lon": -84.0,
+"type": "cultural"
+},
+{
+"name": "Nicaragua",
+"name_ru": "Никарагуа",
+"lat": 12.3,
+"lon": -86.0,
+"type": "geographical"
+},
+{
+"name": "Costa Rica",
+"name_ru": "Коста-Рика",
+"lat": 10.0,
+"lon": -84.2,
+"type": "geographical"
+},
+{
+"name": "Panama",
+"name_ru": "Панама",
+"lat": 8.8,
+"lon": -80.3,
+"type": "geographical"
+},
+{
+"name": "Cuba",
+"name_ru": "Куба",
+"lat": 21.8,
+"lon": -79.0,
+"type": "geographical"
+},
+{
+"name": "Hispaniola",
+"name_ru": "Эспаньола",
+"lat": 19.0,
+"lon": -71.0,
+"type": "cultural"
+},
+{
+"name": "Jamaica",
+"name_ru": "Ямайка",
+"lat": 18.1,
+"lon": -77.3,
+"type": "geographical"
+},
+{
+"name": "Puerto Rico",
+"name_ru": "Пуэрто-Рико",
+"lat": 18.2,
+"lon": -66.4,
+"type": "geographical"
+},
+{
+"name": "Lesser Antilles",
+"name_ru": "Малые Антильские острова",
+"lat": 15.3,
+"lon": -61.3,
+"type": "geographical"
+},
+{
+"name": "Bahamas",
+"name_ru": "Багамы",
+"lat": 24.2,
+"lon": -76.0,
+"type": "geographical"
+},
+{
+"name": "Bermuda",
+"name_ru": "Бермуды",
+"lat": 32.3,
+"lon": -64.8,
+"type": "geographical"
+},
+{
+"name": "Caribbean Colombia",
+"name_ru": "Карибская Колумбия",
+"lat": 10.0,
+"lon": -74.8,
+"type": "geographical"
+},
+{
+"name": "New Granada",
+"name_ru": "Новая Гранада",
+"lat": 4.8,
+"lon": -74.3,
+"type": "historical"
+},
+{
+"name": "Venezuelan Coast",
+"name_ru": "Венесуэльское побережье",
+"lat": 10.3,
+"lon": -67.0,
+"type": "geographical"
+},
+{
+"name": "Llanos",
+"name_ru": "Льянос",
+"lat": 7.5,
+"lon": -68.0,
+"type": "geographical"
+},
+{
+"name": "Guiana Highlands",
+"name_ru": "Гвианское нагорье",
+"lat": 5.0,
+"lon": -62.5,
+"type": "geographical"
+},
+{
+"name": "Guiana Coast",
+"name_ru": "Гвианское побережье",
+"lat": 5.8,
+"lon": -57.5,
+"type": "geographical"
+},
+{
+"name": "Orinoco Delta",
+"name_ru": "Дельта Ориноко",
+"lat": 9.0,
+"lon": -61.5,
+"type": "geographical"
+},
+{
+"name": "Quito",
+"name_ru": "Кито",
+"lat": -1.0,
+"lon": -78.6,
+"type": "historical"
+},
+{
+"name": "Peruvian Coast",
+"name_ru": "Перуанское побережье",
+"lat": -9.0,
+"lon": -78.3,
+"type": "geographical"
+},
+{
+"name": "Lima",
+"name_ru": "Лима",
+"lat": -12.2,
+"lon": -76.8,
+"type": "geographical"
+},
+{
+"name": "Cusco",
+"name_ru": "Куско",
+"lat": -13.5,
+"lon": -72.2,
+"type": "historical"
+},
+{
+"name": "Altiplano",
+"name_ru": "Альтиплано",
+"lat": -16.8,
+"lon": -68.5,
+"type": "geographical"
+},
+{
+"name": "Atacama",
+"name_ru": "Атакама",
+"lat": -23.5,
+"lon": -69.8,
+"type": "geographical"
+},
+{
+"name": "Central Chile",
+"name_ru": "Центральное Чили",
+"lat": -34.0,
+"lon": -71.0,
+"type": "geographical"
+},
+{
+"name": "Araucania",
+"name_ru": "Араукания",
+"lat": -38.8,
+"lon": -72.5,
+"type": "cultural"
+},
+{
+"name": "Gran Chaco",
+"name_ru": "Гран-Чако",
+"lat": -22.0,
+"lon": -61.0,
+"type": "geographical"
+},
+{
+"name": "Paraguay",
+"name_ru": "Парагвай",
+"lat": -25.0,
+"lon": -57.3,
+"type": "geographical"
+},
+{
+"name": "Pampas",
+"name_ru": "Пампа",
+"lat": -35.5,
+"lon": -61.0,
+"type": "geographical"
+},
+{
+"name": "Entre Rios",
+"name_ru": "Энтре-Риос",
+"lat": -31.5,
+"lon": -59.0,
+"type": "geographical"
+},
+{
+"name": "Cuyo",
+"name_ru": "Куйо",
+"lat": -33.0,
+"lon": -68.3,
+"type": "geographical"
+},
+{
+"name": "Tucuman",
+"name_ru": "Тукуман",
+"lat": -26.8,
+"lon": -65.3,
+"type": "geographical"
+},
+{
+"name": "Patagonia",
+"name_ru": "Патагония",
+"lat": -44.0,
+"lon": -69.0,
+"type": "geographical"
+},
+{
+"name": "Tierra del Fuego",
+"name_ru": "Огненная Земля",
+"lat": -54.0,
+"lon": -68.5,
+"type": "geographical"
+},
+{
+"name": "Falklands",
+"name_ru": "Фолклендские острова",
+"lat": -51.8,
+"lon": -59.3,
+"type": "geographical"
+},
+{
+"name": "Banda Oriental",
+"name_ru": "Банда Орьенталь",
+"lat": -33.0,
+"lon": -56.0,
+"type": "historical"
+},
+{
+"name": "Para",
+"name_ru": "Пара",
+"lat": -2.8,
+"lon": -50.5,
+"type": "geographical"
+},
+{
+"name": "Amazonia",
+"name_ru": "Амазония",
+"lat": -3.8,
+"lon": -62.5,
+"type": "geographical"
+},
+{
+"name": "Upper Amazon",
+"name_ru": "Верхняя Амазония",
+"lat": -5.5,
+"lon": -72.0,
+"type": "geographical"
+},
+{
+"name": "Maranhao",
+"name_ru": "Мараньян",
+"lat": -4.5,
+"lon": -44.8,
+"type": "geographical"
+},
+{
+"name": "Sertao",
+"name_ru": "Сертан",
+"lat": -8.5,
+"lon": -40.5,
+"type": "geographical"
+},
+{
+"name": "Bahia",
+"name_ru": "Баия",
+"lat": -12.5,
+"lon": -39.5,
+"type": "geographical"
+},
+{
+"name": "Pernambuco",
+"name_ru": "Пернамбуку",
+"lat": -7.8,
+"lon": -36.5,
+"type": "geographical"
+},
+{
+"name": "Minas Gerais",
+"name_ru": "Минас-Жерайс",
+"lat": -19.0,
+"lon": -44.5,
+"type": "geographical"
+},
+{
+"name": "Rio de Janeiro",
+"name_ru": "Рио-де-Жанейро",
+"lat": -22.4,
+"lon": -43.5,
+"type": "geographical"
+},
+{
+"name": "Sao Paulo",
+"name_ru": "Сан-Паулу",
+"lat": -23.0,
+"lon": -47.8,
+"type": "geographical"
+},
+{
+"name": "Southern Brazil",
+"name_ru": "Южная Бразилия",
+"lat": -28.0,
+"lon": -52.0,
+"type": "geographical"
+},
+{
+"name": "Mato Grosso",
+"name_ru": "Мату-Гросу",
+"lat": -14.0,
+"lon": -56.0,
+"type": "geographical"
+},
+{
+"name": "Cerrado",
+"name_ru": "Серраду",
+"lat": -16.0,
+"lon": -49.0,
+"type": "geographical"
+},
+{
+"name": "Galapagos",
+"name_ru": "Галапагос",
+"lat": -0.6,
+"lon": -90.4,
+"type": "geographical"
+},
+{
+"name": "New South Wales",
+"name_ru": "Новый Южный Уэльс",
+"lat": -33.0,
+"lon": 148.0,
+"type": "geographical"
+},
+{
+"name": "Victoria",
+"name_ru": "Виктория",
+"lat": -37.0,
+"lon": 144.5,
+"type": "geographical"
+},
+{
+"name": "Queensland",
+"name_ru": "Квинсленд",
+"lat": -22.5,
+"lon": 146.5,
+"type": "geographical"
+},
+{
+"name": "Cape York",
+"name_ru": "Кейп-Йорк",
+"lat": -14.5,
+"lon": 143.0,
+"type": "geographical"
+},
+{
+"name": "Top End",
+"name_ru": "Топ-Энд",
+"lat": -14.5,
+"lon": 132.5,
+"type": "geographical"
+},
+{
+"name": "Red Centre",
+"name_ru": "Красный центр",
+"lat": -24.5,
+"lon": 133.5,
+"type": "geographical"
+},
+{
+"name": "Western Australia",
+"name_ru": "Западная Австралия",
+"lat": -27.0,
+"lon": 121.0,
+"type": "geographical"
+},
+{
+"name": "Swan River",
+"name_ru": "Суон-Ривер",
+"lat": -32.5,
+"lon": 116.5,
+"type": "geographical"
+},
+{
+"name": "South Australia",
+"name_ru": "Южная Австралия",
+"lat": -32.0,
+"lon": 137.0,
+"type": "geographical"
+},
+{
+"name": "Nullarbor",
+"name_ru": "Налларбор",
+"lat": -31.0,
+"lon": 128.5,
+"type": "geographical"
+},
+{
+"name": "Tasmania",
+"name_ru": "Тасмания",
+"lat": -42.0,
+"lon": 146.8,
+"type": "geographical"
+},
+{
+"name": "North Island",
+"name_ru": "Северный остров",
+"lat": -38.3,
+"lon": 175.8,
+"type": "geographical"
+},
+{
+"name": "South Island",
+"name_ru": "Южный остров",
+"lat": -43.9,
+"lon": 170.5,
+"type": "geographical"
+},
+{
+"name": "Bismarck Archipelago",
+"name_ru": "Архипелаг Бисмарка",
+"lat": -5.0,
+"lon": 150.0,
+"type": "geographical"
+},
+{
+"name": "Solomon Islands",
+"name_ru": "Соломоновы острова",
+"lat": -9.5,
+"lon": 160.3,
+"type": "geographical"
+},
+{
+"name": "New Caledonia",
+"name_ru": "Новая Каледония",
+"lat": -21.3,
+"lon": 165.5,
+"type": "geographical"
+},
+{
+"name": "Fiji",
+"name_ru": "Фиджи",
+"lat": -17.8,
+"lon": 178.0,
+"type": "geographical"
+},
+{
+"name": "Samoa",
+"name_ru": "Самоа",
+"lat": -13.8,
+"lon": -172.0,
+"type": "geographical"
+},
+{
+"name": "Society Islands",
+"name_ru": "Острова Общества",
+"lat": -17.6,
+"lon": -149.5,
+"type": "geographical"
+},
+{
+"name": "Hawaii",
+"name_ru": "Гавайи",
+"lat": 20.7,
+"lon": -157.0,
+"type": "geographical"
+},
+{
+"name": "Marianas",
+"name_ru": "Марианские острова",
+"lat": 15.2,
+"lon": 145.7,
+"type": "geographical"
+},
+{
+"name": "Carolines",
+"name_ru": "Каролинские острова",
+"lat": 7.4,
+"lon": 151.5,
+"type": "geographical"
+},
+{
+"name": "Marshalls",
+"name_ru": "Маршалловы острова",
+"lat": 8.5,
+"lon": 168.5,
+"type": "geographical"
+}
+]

@@ -1,0 +1,15 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "map-editor",
+      "runtimeExecutable": "/Library/Frameworks/Python.framework/Versions/3.11/bin/python3",
+      "runtimeArgs": [
+        "-m",
+        "http.server",
+        "8123"
+      ],
+      "port": 8123
+    }
+  ]
+}

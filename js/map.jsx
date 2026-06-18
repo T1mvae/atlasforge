@@ -378,6 +378,16 @@ function MapView() {
     const [vx, vy] = clientToViewbox(e);
     const mapPt = clientToMap(e);
 
+    // ---- reference backdrop move / resize ----
+    if (e.target.dataset && (e.target.dataset.backdrop || e.target.dataset.bdresize)) {
+      const bd = App.project.backdrop;
+      Actions.beginStroke();
+      gesture.current = { mode: e.target.dataset.bdresize ? "bdresize" : "bdmove",
+        start: mapPt, orig: { x: bd.x, y: bd.y, w: bd.w, h: bd.h } };
+      e.stopPropagation();
+      return;
+    }
+
     // ---- geometry editing: vertex handles ----
     const sess = App.ui.geomEdit;
     if (sess) {
@@ -473,6 +483,18 @@ function MapView() {
       hoverRef.current.textContent = txt;
     }
     if (!g) return;
+    if (g.mode === "bdmove" || g.mode === "bdresize") {
+      const [mx, my] = clientToMap(e);
+      const dx = mx - g.start[0], dy = my - g.start[1];
+      if (g.mode === "bdmove") {
+        Actions.setBackdrop({ x: g.orig.x + dx, y: g.orig.y + dy });
+      } else {
+        const ar = g.orig.w / g.orig.h || 1;
+        let w = Math.max(20, g.orig.w + dx);
+        Actions.setBackdrop({ w, h: w / ar });
+      }
+      return;
+    }
     if (g.mode === "vertex") {
       const sess = App.ui.geomEdit;
       if (sess && sess.rings[g.ri]) {
@@ -537,6 +559,7 @@ function MapView() {
     gesture.current = null;
     svgRef.current && svgRef.current.closest(".map-stage").classList.remove("panning");
     if (!g) return;
+    if (g.mode === "bdmove" || g.mode === "bdresize") { Actions.endStroke(); return; }
     if (g.mode === "vertex") { App.emit(); return; }
     if (g.mode === "label") {
       const dl = dragLabel.current;
@@ -815,6 +838,28 @@ function MapView() {
               );
             })}
           </g>
+          {/* ---- reference image backdrop for tracing (above fills, below borders) ---- */}
+          {ready && project && project.backdrop && project.backdrop.visible !== false && project.backdropHref && (() => {
+            const bd = project.backdrop;
+            const moving = App.ui.moveBackdrop;
+            const k = view.current.k;
+            return (
+              <g data-export-skip="1">
+                <image data-backdrop={moving ? "1" : undefined}
+                  pointerEvents={moving ? "auto" : "none"}
+                  href={project.backdropHref} x={bd.x} y={bd.y} width={bd.w} height={bd.h}
+                  opacity={bd.opacity == null ? 0.55 : bd.opacity}
+                  preserveAspectRatio="none"
+                  style={moving ? { cursor: "move" } : undefined}></image>
+                {moving && (
+                  <React.Fragment>
+                    <rect x={bd.x} y={bd.y} width={bd.w} height={bd.h} fill="none" stroke="#ff9f2e" strokeWidth={1.2 / k} strokeDasharray={`${5 / k} ${4 / k}`} pointerEvents="none"></rect>
+                    <rect data-bdresize="1" x={bd.x + bd.w - 6 / k} y={bd.y + bd.h - 6 / k} width={12 / k} height={12 / k} fill="#ff9f2e" stroke="#fff" strokeWidth={1 / k} style={{ cursor: "nwse-resize" }}></rect>
+                  </React.Fragment>
+                )}
+              </g>
+            );
+          })()}
           {ready && bm.staticBorders && (
             <g className="borders" pointerEvents="none">
               {settings.innerBorders !== false && bm.staticBorders.prov && <path d={bm.staticBorders.prov} fill="none" stroke={settings.borders} strokeOpacity="0.5" strokeWidth={bw * 0.6}></path>}

@@ -156,6 +156,9 @@
       currentYear: null,
       // ---- manual geometry repairs (applied over the base dataset on load) ----
       regionGeomEdits: { removed: {}, features: {} },
+      // ---- reference image backdrop for tracing (map-coordinate placement) ----
+      backdrop: null,                               // { x, y, w, h, opacity, visible } — small, in undo slice
+      backdropHref: null,                           // data URL — kept OUT of the undo slice (big)
       // ---- mid-level region layer model ----
       displayMode: "country",                       // country|province|stateRegion|historicalRegion|culturalRegion|geographicalRegion|politicalRegion|terrain
       activeSelectionMode: "province",              // province | region
@@ -174,7 +177,7 @@
       regions: p.regions, groups: p.groups || {}, labels: p.labels, years: p.years, snapshots: p.snapshots, currentYear: p.currentYear,
       displayMode: p.displayMode, activeSelectionMode: p.activeSelectionMode, activeRegionLayerId: p.activeRegionLayerId,
       regionLayers: p.regionLayers || [], customRegions: p.customRegions || {}, regionEdits: p.regionEdits || {},
-      regionGeomEdits: p.regionGeomEdits || { removed: {}, features: {} }
+      regionGeomEdits: p.regionGeomEdits || { removed: {}, features: {} }, backdrop: p.backdrop || null
     });
   }
   function applySlice(p, json) {
@@ -448,6 +451,45 @@
     Actions.mut((p) => Object.assign(p.settings, patch), opts);
   };
 
+  // ---------- reference image backdrop (for tracing) ----------
+  Actions.setBackdrop = function (patch, opts) {
+    Actions.mut((p) => { if (p.backdrop) Object.assign(p.backdrop, patch); }, Object.assign({ undo: false }, opts));
+  };
+  Actions.removeBackdrop = function () {
+    Actions.mut((p) => { p.backdrop = null; p.backdropHref = null; });
+  };
+  Actions.loadBackdropImage = function (file) {
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      const img = new Image();
+      img.onload = () => {
+        // fit the image inside the map frame, preserving aspect ratio, centred
+        const W = window.MAP_W, H = window.MAP_H;
+        const ar = img.width / img.height || 1;
+        let w = W, h = W / ar;
+        if (h > H) { h = H; w = H * ar; }
+        // downscale very large images to keep the project JSON reasonable
+        let href = reader.result;
+        if (img.width > 2200) {
+          const k = 2200 / img.width;
+          const cv = document.createElement("canvas");
+          cv.width = Math.round(img.width * k); cv.height = Math.round(img.height * k);
+          cv.getContext("2d").drawImage(img, 0, 0, cv.width, cv.height);
+          try { href = cv.toDataURL("image/jpeg", 0.82); } catch (e) {}
+        }
+        Actions.mut((p) => {
+          p.backdropHref = href;
+          p.backdrop = { x: (W - w) / 2, y: (H - h) / 2, w, h, opacity: 0.55, visible: true };
+        });
+        Actions.toast(t("backdrop.loaded"));
+      };
+      img.onerror = () => Actions.toast(t("toast.importError"));
+      img.src = reader.result;
+    };
+    reader.readAsDataURL(file);
+  };
+
   // ---------- timeline ----------
   function snapOf(p) {
     return JSON.parse(JSON.stringify({ states: p.states, stateOrder: p.stateOrder, regions: p.regions, groups: p.groups || {}, labels: p.labels }));
@@ -525,7 +567,17 @@
   // ---------- bootstrap ----------
   Actions.newProject = function (basemapId, opts = {}) {
     App.project = newProjectData(basemapId);
-    if (opts.customGeo) App.project.customGeo = opts.customGeo;
+    if (opts.customGeo) {
+      // give every imported feature a stable id so geometry edits key off it
+      try {
+        (opts.customGeo.features || []).forEach((f, i) => {
+          const p = f.properties || (f.properties = {});
+          const id = String((f.id != null ? f.id : (p.id != null ? p.id : "")) || ("c" + (i + 1)));
+          f.id = id; p.id = id;
+        });
+      } catch (e) {}
+      App.project.customGeo = opts.customGeo;
+    }
     App.undoStack.length = 0;
     App.redoStack.length = 0;
     App.ui.selection = [];

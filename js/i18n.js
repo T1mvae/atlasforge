@@ -282,7 +282,22 @@ window.I18N = {
     "label.auto": "auto",
     "label.resetPos": "Reset label position",
     "menu.exportRegions": "Export regions (GeoJSON)",
-    "menu.exportRegionsSimplified": "Export regions — simplified (GeoJSON)"
+    "menu.exportRegionsSimplified": "Export regions — simplified (GeoJSON)",
+    "tmpl.owb.name": "Old World Blues (Earth)",
+    "tmpl.owb.desc": "Post-nuclear real Earth, whole world (~4,600 real units). Paint, merge and split it into Old World Blues factions and states — full geometry editing, rivers/lakes/relief as reference.",
+    "tmpl.blank.name": "Blank canvas",
+    "tmpl.blank.desc": "An empty map. Load a reference image (e.g. a Westeros / Essos map) as a backdrop and trace your own world with the Draw tool. Every drawn region is fully editable.",
+    "feat.draw": "draw your own",
+    "backdrop.section": "Reference image",
+    "backdrop.load": "Load reference image…",
+    "backdrop.hint": "Shows a faint image over the map so you can trace regions with the Draw tool.",
+    "backdrop.show": "Show backdrop",
+    "backdrop.move": "Move / resize backdrop",
+    "backdrop.opacity": "Backdrop opacity",
+    "backdrop.fit": "Fit to map",
+    "backdrop.replace": "Replace…",
+    "backdrop.remove": "Remove",
+    "backdrop.loaded": "Reference image loaded — trace it with the Draw tool"
   },
   ru: {
     "app.title": "AtlasForge",
@@ -566,6 +581,21 @@ window.I18N = {
     "label.auto": "авто",
     "label.resetPos": "Сбросить позицию подписи",
     "menu.exportRegions": "Экспорт регионов (GeoJSON)",
-    "menu.exportRegionsSimplified": "Экспорт регионов — упрощённый (GeoJSON)"
+    "menu.exportRegionsSimplified": "Экспорт регионов — упрощённый (GeoJSON)",
+    "tmpl.owb.name": "Old World Blues (Земля)",
+    "tmpl.owb.desc": "Постъядерная реальная Земля, весь мир (~4 600 реальных единиц). Крась, объединяй и режь её на фракции и государства Old World Blues — полное редактирование геометрии, реки/озёра/рельеф как подложка.",
+    "tmpl.blank.name": "Пустой холст",
+    "tmpl.blank.desc": "Пустая карта. Загрузите изображение-образец (например, карту Вестероса / Эссоса) как подложку и обведите свой мир инструментом «Рисовать». Любой нарисованный регион полностью редактируемый.",
+    "feat.draw": "рисуй свой",
+    "backdrop.section": "Картинка-подложка",
+    "backdrop.load": "Загрузить картинку…",
+    "backdrop.hint": "Показывает полупрозрачную картинку поверх карты, чтобы обводить регионы инструментом «Рисовать».",
+    "backdrop.show": "Показывать подложку",
+    "backdrop.move": "Двигать / масштабировать подложку",
+    "backdrop.opacity": "Прозрачность подложки",
+    "backdrop.fit": "Под размер карты",
+    "backdrop.replace": "Заменить…",
+    "backdrop.remove": "Удалить",
+    "backdrop.loaded": "Картинка загружена — обведите её инструментом «Рисовать»"
   }
 };

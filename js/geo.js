@@ -36,6 +36,28 @@
         "https://raw.githubusercontent.com/mtraynham/natural-earth-topo/master/topojson/ne_10m_admin_1_states_provinces.json"
       ]
     },
+    // Old World Blues: post-nuclear REAL Earth (whole world). Same real admin-1
+    // geometry as the base — paint/merge/split it into OWB factions & states.
+    "owb": {
+      kind: "localgeo", approx: "~4600",
+      name: "Old World Blues (Earth)",
+      dataset: "/data/world_admin1.geojson",
+      physical: {
+        rivers: "/data/world_rivers.geojson",
+        lakes: "/data/world_lakes.geojson",
+        mountains: "/data/world_mountains.geojson"
+      },
+      type: "region-grid",
+      supportsCountries: true, supportsProvinceGroups: true, supportsCustomOwnership: true
+    },
+    // Blank canvas: empty editable map. Load a reference image as a backdrop and
+    // trace a brand-new world (e.g. Westeros & Essos) with the draw tool.
+    "blank": {
+      kind: "blank", approx: "0",
+      name: "Blank canvas",
+      type: "region-grid",
+      supportsCountries: true, supportsProvinceGroups: true, supportsCustomOwnership: true
+    },
     "hybrid": { kind: "hybrid", approx: "~1100", urls: [] },
     "strategic": { kind: "strategic", approx: "~1300", urls: [] },
     "provinces": {
@@ -436,8 +458,9 @@
     return { d, c, b, area };
   }
 
-  function processGeo(geojson, kind) {
-    const proj = buildProjection(geojson);
+  function processGeo(geojson, kind, opts) {
+    opts = opts || {};
+    const proj = opts.proj || buildProjection(geojson);
     const path = d3.geoPath(proj);
     const features = [];
     const byId = {};
@@ -458,9 +481,60 @@
       features.push(feat);
       byId[id] = feat;
     });
-    const sphere = path({ type: "Sphere" });
-    const graticule = path(d3.geoGraticule10());
+    const sphere = opts.geographic === false ? "" : path({ type: "Sphere" });
+    const graticule = opts.geographic === false ? "" : path(d3.geoGraticule10());
     return { features, byId, sphere, graticule, path, proj };
+  }
+
+  // Pick a projection for an arbitrary local GeoJSON: real lon/lat -> Natural
+  // Earth; fantasy / pixel-coordinate data -> planar identity fit to the data.
+  function pickLocalProjection(gj) {
+    let minx = Infinity, miny = Infinity, maxx = -Infinity, maxy = -Infinity, n = 0;
+    const scan = (c) => {
+      if (typeof c[0] === "number") { n++; if (c[0] < minx) minx = c[0]; if (c[0] > maxx) maxx = c[0]; if (c[1] < miny) miny = c[1]; if (c[1] > maxy) maxy = c[1]; }
+      else for (let i = 0; i < c.length; i++) scan(c[i]);
+    };
+    (gj.features || []).forEach((f) => { if (f.geometry && f.geometry.coordinates) scan(f.geometry.coordinates); });
+    const lonlat = n === 0 || (minx >= -180.5 && maxx <= 180.5 && miny >= -90.5 && maxy <= 90.5);
+    if (lonlat) return { proj: buildProjection(gj), geographic: true };
+    return { proj: d3.geoIdentity().reflectY(false).fitExtent([[12, 12], [W - 12, H - 12]], gj), geographic: false };
+  }
+  function identityFrame() {
+    const bw = 1000, bh = Math.round(1000 * H / W);
+    const bbox = { type: "FeatureCollection", features: [{ type: "Feature", properties: {},
+      geometry: { type: "Polygon", coordinates: [[[0, 0], [bw, 0], [bw, bh], [0, bh], [0, 0]]] } }] };
+    return { proj: d3.geoIdentity().reflectY(false).fitExtent([[12, 12], [W - 12, H - 12]], bbox), geographic: false, frame: [bw, bh] };
+  }
+
+  // Shared builder for fully-editable region maps (localgeo / custom import /
+  // blank canvas): apply user geometry edits over the base collection, build a
+  // client topology (so region / coast / country borders are separate layers)
+  // and return a result with `raw` (lon-lat collection for editing & export).
+  function buildEditableResult(baseGj, project, def, projInfo, cacheKey) {
+    const edits = project.regionGeomEdits || null;
+    let eff = (window.GeomEdit && edits)
+      ? window.GeomEdit.applyToCollection(baseGj, edits)
+      : { type: "FeatureCollection", features: (baseGj.features || []).map((f, i) => ({
+          type: "Feature", id: String((f.id != null ? f.id : (f.properties || {}).id) || ("r" + i)),
+          geometry: f.geometry, properties: f.properties })) };
+    eff = { type: "FeatureCollection", features: eff.features.map((f) => ({
+      type: "Feature", id: f.id, geometry: rewindForD3(f.geometry), properties: f.properties })) };
+    let topo = null, topoObj = null;
+    if (topojson.topology && eff.features.length) {
+      const q = projInfo.geographic ? 1e6 : 1e5;
+      const build = () => topojson.topology({ regions: eff }, q);
+      const tk = cacheKey ? ("topo:" + cacheKey + ":" + (window.GeomEdit ? window.GeomEdit.editsKey(project) : "0")) : null;
+      try {
+        topo = tk ? (Geo.cache[tk] || (Geo.cache[tk] = build())) : build();
+        topoObj = topo.objects.regions;
+      } catch (e) { console.warn("editable topology failed", e); topo = null; topoObj = null; }
+    }
+    const result = processGeo(topo ? topojson.feature(topo, topoObj) : eff, "geo",
+      { proj: projInfo.proj, geographic: projInfo.geographic });
+    result.features.sort((a, b) => b.area - a.area);
+    result.raw = eff;
+    result.physicalDefs = def.physical || null;
+    return { result, topo, topoObj };
   }
 
   const Geo = (window.Geo = {});
@@ -853,43 +927,28 @@
       if (id === "custom" || !def || def.kind === "custom") {
         const gj = project.customGeo;
         if (!gj) throw new Error("no custom geo");
-        result = processGeo(gj, "custom");
+        // imported GeoJSON is now a fully editable region map (topology + edits)
+        const built = buildEditableResult(gj, project, def || {}, pickLocalProjection(gj), null);
+        result = built.result; topo = built.topo; topoObj = built.topoObj;
+      } else if (def.kind === "blank") {
+        // empty editable canvas for tracing a brand-new world over a backdrop
+        const frame = identityFrame();
+        const built = buildEditableResult({ type: "FeatureCollection", features: [] },
+          project, def, frame, null);
+        result = built.result; topo = built.topo; topoObj = built.topoObj;
+        result.blankFrame = frame.frame;
       } else if (def.kind === "provgrid") {
         result = await buildProvinceGrid();
       } else if (def.kind === "voronoi") {
         result = await buildVoronoiProvinces(def.provinceCount || 4000);
       } else if (def.kind === "localgeo") {
-        // local geographic GeoJSON (lon/lat): the AtlasForge world region grids.
-        // User geometry edits (merge/split/draw/modify) are applied over the base
-        // dataset, then a client-side topology is built so region borders,
-        // coastlines and country (owner) borders render as SEPARATE mesh layers.
+        // local geographic GeoJSON (lon/lat): real admin units & region grids.
+        // Edits are applied over the base; a client topology makes region /
+        // coast / country borders render as SEPARATE layers, with full editing.
         const ck = "localgeo:" + def.dataset;
         const gj = Geo.cache[ck] || (Geo.cache[ck] = await fetchFirst(localCandidates(def.dataset)));
-        const edits = project.regionGeomEdits || null;
-        let eff = (window.GeomEdit && edits)
-          ? window.GeomEdit.applyToCollection(gj, edits)
-          : { type: "FeatureCollection",
-              features: gj.features.map((f) => ({ type: "Feature",
-                id: String((f.id != null ? f.id : (f.properties || {}).id) || ""),
-                geometry: f.geometry, properties: f.properties })) };
-        eff = { type: "FeatureCollection",
-                features: eff.features.map((f) => ({ type: "Feature", id: f.id,
-                  geometry: rewindForD3(f.geometry), properties: f.properties })) };
-        const tk = "topo:" + def.dataset + ":" + (window.GeomEdit ? window.GeomEdit.editsKey(project) : "0");
-        if (topojson.topology) {
-          try {
-            // 1e6 grid (≈0.0004°): coarser quantization collapses tiny island
-            // rings into degenerate points that d3 then fills as the whole sphere
-            topo = Geo.cache[tk] || (Geo.cache[tk] = topojson.topology({ regions: eff }, 1e6));
-            topoObj = topo.objects.regions;
-          } catch (e) { console.warn("localgeo topology failed", e); topo = null; topoObj = null; }
-        }
-        result = processGeo(topo ? topojson.feature(topo, topoObj) : eff, "geo");
-        // draw order: big regions first, small last — overlapping bad data and
-        // draft overlays stay visible and clickable instead of being buried
-        result.features.sort((a, b) => b.area - a.area);
-        result.raw = eff;            // lon/lat collection for editing tools & export
-        result.physicalDefs = def.physical || null;
+        const built = buildEditableResult(gj, project, def, { proj: buildProjection(gj), geographic: true }, def.dataset);
+        result = built.result; topo = built.topo; topoObj = built.topoObj;
       } else if (def.kind === "pixelgeo") {
         const provPath = project.provinceDataset || def.provinceDataset || project.baseMapDataset || def.dataset;
         const provCandidates = localCandidates(provPath)

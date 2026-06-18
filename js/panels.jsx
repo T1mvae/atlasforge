@@ -284,8 +284,37 @@ function MapTab() {
       <Check label={t("map.showLabels")} checked={s.showLabels} onChange={(v) => set({ showLabels: v })}></Check>
       <Check label={t("map.showFlags")} checked={s.showFlags} onChange={(v) => set({ showFlags: v })}></Check>
       <Check label={t("map.showLegend")} checked={App.ui.showLegend} onChange={(v) => Actions.ui({ showLegend: v })}></Check>
+
+      {/* ---- reference image backdrop (tracing) ---- */}
+      <div className="props-section-title">{t("backdrop.section")}</div>
+      {!p.backdrop ? (
+        <React.Fragment>
+          <button className="btn outline" onClick={() => pickImageFile((f) => Actions.loadBackdropImage(f))}>{t("backdrop.load")}</button>
+          <div className="muted" style={{ fontSize: 11 }}>{t("backdrop.hint")}</div>
+        </React.Fragment>
+      ) : (
+        <React.Fragment>
+          <Check label={t("backdrop.show")} checked={p.backdrop.visible !== false} onChange={(v) => Actions.setBackdrop({ visible: v })}></Check>
+          <Check label={t("backdrop.move")} checked={!!App.ui.moveBackdrop} onChange={(v) => Actions.ui({ moveBackdrop: v })}></Check>
+          <Field label={t("backdrop.opacity") + " — " + Math.round((p.backdrop.opacity == null ? 0.55 : p.backdrop.opacity) * 100) + "%"}>
+            <input type="range" className="range" min="0.05" max="1" step="0.05" value={p.backdrop.opacity == null ? 0.55 : p.backdrop.opacity} onChange={(e) => Actions.setBackdrop({ opacity: +e.target.value })}></input>
+          </Field>
+          <div className="field-row" style={{ flexWrap: "wrap", gap: 4 }}>
+            <button className="btn outline" style={{ fontSize: 11 }} onClick={() => Actions.setBackdrop({ x: 0, y: 0, w: MAP_W, h: MAP_H })}>{t("backdrop.fit")}</button>
+            <button className="btn outline" style={{ fontSize: 11 }} onClick={() => pickImageFile((f) => Actions.loadBackdropImage(f))}>{t("backdrop.replace")}</button>
+            <button className="btn outline danger" style={{ fontSize: 11 }} onClick={() => Actions.removeBackdrop()}>{t("backdrop.remove")}</button>
+          </div>
+        </React.Fragment>
+      )}
     </div>
   );
+}
+
+function pickImageFile(cb) {
+  const inp = document.createElement("input");
+  inp.type = "file"; inp.accept = "image/*";
+  inp.onchange = () => { if (inp.files[0]) cb(inp.files[0]); };
+  inp.click();
 }
 
 // ---------- State tab ----------

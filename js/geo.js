@@ -41,8 +41,23 @@
     // each keeps its source colour). Fully editable; pixel coordinates.
     "owb": {
       kind: "localgeo", approx: "~1800",
-      name: "Old World Blues (North America)",
+      name: "Old World Blues (game projection)",
       dataset: "/data/owb_north_america.geojson",
+      type: "region-grid",
+      supportsCountries: true, supportsProvinceGroups: true, supportsCustomOwnership: true
+    },
+    // Same OWB regions georeferenced to real lon/lat (tools/owb_georef.py, thin-
+    // plate spline from ~37 control points) so the continent sits at its true
+    // world position and lines up with real rivers/lakes. Approximate.
+    "owb_geo": {
+      kind: "localgeo", approx: "~1800",
+      name: "Old World Blues (geo-referenced)",
+      dataset: "/data/owb_north_america_geo.geojson",
+      physical: {
+        rivers: "/data/world_rivers.geojson",
+        lakes: "/data/world_lakes.geojson",
+        mountains: "/data/world_mountains.geojson"
+      },
       type: "region-grid",
       supportsCountries: true, supportsProvinceGroups: true, supportsCustomOwnership: true
     },

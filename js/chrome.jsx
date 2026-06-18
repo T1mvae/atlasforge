@@ -229,7 +229,8 @@ function TemplatesModal() {
   // The primary map plus the themed / blank starting points (all fully editable).
   const cards = [
     { id: "admin1", name: t("tmpl.admin1.name"), desc: t("tmpl.admin1.desc"), count: "~4600", feats: ["region-grid", "physical", "countries"] },
-    { id: "owb", name: t("tmpl.owb.name"), desc: t("tmpl.owb.desc"), count: "~4600", feats: ["region-grid", "physical", "countries"] },
+    { id: "owb", name: t("tmpl.owb.name"), desc: t("tmpl.owb.desc"), count: "~1800", feats: ["region-grid", "countries"] },
+    { id: "owb_geo", name: t("tmpl.owbgeo.name"), desc: t("tmpl.owbgeo.desc"), count: "~1800", feats: ["region-grid", "physical", "countries"] },
     { id: "blank", name: t("tmpl.blank.name"), desc: t("tmpl.blank.desc"), count: "0", feats: ["draw", "physical"] }
   ];
   // Other base maps kept available but out of the main gallery.

@@ -10,15 +10,31 @@
   }
   window.downloadBlob = download;
 
+  // Class-based map styling lives in editor.css, which is NOT present in a
+  // standalone export — embed the rules so country labels keep their serif
+  // font / uppercase / outline / shadow in both the .svg file and the raster.
+  function embeddedStyle() {
+    const fontUi = (getComputedStyle(document.documentElement).getPropertyValue("--font-ui") || "").trim()
+      || '-apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif';
+    return ":root{--font-ui:" + fontUi + ";}"
+      + '.country-label{font-family:Georgia,"Times New Roman","Noto Serif","Liberation Serif",serif;'
+      + "font-weight:700;text-transform:uppercase;fill:#f1f3f2;stroke:#26323a;paint-order:stroke fill;"
+      + "filter:drop-shadow(0 1px 1.5px rgba(0,0,0,0.45));}"
+      + ".country-label.plain{font-family:var(--font-ui);text-transform:none;font-weight:600;}"
+      + ".mapregion,.region{stroke-linejoin:round;}";
+  }
+
   function buildSVGString() {
     const live = document.getElementById("map-svg");
     if (!live) return null;
+    const SVGNS = "http://www.w3.org/2000/svg";
+    const W = window.MAP_W, H = window.MAP_H;
     const clone = live.cloneNode(true);
     clone.removeAttribute("class");
-    clone.setAttribute("xmlns", "http://www.w3.org/2000/svg");
+    clone.setAttribute("xmlns", SVGNS);
     clone.setAttribute("xmlns:xlink", "http://www.w3.org/1999/xlink");
-    clone.setAttribute("width", window.MAP_W);
-    clone.setAttribute("height", window.MAP_H);
+    clone.setAttribute("width", W);
+    clone.setAttribute("height", H);
     // strip selection highlights & hover-only ui
     clone.querySelectorAll(".region").forEach((p) => p.classList.remove("sel"));
     clone.querySelectorAll(".mapregion").forEach((p) => p.classList.remove("sel"));
@@ -26,6 +42,17 @@
     // reset zoom transform so the full map exports
     const g = clone.querySelector("#zoom-root");
     if (g) g.setAttribute("transform", "translate(0,0) scale(1)");
+    // sea background so the standalone SVG isn't transparent
+    const sea = (window.App && window.App.project && window.App.project.settings.sea) || "#b7cfdf";
+    const bg = document.createElementNS(SVGNS, "rect");
+    bg.setAttribute("x", 0); bg.setAttribute("y", 0);
+    bg.setAttribute("width", W); bg.setAttribute("height", H);
+    bg.setAttribute("fill", sea);
+    clone.insertBefore(bg, clone.firstChild);
+    // embedded stylesheet (must be first so it applies to everything)
+    const styleEl = document.createElementNS(SVGNS, "style");
+    styleEl.textContent = embeddedStyle();
+    clone.insertBefore(styleEl, clone.firstChild);
     const ser = new XMLSerializer();
     return ser.serializeToString(clone);
   }
@@ -70,7 +97,8 @@
   Exports.svg = function () {
     const str = buildSVGString();
     if (!str) return;
-    download(new Blob([str], { type: "image/svg+xml" }), fileBase() + ".svg");
+    const doc = '<?xml version="1.0" encoding="UTF-8" standalone="no"?>\n' + str;
+    download(new Blob([doc], { type: "image/svg+xml;charset=utf-8" }), fileBase() + ".svg");
   };
 
   Exports.png = function (scale = 2, withLegend = true) {
@@ -78,12 +106,14 @@
     if (!str) return;
     const App = window.App;
     const img = new Image();
-    const url = URL.createObjectURL(new Blob([str], { type: "image/svg+xml" }));
+    const url = URL.createObjectURL(new Blob([str], { type: "image/svg+xml;charset=utf-8" }));
     img.onload = function () {
       const canvas = document.createElement("canvas");
-      canvas.width = window.MAP_W * scale;
-      canvas.height = window.MAP_H * scale;
+      canvas.width = Math.round(window.MAP_W * scale);
+      canvas.height = Math.round(window.MAP_H * scale);
       const ctx = canvas.getContext("2d");
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = "high";
       ctx.fillStyle = App.project.settings.sea;
       ctx.fillRect(0, 0, canvas.width, canvas.height);
       ctx.drawImage(img, 0, 0, canvas.width, canvas.height);

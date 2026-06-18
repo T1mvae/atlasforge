@@ -102,6 +102,7 @@ function TopBar() {
       </MenuButton>
       <MenuButton id="export" label={t("menu.export")}>
         <MenuItem label={t("menu.exportPng")} onClick={() => Exports.png(2, true)}></MenuItem>
+        <MenuItem label={t("menu.exportPngHi")} onClick={() => Exports.png(4, true)}></MenuItem>
         <MenuItem label={t("menu.exportSvg")} onClick={() => Exports.svg()}></MenuItem>
         <MenuItem label={t("menu.exportJson")} onClick={() => Exports.json()}></MenuItem>
         {window.GeomEdit && GeomEdit.enabled() && <div className="menu-sep"></div>}

@@ -43,6 +43,7 @@
       kind: "localgeo", approx: "~1665",
       name: "Old World Blues (game projection)",
       dataset: "/data/owb_states.geojson",
+      physicalDataset: "/data/owb_physical.geojson",
       type: "region-grid",
       supportsCountries: true, supportsProvinceGroups: true, supportsCustomOwnership: true
     },
@@ -373,7 +374,7 @@
       const lbl = p.labelX != null ? toScreen(p.labelX, p.labelY) : null;
       if (typ === "river") out.rivers.push(Object.assign(base, { d }));
       else if (typ === "lake") out.lakes.push(Object.assign(base, { d, c: lbl }));
-      else if (typ === "mountain_range" || typ === "desert") out.relief.push(Object.assign(base, { typ, d, c: lbl }));
+      else if (typ === "mountain_range" || typ === "desert" || typ === "forest") out.relief.push(Object.assign(base, { typ, d, c: lbl }));
     });
     return out;
   }
@@ -555,6 +556,7 @@
     result.features.sort((a, b) => b.area - a.area);
     result.raw = eff;
     result.physicalDefs = def.physical || null;
+    result.physicalDatasets = def.physicalDataset ? localCandidates(def.physicalDataset) : null;
     return { result, topo, topoObj };
   }
 

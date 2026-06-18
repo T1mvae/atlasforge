@@ -151,6 +151,7 @@
       regions: {},
       groups: {},
       labels: [],
+      featLabels: {},                               // featureId -> { dx, dy, angle, size, hidden } (per-region name overrides)
       years: [],
       snapshots: {},
       currentYear: null,
@@ -174,7 +175,7 @@
   function politicalSlice(p) {
     return JSON.stringify({
       name: p.name, settings: p.settings, states: p.states, stateOrder: p.stateOrder,
-      regions: p.regions, groups: p.groups || {}, labels: p.labels, years: p.years, snapshots: p.snapshots, currentYear: p.currentYear,
+      regions: p.regions, groups: p.groups || {}, labels: p.labels, featLabels: p.featLabels || {}, years: p.years, snapshots: p.snapshots, currentYear: p.currentYear,
       displayMode: p.displayMode, activeSelectionMode: p.activeSelectionMode, activeRegionLayerId: p.activeRegionLayerId,
       regionLayers: p.regionLayers || [], customRegions: p.customRegions || {}, regionEdits: p.regionEdits || {},
       regionGeomEdits: p.regionGeomEdits || { removed: {}, features: {} }, backdrop: p.backdrop || null
@@ -439,6 +440,20 @@
   };
   Actions.deleteLabel = function (id) {
     Actions.mut((p) => { p.labels = p.labels.filter((l) => l.id !== id); });
+  };
+
+  // ---------- per-region name label overrides (move / rotate / size / hide) ----------
+  Actions.setFeatLabel = function (id, patch, opts) {
+    Actions.mut((p) => {
+      if (!p.featLabels) p.featLabels = {};
+      const cur = Object.assign({}, p.featLabels[id], patch);
+      // drop keys that are back to default so the store stays sparse
+      for (const k of Object.keys(cur)) if (cur[k] == null) delete cur[k];
+      if (Object.keys(cur).length) p.featLabels[id] = cur; else delete p.featLabels[id];
+    }, opts);
+  };
+  Actions.clearFeatLabel = function (id) {
+    Actions.mut((p) => { if (p.featLabels) delete p.featLabels[id]; });
   };
 
   // ---------- settings / style ----------

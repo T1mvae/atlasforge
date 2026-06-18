@@ -35,7 +35,18 @@ defn_keys = np.array(defn_keys, np.uint32); defn_pid = np.array(defn_pid, np.int
 order = np.argsort(defn_keys); defn_keys = defn_keys[order]; defn_pid = defn_pid[order]
 print("definition: %d provinces" % len(defn_pid), flush=True)
 
-# ---- states: id, friendly name (from filename), owner, category, provinces
+# ---- localisation: STATE_KEY -> real name (HOI4 yml: ` STATE_1:0 "The Hub"`)
+loc = {}
+_loc_re = re.compile(r'(STATE_[A-Za-z0-9_]+)\s*:\s*\d*\s*"([^"]*)"')
+for yf in glob.glob(os.path.join(SRC, "states", "*_l_english.yml")):
+    for line in open(yf, encoding="utf-8-sig", errors="ignore"):
+        lm = _loc_re.search(line)
+        if lm and lm.group(2).strip():
+            loc[lm.group(1)] = lm.group(2).strip()
+print("localisation: %d state names" % len(loc), flush=True)
+
+# ---- states: id, real name, owner, category, provinces
+# Name source, best first: localisation[STATE_KEY] > filename "<id>-Name.txt" > "State <id>"
 prov_state = {}; states = {}
 for fp in glob.glob(os.path.join(SRC, "states", "*.txt")):
     txt = open(fp, encoding="utf-8", errors="ignore").read()
@@ -46,7 +57,10 @@ for fp in glob.glob(os.path.join(SRC, "states", "*.txt")):
     sid = int(m.group(1))
     base = os.path.basename(fp)[:-4]
     nm = base.split("-", 1)[1].strip() if "-" in base else base
-    if nm.lower() == "state":
+    km = re.search(r'\bname\s*=\s*"(STATE_[A-Za-z0-9_]+)"', txt)
+    if km and km.group(1) in loc:
+        nm = loc[km.group(1)]
+    elif nm.lower() == "state":
         nm = "State %d" % sid
     owner = (re.search(r"\bowner\s*=\s*(\w+)", txt) or [None, None])[1] if re.search(r"\bowner\s*=\s*(\w+)", txt) else None
     om = re.search(r"\bowner\s*=\s*(\w+)", txt); owner = om.group(1) if om else None

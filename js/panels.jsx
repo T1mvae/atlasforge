@@ -261,11 +261,15 @@ function MapTab() {
       {supportsRegions && <Check label={t("map.showRegionBorders")} checked={s.showRegionBorders !== false} onChange={(v) => set({ showRegionBorders: v })}></Check>}
 
       <div className="props-section-title">{t("props.map")}</div>
-      {App.basemap.physical && (
+      {(App.basemap.physical || (App.physical && App.physical.status === "ready")) && (
         <React.Fragment>
           <Check label={t("map.showRivers")} checked={s.showRivers !== false} onChange={(v) => set({ showRivers: v })}></Check>
           <Check label={t("map.showLakes")} checked={s.showLakes !== false} onChange={(v) => set({ showLakes: v })}></Check>
           <Check label={t("map.showMountains")} checked={s.showMountains !== false} onChange={(v) => set({ showMountains: v })}></Check>
+          {App.physical && App.physical.status === "ready" && App.physical.relief.some((f) => f.typ === "forest") &&
+            <Check label={t("map.showForest")} checked={s.showForest !== false} onChange={(v) => set({ showForest: v })}></Check>}
+          {App.physical && App.physical.status === "ready" && App.physical.relief.some((f) => f.typ === "desert") &&
+            <Check label={t("map.showDesert")} checked={s.showDesert !== false} onChange={(v) => set({ showDesert: v })}></Check>}
         </React.Fragment>
       )}
       <Check label={t("map.provinceTint")} checked={s.provinceTint} onChange={(v) => set({ provinceTint: v })}></Check>
@@ -356,7 +360,7 @@ function StateTab() {
             </Field>
             <Field label={t("label.rotation") + " — " + (lsv.angle != null ? lsv.angle + "°" : t("label.auto"))}>
               <div className="field-row">
-                <input type="range" className="range" min="-45" max="45" step="1" value={lsv.angle != null ? lsv.angle : 0} onChange={(e) => setLS({ angle: +e.target.value })}></input>
+                <input type="range" className="range" min="-180" max="180" step="1" value={lsv.angle != null ? lsv.angle : 0} onChange={(e) => setLS({ angle: +e.target.value })}></input>
                 {lsv.angle != null && <button className="btn outline" style={{ height: 22, fontSize: 10 }} onClick={() => setLS({ angle: null })}>{t("label.auto")}</button>}
               </div>
             </Field>
@@ -405,6 +409,31 @@ function LabelEditor({ id }) {
         <Check label="Bold" checked={l.bold} onChange={(v) => set({ bold: v })}></Check>
       </div>
       <button className="btn outline danger" onClick={() => { Actions.deleteLabel(id); Actions.ui({ selLabel: null }); }}>✕ {t("misc.none") === "—" ? (App.ui.lang === "ru" ? "Удалить подпись" : "Delete label") : "Delete"}</button>
+    </div>
+  );
+}
+
+// ---------- per-region name label editor (move / rotate / size / hide) ----------
+function FeatLabelEditor({ id }) {
+  const p = App.project;
+  const ov = (p.featLabels || {})[id] || {};
+  const set = (patch) => Actions.setFeatLabel(id, patch, { undo: false });
+  const baseId = id.indexOf("L:") === 0 ? id.slice(2) : id;
+  const f = App.basemap.byId && App.basemap.byId[baseId];
+  const nm = (f && f.name) || (App.regionData && App.regionData.byId && App.regionData.byId[baseId] && RegionModel.displayName(App.regionData.byId[baseId])) || baseId;
+  return (
+    <div className="props-body">
+      <div className="props-section-title">{t("label.section")}</div>
+      <div className="muted" style={{ marginBottom: 8 }}>{nm}</div>
+      <Check label={t("label.hidden")} checked={!!ov.hidden} onChange={(v) => set({ hidden: v || null })}></Check>
+      <Field label={t("label.size") + " — " + (ov.size ? ov.size : t("label.auto"))}>
+        <input type="range" className="range" min="0" max="48" step="1" value={ov.size || 0} onChange={(e) => set({ size: +e.target.value || null })}></input>
+      </Field>
+      <Field label={t("label.rotation") + " — " + (ov.angle ? ov.angle + "°" : "0°")}>
+        <input type="range" className="range" min="-180" max="180" step="1" value={ov.angle || 0} onChange={(e) => set({ angle: +e.target.value || null })}></input>
+      </Field>
+      <div className="muted" style={{ fontSize: 11, margin: "6px 0" }}>{t("label.dragHint")}</div>
+      <button className="btn outline" onClick={() => Actions.clearFeatLabel(id)}>{t("label.reset")}</button>
     </div>
   );
 }
@@ -502,6 +531,7 @@ function RegionTab() {
   const p = App.project;
   if (App.ui.selectMode === "region") return <RegionPropsPanel></RegionPropsPanel>;
   const sel = App.ui.selection;
+  if (App.ui.selFeatLabel) return <FeatLabelEditor id={App.ui.selFeatLabel}></FeatLabelEditor>;
   if (App.ui.selLabel) return <LabelEditor id={App.ui.selLabel}></LabelEditor>;
   if (!sel.length) return <div className="props-body"><div className="muted">{t("region.none")}</div></div>;
 

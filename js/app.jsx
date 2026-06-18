@@ -36,7 +36,7 @@ function AppRoot() {
         if (App.ui.geomEdit) { window.GeomEdit && GeomEdit.cancelEdit(); return; }
         if (App.ui.present) { Actions.ui({ present: false }); return; }
         if (App.ui.modal && App.project) { Actions.ui({ modal: null }); return; }
-        Actions.ui({ selLabel: null });
+        Actions.ui({ selLabel: null, selFeatLabel: null });
         Actions.clearRegionSelection();
         Actions.select([], false);
         return;
@@ -48,6 +48,7 @@ function AppRoot() {
       if (k === "+" || k === "=") { window.MapAPI && MapAPI.zoomBy(1.4); return; }
       if (k === "-") { window.MapAPI && MapAPI.zoomBy(1 / 1.4); return; }
       if (k === "delete" || k === "backspace") {
+        if (App.ui.selFeatLabel) { Actions.setFeatLabel(App.ui.selFeatLabel, { hidden: true }); Actions.ui({ selFeatLabel: null }); return; }
         if (App.ui.selLabel) { Actions.deleteLabel(App.ui.selLabel); Actions.ui({ selLabel: null }); return; }
         if (App.ui.selectMode === "region" && App.ui.regionSelection.length) { Actions.assignRegions(App.ui.regionSelection, null); return; }
         if (App.ui.selection.length) { Actions.assign(App.ui.selection, null); return; }

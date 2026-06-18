@@ -183,6 +183,24 @@ function computeStateLabels(project, basemap) {
   return out;
 }
 
+// Better label anchor than the bare area-weighted centroid: for crescent /
+// donut / multi-island shapes the centroid can fall in a bay or in the sea, so
+// nudge it to an interior point (bbox centre if that lands inside the polygon).
+// Cached on the feature (geometry is stable per basemap load).
+function featAnchor(f) {
+  if (f._anchor) return f._anchor;
+  let a = f.c;
+  try {
+    const ctx = featAnchor._ctx || (featAnchor._ctx = document.createElement("canvas").getContext("2d"));
+    if (!f._p2d && f.d) f._p2d = new Path2D(f.d);
+    if (f._p2d && f.b && !ctx.isPointInPath(f._p2d, a[0], a[1])) {
+      const bx = (f.b[0][0] + f.b[1][0]) / 2, by = (f.b[0][1] + f.b[1][1]) / 2;
+      if (ctx.isPointInPath(f._p2d, bx, by)) a = [bx, by];
+    }
+  } catch (e) { /* keep centroid */ }
+  return (f._anchor = a);
+}
+
 function MapView() {
   useStore();
   const svgRef = useRef(null);
@@ -378,6 +396,7 @@ function MapView() {
     const regId = e.target.dataset ? e.target.dataset.regionId : null;
     const lbl = e.target.dataset ? e.target.dataset.label : null;
     const slbl = e.target.dataset ? e.target.dataset.slabel : null;
+    const flbl = e.target.dataset ? e.target.dataset.flabel : null;
     const [vx, vy] = clientToViewbox(e);
     const mapPt = clientToMap(e);
 
@@ -432,6 +451,14 @@ function MapView() {
       return;
     }
 
+    if ((tool === "select" || tool === "label") && flbl) {
+      const ov = (App.project.featLabels || {})[flbl] || {};
+      dragLabel.current = { kind: "feat", id: flbl, start: mapPt, moved: false, orig: [ov.dx || 0, ov.dy || 0] };
+      gesture.current = { mode: "label" };
+      Actions.beginStroke();
+      e.stopPropagation();
+      return;
+    }
     if (tool === "select" && (lbl || slbl)) {
       dragLabel.current = { kind: lbl ? "custom" : "state", id: lbl || slbl, start: mapPt, moved: false, orig: null };
       if (slbl) {
@@ -518,6 +545,8 @@ function MapView() {
       const dx = mx - dl.start[0], dy = my - dl.start[1];
       if (dl.kind === "custom") {
         Actions.setLabel(dl.id, { x: dl.orig[0] + dx, y: dl.orig[1] + dy }, { undo: false });
+      } else if (dl.kind === "feat") {
+        Actions.setFeatLabel(dl.id, { dx: dl.orig[0] + dx, dy: dl.orig[1] + dy }, { undo: false });
       } else {
         Actions.setState(dl.id, { labelOffset: [dl.orig[0] + dx, dl.orig[1] + dy] }, { undo: false });
       }
@@ -570,6 +599,8 @@ function MapView() {
       Actions.endStroke();
       if (dl && !dl.moved && dl.kind === "custom") {
         Actions.ui({ selLabel: dl.id, panel: "region", selection: [] });
+      } else if (dl && !dl.moved && dl.kind === "feat") {
+        Actions.ui({ selFeatLabel: dl.id, selLabel: null, panel: "region", selection: [] });
       }
       return;
     }
@@ -605,16 +636,16 @@ function MapView() {
         if (App.ui.selectMode === "region") {
           const regId = g.regId || provRegionRef.current[g.rid];
           if (regId) {
-            Actions.ui({ selLabel: null });
+            Actions.ui({ selLabel: null, selFeatLabel: null });
             Actions.selectRegions([regId], g.shift);
           } else if (!g.shift) {
             Actions.clearRegionSelection();
           }
         } else if (g.rid) {
-          Actions.ui({ selLabel: null });
+          Actions.ui({ selLabel: null, selFeatLabel: null });
           Actions.select([g.rid], g.shift);
         } else if (!g.shift) {
-          Actions.ui({ selLabel: null });
+          Actions.ui({ selLabel: null, selFeatLabel: null });
           Actions.select([], false);
         }
       }
@@ -761,6 +792,34 @@ function MapView() {
     [settings.sea]);
   const RIVER_W = { major: 1.3, medium: 0.85, minor: 0.55 };
 
+  // ---------- per-region name labels (draggable / rotatable on every map) ----------
+  const flOv = (project && project.featLabels) || {};
+  const labelsGrabbable = App.ui.tool === "select" || App.ui.tool === "label";
+  // obj = feature/region (needs .c/.b/.d), key = featLabels store key, name, baseSize, opacity
+  const renderFeatLabel = (obj, key, name, baseSize, opacity) => {
+    if (!name) return null;
+    const ov = flOv[key];
+    if (ov && ov.hidden) return null;
+    const anc = featAnchor(obj);
+    const x = anc[0] + ((ov && ov.dx) || 0);
+    const y = anc[1] + ((ov && ov.dy) || 0);
+    const size = (ov && ov.size) || baseSize;
+    const angle = (ov && ov.angle) || 0;
+    const sel = App.ui.selFeatLabel === key;
+    return (
+      <text key={"rl" + key} data-flabel={key} x={x} y={y} textAnchor="middle"
+        transform={angle ? `rotate(${angle} ${x} ${y})` : undefined}
+        pointerEvents={labelsGrabbable ? "auto" : "none"}
+        fontSize={size} fill={settings.labelColor} opacity={opacity}
+        stroke={settings.sea} strokeWidth={size * 0.05} paintOrder="stroke"
+        style={{ fontFamily: settings.labelFont, userSelect: "none",
+                 cursor: labelsGrabbable ? "move" : "default",
+                 outline: sel ? "1px dashed #ff9f2e" : "none" }}>
+        {name}
+      </text>
+    );
+  };
+
   return (
     <div className={"map-stage tool-" + App.ui.tool} data-screen-label="Map canvas" style={{ background: settings.sea }}>
       {bm.status === "loading" && (
@@ -890,16 +949,22 @@ function MapView() {
               {countryBordersOn && meshes.state && <path className="border-countries" d={meshes.state} fill="none" stroke={ColorUtil.darken(settings.borders, 0.4)} strokeWidth={cbw} strokeLinejoin="round"></path>}
             </g>
           )}
-          {/* ---- physical relief (under region overlay): ranges + deserts ---- */}
-          {physReady && settings.showMountains !== false && phys.relief.length > 0 && (
+          {/* ---- physical relief (under region overlay): ranges + deserts + forest ---- */}
+          {physReady && phys.relief.length > 0 && (
             <g id="phys-relief" pointerEvents="none">
-              {phys.relief.map((f) => (
-                <path key={"rel" + f.id} d={f.d}
-                  fill={f.typ === "desert" ? "#c9a96a" : "#5d4f40"}
-                  fillOpacity={f.typ === "desert" ? 0.10 : 0.13}
-                  stroke={f.typ === "desert" ? "none" : "#5d4f40"}
-                  strokeOpacity="0.18" strokeWidth="0.5" vectorEffect="non-scaling-stroke"></path>
-              ))}
+              {phys.relief.map((f) => {
+                const on = f.typ === "desert" ? settings.showDesert !== false
+                  : f.typ === "forest" ? settings.showForest !== false
+                  : settings.showMountains !== false;
+                if (!on) return null;
+                const col = f.typ === "desert" ? "#c9a96a" : f.typ === "forest" ? "#3f7d3a" : "#5d4f40";
+                return (
+                  <path key={"rel" + f.id} d={f.d} fill={col}
+                    fillOpacity={f.typ === "desert" ? 0.10 : f.typ === "forest" ? 0.12 : 0.13}
+                    stroke={f.typ === "mountain_range" ? "#5d4f40" : "none"}
+                    strokeOpacity="0.18" strokeWidth="0.5" vectorEffect="non-scaling-stroke"></path>
+                );
+              })}
             </g>
           )}
           {/* ---- physical display layers (rivers / lakes / mountains) ---- */}
@@ -953,27 +1018,14 @@ function MapView() {
           <g id="overlay">
             {ready && settings.showLabels && bm.features.map((f) => {
               const r = regions[f.id];
-              const grouped = r && r.group;
-              if (grouped) {
+              if (r && r.group) {
                 const gl = groupLabels[f.id];
                 if (!gl) return null;
-                return (
-                  <text key={"rl" + f.id} x={f.c[0]} y={f.c[1]} textAnchor="middle" pointerEvents="none"
-                    fontSize={Math.min(14, Math.max(5, Math.sqrt(gl.total) * 0.1))}
-                    fill={settings.labelColor} opacity="0.75"
-                    style={{ fontFamily: settings.labelFont }}>
-                    {gl.name}
-                  </text>
-                );
+                return renderFeatLabel(f, f.id, gl.name, Math.min(14, Math.max(5, Math.sqrt(gl.total) * 0.1)), 0.75);
               }
-              return f.area > 260 ? (
-                <text key={"rl" + f.id} x={f.c[0]} y={f.c[1]} textAnchor="middle" pointerEvents="none"
-                  fontSize={Math.min(11, Math.max(4, Math.sqrt(f.area) * 0.12))}
-                  fill={settings.labelColor} opacity="0.65"
-                  style={{ fontFamily: settings.labelFont }}>
-                  {(r && r.name) || ((App.ui.lang === "ru" && f.nameRu) ? f.nameRu : f.name)}
-                </text>
-              ) : null;
+              if (f.area <= 260) return null;
+              const nm = (r && r.name) || ((App.ui.lang === "ru" && f.nameRu) ? f.nameRu : f.name);
+              return renderFeatLabel(f, f.id, nm, Math.min(11, Math.max(4, Math.sqrt(f.area) * 0.12)), 0.65);
             })}
             {physReady && settings.showSeaLabels !== false && phys.seas.map((f) => (
               f.importance !== "minor" && f.c ? (
@@ -996,15 +1048,10 @@ function MapView() {
               ) : null
             ))}
             {ready && showRegionLayer && regionFillOn && layerRegions.map((r) => (
-              r.area > 240 && r.c ? (
-                <text key={"mrl" + r.id} x={r.c[0]} y={r.c[1]} textAnchor="middle" pointerEvents="none"
-                  fontSize={Math.min(15, Math.max(5, Math.sqrt(r.area) * 0.11))}
-                  fontWeight="600" fill={settings.labelColor}
-                  stroke={settings.sea} strokeWidth={Math.min(15, Math.max(5, Math.sqrt(r.area) * 0.11)) * 0.07} paintOrder="stroke"
-                  opacity="0.9" style={{ fontFamily: settings.labelFont, userSelect: "none" }}>
-                  {RegionModel.displayName(r)}
-                </text>
-              ) : null
+              r.area > 240 && r.c
+                ? renderFeatLabel(r, "L:" + r.id, RegionModel.displayName(r),
+                    Math.min(15, Math.max(5, Math.sqrt(r.area) * 0.11)), 0.9)
+                : null
             ))}
             {ready && settings.showStateLabels && stateLabels.map((l) => {
               const flagW = l.size * 1.4;

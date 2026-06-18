@@ -200,7 +200,39 @@ function SelectField({ label, value, onChange, options }) {
   );
 }
 
-const STATUSES = ["core", "vassal", "colony", "disputed", "occupied", "neutral"];
+const STATUSES = ["core", "autonomy", "colony", "protectorate", "puppet", "disputed", "occupied", "assimilation", "integration", "neutral"];
+
+// Extra inputs that appear under the status field for statuses that involve a
+// SECOND (or several) countries: disputed -> any number of claimants, occupied ->
+// the country it was taken from. All reference state ids (map-independent).
+function StatusExtras({ status, claimants, occupiedFrom, owner, onChange }) {
+  const p = App.project;
+  if (!p.stateOrder.length) return null;
+  if (status === "disputed") {
+    const set = new Set(claimants || []);
+    return (
+      <Field label={t("f.claimants")}>
+        <div style={{ display: "flex", flexDirection: "column", gap: 2, maxHeight: 168, overflowY: "auto" }}>
+          {p.stateOrder.map((x) => (
+            <Check key={x} label={p.states[x].name + (x === owner ? " ★" : "")} checked={set.has(x)}
+              onChange={(v) => { const ns = new Set(set); v ? ns.add(x) : ns.delete(x); onChange({ claimants: [...ns] }); }}></Check>
+          ))}
+        </div>
+      </Field>
+    );
+  }
+  if (status === "occupied") {
+    return (
+      <Field label={t("f.occupiedFrom")}>
+        <select className="select" value={occupiedFrom || ""} onChange={(e) => onChange({ occupiedFrom: e.target.value || null })}>
+          <option value="">{t("misc.none")}</option>
+          {p.stateOrder.filter((x) => x !== owner).map((x) => <option key={x} value={x}>{p.states[x].name}</option>)}
+        </select>
+      </Field>
+    );
+  }
+  return null;
+}
 
 // ---------- Map settings tab ----------
 function MapTab() {
@@ -346,6 +378,13 @@ function StateTab() {
       </div>
       <div className="muted">{counts[sid] || 0} {t("state.regions")} · <a href="#" onClick={(e) => { e.preventDefault(); Actions.selectByOwner(sid); }} style={{ color: "var(--accent)" }}>{t("state.selectRegions")}</a></div>
       {s.flag && <Check label={t("f.flagFill")} checked={s.flagFill} onChange={(v) => set({ flagFill: v })}></Check>}
+      <Field label={t("state.vassalOf")}>
+        <select className="select" value={s.vassalOf || ""} onChange={(e) => set({ vassalOf: e.target.value || null })}>
+          <option value="">{t("state.sovereign")}</option>
+          {p.stateOrder.filter((x) => x !== sid).map((x) => <option key={x} value={x}>{p.states[x].name}</option>)}
+        </select>
+      </Field>
+      {s.vassalOf && p.states[s.vassalOf] && <div className="muted">{t("state.vassalHint")} <b style={{ color: p.states[s.vassalOf].color }}>{p.states[s.vassalOf].name}</b></div>}
 
       {/* ---- manual label overrides (auto placement is the default) ---- */}
       <div className="props-section-title">{t("label.section")}</div>
@@ -560,6 +599,7 @@ function RegionTab() {
             {STATUSES.map((st) => <option key={st} value={st}>{t("status." + st)}</option>)}
           </select>
         </Field>
+        <StatusExtras status={g.status} claimants={g.claimants} occupiedFrom={g.occupiedFrom} owner={g.owner} onChange={(patch) => setG(patch)}></StatusExtras>
         <Field label={t("f.color")}>
           <div className="field-row">
             <input type="color" className="color-input" value={g.color || "#cccccc"} onChange={(e) => setG({ color: e.target.value })}></input>
@@ -630,6 +670,7 @@ function RegionTab() {
           {STATUSES.map((st) => <option key={st} value={st}>{t("status." + st)}</option>)}
         </select>
       </Field>
+      <StatusExtras status={r.status} claimants={r.claimants} occupiedFrom={r.occupiedFrom} owner={effFirst.owner} onChange={(patch) => setAll(patch)}></StatusExtras>
       <Field label={t("f.color")}>
         <div className="field-row">
           <input type="color" className="color-input" value={r.color || "#cccccc"} onChange={(e) => setAll({ color: e.target.value })}></input>

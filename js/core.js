@@ -285,6 +285,7 @@
         flag: null,
         capital: "", gov: "", ideology: "", religion: "", culture: "",
         population: "", economy: "", army: "", notes: "",
+        vassalOf: null,
         labelOffset: null
       };
       p.stateOrder.push(id);

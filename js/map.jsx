@@ -8,6 +8,70 @@ function useStore() {
   );
 }
 
+// ---------- status stripes (disputed / occupied / assimilation) ----------
+// Colours of every country involved, so a glance shows ALL sides:
+// disputed -> owner + claimants, occupied -> occupier + who it was taken from,
+// assimilation -> owner self-hatch. References state ids only (map-independent).
+function stripeColors(r, states) {
+  const own = r.owner && states[r.owner] ? states[r.owner].color : null;
+  if (r.status === "disputed") {
+    const ids = [r.owner, ...(r.claimants || [])].filter((x, i, a) => x && states[x] && a.indexOf(x) === i);
+    const cols = ids.map((x) => states[x].color);
+    return cols.length ? cols : (own ? [own] : null);
+  }
+  if (r.status === "occupied") {
+    const from = r.occupiedFrom && states[r.occupiedFrom] ? states[r.occupiedFrom].color : null;
+    const cols = [own, from].filter(Boolean);
+    return cols.length ? cols : null;
+  }
+  if (r.status === "assimilation") return own ? [own, ColorUtil.lighten(own, 0.55)] : null;
+  return null;
+}
+function stripeId(cols) { return "pat-" + cols.map((c) => String(c).replace(/[^0-9a-fA-F]/g, "")).join("-"); }
+
+// ---------- map-independent country borders ----------
+function geomToMP(g) {
+  if (!g) return [];
+  if (g.type === "Polygon") return [g.coordinates];
+  if (g.type === "MultiPolygon") return g.coordinates;
+  return [];
+}
+// Country borders that DON'T rely on map topology: union each owner's region
+// polygons (polygon-clipping) and stroke the outline. Robust to split/merge/draw
+// (no shared arcs needed) and works on every map. Per-owner cache keyed by
+// membership + geometry edits, so painting only re-unions the owner that changed.
+function ownerUnionPath(raw, proj, project, cacheRef) {
+  if (!proj || !raw || typeof polygonClipping === "undefined") return null;
+  const path = d3.geoPath(proj);
+  const groups = new Map();
+  raw.features.forEach((f) => {
+    const e = window.effRegion(project, f.id);
+    const owner = e && e.owner;
+    if (!owner || !f.geometry) return;
+    if (!groups.has(owner)) groups.set(owner, { ids: [], mps: [] });
+    const g = groups.get(owner);
+    g.ids.push(f.id); g.mps.push(geomToMP(f.geometry));
+  });
+  const editKey = (window.GeomEdit && GeomEdit.editsKey) ? GeomEdit.editsKey(project) : "0";
+  const cache = cacheRef.current || {};
+  const fresh = {};
+  let d = "";
+  groups.forEach((g, owner) => {
+    const sig = owner + "@" + editKey + "@" + g.ids.sort().join(",");
+    let seg = cache[sig];
+    if (seg == null) {
+      let u = null;
+      try { u = polygonClipping.union.apply(polygonClipping, g.mps); } catch (e) { u = null; }
+      seg = "";
+      if (u && u.length) { try { seg = path({ type: "MultiPolygon", coordinates: u }) || ""; } catch (e) {} }
+    }
+    fresh[sig] = seg;
+    d += seg;
+  });
+  cacheRef.current = fresh;
+  return d || null;
+}
+
 // ---------- fill resolution ----------
 function regionFill(r, states, settings, feat) {
   // a dataset that ships its own per-region colour (e.g. the vectorized OWB map)
@@ -21,11 +85,18 @@ function regionFill(r, states, settings, feat) {
   const flagMode = settings.mapMode === "flag";
   const L = ColorUtil.lighten;
   switch (r.status) {
-    case "vassal": return (flagMode && st.flag) ? `url(#flag-${r.owner})` : L(st.color, 0.32);
+    case "autonomy": return (flagMode && st.flag) ? `url(#flag-${r.owner})` : L(st.color, 0.30);
     case "colony": return (flagMode && st.flag) ? `url(#flag-${r.owner})` : L(st.color, 0.52);
+    case "protectorate": return L(st.color, 0.40);
+    case "puppet": return L(st.color, 0.18);
+    case "integration": return ColorUtil.mixHex(st.color, settings.land, 0.30);
     case "neutral": return ColorUtil.mixHex(st.color, settings.land, 0.6);
-    case "disputed": return `url(#pat-${r.owner}-disputed)`;
-    case "occupied": return `url(#pat-${r.owner}-occupied)`;
+    case "disputed":
+    case "occupied":
+    case "assimilation": {
+      const cols = stripeColors(r, states);
+      return cols ? `url(#${stripeId(cols)})` : st.color;
+    }
     default:
       if (st.flag && (flagMode || st.flagFill)) return `url(#flag-${r.owner})`;
       return st.color;
@@ -213,6 +284,7 @@ function MapView() {
   const view = useRef({ x: 0, y: 0, k: 1 });
   const gesture = useRef(null);
   const dragLabel = useRef(null);
+  const unionCacheRef = useRef({});
 
   const project = App.project;
   const bm = App.basemap;
@@ -672,7 +744,9 @@ function MapView() {
       // arcs, so mesh(a!==b) misses them and mesh(a===b) renders them as dark
       // dash fragments. Use only the owner mesh here; region borders & coast are
       // drawn from per-region outlines / landPath instead (continuous everywhere).
-      return { state: Geo.stateMesh(ownerOf), coast: null, inner: null };
+      // country borders from owner-region polygon unions (topology-independent,
+      // survives split/merge/draw); region borders & coast come from outlines.
+      return { state: ownerUnionPath(bm.raw, bm.proj, p, unionCacheRef), coast: null, inner: null };
     }
     return { coast: Geo.coastMesh(), inner: Geo.innerMesh(unitOf), state: Geo.stateMesh(ownerOf) };
   }, [ready, bm.topo, App.terrVersion]);
@@ -684,20 +758,20 @@ function MapView() {
     return bm.features.map((f) => f.d).join("");
   }, [ready, bm.count]);
 
-  // ---------- status patterns ----------
+  // ---------- status patterns (multi-colour stripes per party-set) ----------
   const patterns = useMemo(() => {
     if (!project) return [];
-    const need = new Set();
-    for (const rid in regions) {
-      const e = effOf(rid);
-      if (e && e.owner && (e.status === "disputed" || e.status === "occupied")) need.add(e.owner + "|" + e.status);
-    }
-    return [...need].map((key) => {
-      const [sid, status] = key.split("|");
-      const st = states[sid];
-      if (!st) return null;
-      return { sid, status, color: st.color };
-    }).filter(Boolean);
+    const map = new Map(); // id -> colors[]
+    const consider = (e) => {
+      if (!e || !e.owner) return;
+      if (e.status === "disputed" || e.status === "occupied" || e.status === "assimilation") {
+        const cols = stripeColors(e, states);
+        if (cols) map.set(stripeId(cols), cols);
+      }
+    };
+    for (const rid in regions) consider(effOf(rid));
+    for (const gid in (project.groups || {})) consider(project.groups[gid]);
+    return [...map.entries()].map(([id, colors]) => ({ id, colors }));
   }, [App.version]);
 
   const stateLabels = useMemo(() => (ready ? computeStateLabels(project, bm) : []), [App.version, ready]);
@@ -854,12 +928,14 @@ function MapView() {
           <filter id="lblShadow" x="-20%" y="-20%" width="140%" height="140%">
             <feDropShadow dx="0" dy="0.7" stdDeviation="0.9" floodColor="#000000" floodOpacity="0.55"></feDropShadow>
           </filter>
-          {patterns.map((p) => (
-            <pattern key={p.sid + p.status} id={`pat-${p.sid}-${p.status}`} width="7" height="7" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
-              <rect width="7" height="7" fill={p.status === "occupied" ? ColorUtil.darken(p.color, 0.25) : ColorUtil.lighten(p.color, 0.45)}></rect>
-              <rect width="3.5" height="7" fill={p.color}></rect>
-            </pattern>
-          ))}
+          {patterns.map((p) => {
+            const sw = 5, W = p.colors.length * sw;
+            return (
+              <pattern key={p.id} id={p.id} width={W} height={W} patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+                {p.colors.map((c, i) => <rect key={i} x={i * sw} y="0" width={sw} height={W} fill={c}></rect>)}
+              </pattern>
+            );
+          })}
           {flagPatterns.map((s) => (
             <pattern key={"fp" + s.id} id={`flag-${s.id}`} patternUnits="userSpaceOnUse" x={s.x} y={s.y} width={s.w} height={s.h}>
               <rect width={s.w} height={s.h} fill={s.color}></rect>

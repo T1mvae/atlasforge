@@ -174,15 +174,28 @@
   }
 
   // ---------------- operations ----------------
+  // Carry the political identity (owner/status/disputes/etc.) across geometry
+  // edits so mechanics survive split/merge — they live on the region, not the map.
+  function politicalClone(e0) {
+    if (!e0 || !e0.owner) return null;
+    const r = { owner: e0.owner, status: e0.status || "core", color: e0.color || null,
+      name: null, population: e0.population || "", culture: e0.culture || "",
+      religion: e0.religion || "", language: e0.language || "", notes: "" };
+    if (e0.claimants && e0.claimants.length) r.claimants = e0.claimants.slice();
+    if (e0.occupiedFrom) r.occupiedFrom = e0.occupiedFrom;
+    return r;
+  }
+
   Actions.mergeRegionsGeometry = function (ids, name) {
     if (!ids || ids.length < 2) { Actions.toast(t("edit.needTwo")); return; }
     const mps = ids.map((id) => toMP(rawGeom(id)));
     const union = pcUnion(mps);
     if (!union || !union.length) { Actions.toast(t("edit.opFailed")); return; }
     const p = App.project;
-    // ownership: keep if unanimous
-    const owners = ids.map((id) => { const e = window.effRegion(p, id); return e ? e.owner || null : null; });
-    const owner = owners.every((o) => o === owners[0]) ? owners[0] : null;
+    // ownership + status: keep if unanimous
+    const recs = ids.map((id) => window.effRegion(p, id) || {});
+    const owner = recs.every((r) => (r.owner || null) === (recs[0].owner || null)) ? (recs[0].owner || null) : null;
+    const sameStatus = recs.every((r) => (r.status || "core") === (recs[0].status || "core"));
     const srcProps = rawProps(ids[0]);
     const newId = "e" + uid();
     const newName = name || ((p.regions[ids[0]] && p.regions[ids[0]].name) || srcProps.name || "Region");
@@ -198,7 +211,8 @@
         props: { color: srcProps.color || null, terrain: srcProps.terrain || null, historicalArea: srcProps.historicalArea || null,
                  culturalArea: srcProps.culturalArea || null, admin: srcProps.admin || null }
       };
-      if (owner) pr.regions[newId] = { owner, status: "core", color: null, name: null, population: "", culture: "", religion: "", language: "", notes: "" };
+      const pol = politicalClone(recs[0]);
+      if (pol) { if (!sameStatus) { pol.status = "core"; delete pol.claimants; delete pol.occupiedFrom; } pr.regions[newId] = pol; }
     }, "edit.mergedOk");
     return newId;
   };
@@ -263,7 +277,8 @@
           props: { color: srcProps.color || null, terrain: srcProps.terrain || null, historicalArea: srcProps.historicalArea || null,
                    culturalArea: srcProps.culturalArea || null, admin: srcProps.admin || null }
         };
-        if (owner) pr.regions[nid] = { owner, status: "core", color: null, name: null, population: "", culture: "", religion: "", language: "", notes: "" };
+        const pol = politicalClone(e0);
+        if (pol) pr.regions[nid] = pol;
       });
     }, "edit.splitOk");
   };

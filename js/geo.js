@@ -40,9 +40,9 @@
     // vectorized from the reference image by tools/extract_owb.py (~1450 regions,
     // each keeps its source colour). Fully editable; pixel coordinates.
     "owb": {
-      kind: "localgeo", approx: "~1800",
+      kind: "localgeo", approx: "~1665",
       name: "Old World Blues (game projection)",
-      dataset: "/data/owb_north_america.geojson",
+      dataset: "/data/owb_states.geojson",
       type: "region-grid",
       supportsCountries: true, supportsProvinceGroups: true, supportsCustomOwnership: true
     },
@@ -50,9 +50,9 @@
     // plate spline from ~37 control points) so the continent sits at its true
     // world position and lines up with real rivers/lakes. Approximate.
     "owb_geo": {
-      kind: "localgeo", approx: "~1800",
+      kind: "localgeo", approx: "~1665",
       name: "Old World Blues (geo-referenced)",
-      dataset: "/data/owb_north_america_geo.geojson",
+      dataset: "/data/owb_states_geo.geojson",
       physical: {
         rivers: "/data/world_rivers.geojson",
         lakes: "/data/world_lakes.geojson",
@@ -482,7 +482,7 @@
       let id = String(f.id ?? props.adm1_code ?? props.ne_id ?? props.id ?? "r" + i);
       if (byId[id]) id = id + "_" + i; // de-dup colliding Natural Earth ids (e.g. Australia + Ashmore both "036")
       const name = props.name || props.NAME || props.NAME_EN || props.name_en || props.title || "Region " + (i + 1);
-      const country = props.admin || props.ADMIN || props.geounit || null;
+      const country = props.admin || props.ADMIN || props.geounit || props.owner || null;
       let c, b;
       try { c = path.centroid(f); b = path.bounds(f); } catch (e) { c = [0, 0]; b = [[0, 0], [0, 0]]; }
       const area = Math.abs((b[1][0] - b[0][0]) * (b[1][1] - b[0][1]));

@@ -36,17 +36,13 @@
         "https://raw.githubusercontent.com/mtraynham/natural-earth-topo/master/topojson/ne_10m_admin_1_states_provinces.json"
       ]
     },
-    // Old World Blues: post-nuclear REAL Earth (whole world). Same real admin-1
-    // geometry as the base — paint/merge/split it into OWB factions & states.
+    // Old World Blues: the real OWB state-and-nation map of North America,
+    // vectorized from the reference image by tools/extract_owb.py (~1450 regions,
+    // each keeps its source colour). Fully editable; pixel coordinates.
     "owb": {
-      kind: "localgeo", approx: "~4600",
-      name: "Old World Blues (Earth)",
-      dataset: "/data/world_admin1.geojson",
-      physical: {
-        rivers: "/data/world_rivers.geojson",
-        lakes: "/data/world_lakes.geojson",
-        mountains: "/data/world_mountains.geojson"
-      },
+      kind: "localgeo", approx: "~1450",
+      name: "Old World Blues (North America)",
+      dataset: "/data/owb_north_america.geojson",
       type: "region-grid",
       supportsCountries: true, supportsProvinceGroups: true, supportsCustomOwnership: true
     },
@@ -477,7 +473,8 @@
       const area = Math.abs((b[1][0] - b[0][0]) * (b[1][1] - b[0][1]));
       const feat = { id, name, country, d, c, b, area,
         nameRu: props.name_ru || null, terrain: props.terrain || null,
-        histArea: props.historicalArea || null, cultArea: props.culturalArea || null };
+        histArea: props.historicalArea || null, cultArea: props.culturalArea || null,
+        baseColor: (typeof props.color === "string" && props.color[0] === "#") ? props.color : null };
       features.push(feat);
       byId[id] = feat;
     });
@@ -947,7 +944,8 @@
         // coast / country borders render as SEPARATE layers, with full editing.
         const ck = "localgeo:" + def.dataset;
         const gj = Geo.cache[ck] || (Geo.cache[ck] = await fetchFirst(localCandidates(def.dataset)));
-        const built = buildEditableResult(gj, project, def, { proj: buildProjection(gj), geographic: true }, def.dataset);
+        // auto-detect lon/lat (Natural Earth) vs pixel coords (vectorized images)
+        const built = buildEditableResult(gj, project, def, pickLocalProjection(gj), def.dataset);
         result = built.result; topo = built.topo; topoObj = built.topoObj;
       } else if (def.kind === "pixelgeo") {
         const provPath = project.provinceDataset || def.provinceDataset || project.baseMapDataset || def.dataset;

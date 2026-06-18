@@ -195,7 +195,7 @@
       });
       ed.features[newId] = {
         geometry: fromMP(union), name: newName,
-        props: { terrain: srcProps.terrain || null, historicalArea: srcProps.historicalArea || null,
+        props: { color: srcProps.color || null, terrain: srcProps.terrain || null, historicalArea: srcProps.historicalArea || null,
                  culturalArea: srcProps.culturalArea || null, admin: srcProps.admin || null }
       };
       if (owner) pr.regions[newId] = { owner, status: "core", color: null, name: null, population: "", culture: "", religion: "", language: "", notes: "" };
@@ -260,7 +260,7 @@
         const nid = "e" + uid();
         ed.features[nid] = {
           geometry: fromMP(part), name: baseName + suf,
-          props: { terrain: srcProps.terrain || null, historicalArea: srcProps.historicalArea || null,
+          props: { color: srcProps.color || null, terrain: srcProps.terrain || null, historicalArea: srcProps.historicalArea || null,
                    culturalArea: srcProps.culturalArea || null, admin: srcProps.admin || null }
         };
         if (owner) pr.regions[nid] = { owner, status: "core", color: null, name: null, population: "", culture: "", religion: "", language: "", notes: "" };
@@ -298,7 +298,7 @@
             const props0 = rawProps(f.id);
             ed.features[f.id] = {
               geometry: fromMP(rest), name: props0.name || f.id,
-              props: { terrain: props0.terrain || null, historicalArea: props0.historicalArea || null,
+              props: { color: props0.color || null, terrain: props0.terrain || null, historicalArea: props0.historicalArea || null,
                        culturalArea: props0.culturalArea || null, admin: props0.admin || null }
             };
           }
@@ -338,7 +338,7 @@
             const propsN = rawProps(best.id);
             ed.features[best.id] = {
               geometry: fromMP(u), name: propsN.name || best.id,
-              props: { terrain: propsN.terrain || null, historicalArea: propsN.historicalArea || null,
+              props: { color: propsN.color || null, terrain: propsN.terrain || null, historicalArea: propsN.historicalArea || null,
                        culturalArea: propsN.culturalArea || null, admin: propsN.admin || null }
             };
           }
@@ -374,7 +374,7 @@
       const ed = ensure(pr);
       ed.features[id] = {
         geometry: fromMP(mp), name: props0.name || id,
-        props: { terrain: props0.terrain || null, historicalArea: props0.historicalArea || null,
+        props: { color: props0.color || null, terrain: props0.terrain || null, historicalArea: props0.historicalArea || null,
                  culturalArea: props0.culturalArea || null, admin: props0.admin || null }
       };
     }, "edit.borderOk");

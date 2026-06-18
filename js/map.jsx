@@ -10,7 +10,10 @@ function useStore() {
 
 // ---------- fill resolution ----------
 function regionFill(r, states, settings, feat) {
-  const baseLand = (settings.provinceTint && feat) ? ColorUtil.provinceTint(settings.land, feat.id) : settings.land;
+  // a dataset that ships its own per-region colour (e.g. the vectorized OWB map)
+  // shows it as the base when the region has no owner / no manual override
+  const baseLand = (feat && feat.baseColor) ? feat.baseColor
+    : (settings.provinceTint && feat) ? ColorUtil.provinceTint(settings.land, feat.id) : settings.land;
   if (!r) return baseLand;
   if (r.color) return r.color;
   const st = r.owner ? states[r.owner] : null;

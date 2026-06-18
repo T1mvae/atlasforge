@@ -13,3 +13,6 @@ uploads/
 # editor / OS noise
 .DS_Store
 .claude/settings.local.json
+/*.jpeg
+/*.jpg
+/*.webp

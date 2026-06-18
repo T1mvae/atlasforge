@@ -40,7 +40,7 @@
     // vectorized from the reference image by tools/extract_owb.py (~1450 regions,
     // each keeps its source colour). Fully editable; pixel coordinates.
     "owb": {
-      kind: "localgeo", approx: "~1450",
+      kind: "localgeo", approx: "~1800",
       name: "Old World Blues (North America)",
       dataset: "/data/owb_north_america.geojson",
       type: "region-grid",

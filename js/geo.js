@@ -61,6 +61,15 @@
       type: "region-grid",
       supportsCountries: true, supportsProvinceGroups: true, supportsCustomOwnership: true
     },
+    // OWB at full PROVINCE detail (~20,700 provinces from provinces.bmp — nothing
+    // merged, per-province terrain + parent state name). Heavy but the finest level.
+    "owb_prov": {
+      kind: "localgeo", approx: "~20700",
+      name: "Old World Blues — provinces (full detail)",
+      dataset: "/data/owb_provinces.geojson",
+      type: "region-grid",
+      supportsCountries: true, supportsProvinceGroups: true, supportsCustomOwnership: true
+    },
     // Blank canvas: empty editable map. Load a reference image as a backdrop and
     // trace a brand-new world (e.g. Westeros & Essos) with the draw tool.
     "blank": {

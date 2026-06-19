@@ -57,13 +57,17 @@ print("localisation: %d state names" % len(loc), flush=True)
 # ---- states: id, real name, owner, category, provinces
 # Name source, best first: localisation[STATE_KEY] > filename "<id>-Name.txt" > "State <id>"
 prov_state = {}; prov_claims = {}; states = {}
-for fp in glob.glob(os.path.join(SRC, "states", "*.txt")):
-    txt = open(fp, encoding="utf-8", errors="ignore").read()
-    txt = re.sub(r"#.*", "", txt)   # strip HOI4 comments
-    m = re.search(r"\bid\s*=\s*(\d+)", txt)
-    if not m:
-        continue
+dup_id = 1000000   # some mods reuse the same state id in two files for two DIFFERENT
+_dups = 0          # places (e.g. id 1075 = Velikiye Luki AND West Queensland); give
+for fp in sorted(glob.glob(os.path.join(SRC, "states", "*.txt"))):  # the 2nd file a
+    txt = open(fp, encoding="utf-8", errors="ignore").read()        # fresh id so it
+    txt = re.sub(r"#.*", "", txt)   # strip HOI4 comments            # becomes its own
+    m = re.search(r"\bid\s*=\s*(\d+)", txt)                          # region, not one
+    if not m:                                                        # spanning two
+        continue                                                     # continents.
     sid = int(m.group(1))
+    if sid in states:
+        sid = dup_id; dup_id += 1; _dups += 1
     base = os.path.basename(fp)[:-4]
     nm = base.split("-", 1)[1].strip() if "-" in base else base
     km = re.search(r'\bname\s*=\s*"(STATE_[A-Za-z0-9_]+)"', txt)
@@ -86,8 +90,8 @@ for fp in glob.glob(os.path.join(SRC, "states", "*.txt")):
 for p, claimants in prov_claims.items():
     prov_state[p] = min(claimants, key=lambda s: (len(states[s]["prov"]), -s))
 _overlaps = sum(1 for c in prov_claims.values() if len(c) > 1)
-print("states: %d, provinces referenced: %d, overlapping provinces resolved: %d (%.1fs)"
-      % (len(states), len(prov_state), _overlaps, time.time() - t0), flush=True)
+print("states: %d, provinces referenced: %d, overlapping provinces resolved: %d, duplicate-id files split: %d (%.1fs)"
+      % (len(states), len(prov_state), _overlaps, _dups, time.time() - t0), flush=True)
 
 # ---- provinces.bmp -> province-id image -> state-id image
 im = Image.open(os.path.join(SRC, "provinces.bmp")).convert("RGB")

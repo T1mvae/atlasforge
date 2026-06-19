@@ -11,9 +11,10 @@ from shapely.geometry import box, mapping, MultiPolygon
 from shapely.ops import unary_union
 from shapely.geometry.polygon import orient
 
-SRC = "OWB_helping_files"
-OUT = "data/owb_states_raw.geojson"
-DOWN = 1          # vectorize at FULL res (5632x2304) so tiny urban states survive
+# usage: build_owb_from_mod.py [SRC_FOLDER] [OUT_GEOJSON]   (defaults = OWB)
+SRC = sys.argv[1] if len(sys.argv) > 1 else "OWB_helping_files"
+OUT = sys.argv[2] if len(sys.argv) > 2 else "data/owb_states_raw.geojson"
+DOWN = 1          # vectorize at FULL res so tiny states survive the downscale
 COORD_SCALE = 0.5 # then scale coords to the standard /2 frame (2816x1152) for alignment
 MIN_AREA = 1      # full-res px: keep even single-pixel enclaves
 SIMPLIFY = 1.0

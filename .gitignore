@@ -20,3 +20,5 @@ OWB_helping_files/
 
 # regenerable build intermediate
 data/owb_states_raw.geojson
+data/world_hoi4_raw.geojson
+World_helping_files/

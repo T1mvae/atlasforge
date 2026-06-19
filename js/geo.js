@@ -71,6 +71,16 @@
       type: "region-grid",
       supportsCountries: true, supportsProvinceGroups: true, supportsCustomOwnership: true
     },
+    // Real Earth — built from a HOI4 real-world mod (World_helping_files) by the
+    // SAME pipeline as OWB (tools/build_owb_from_mod.py <src> <out>): 1279 real
+    // states (Poland, Iceland, Nanjing…), game projection (≈ flat world map).
+    "world_hoi4": {
+      kind: "localgeo", approx: "~1280",
+      name: "World (real Earth — HOI4 states)",
+      dataset: "/data/world_hoi4_states.geojson",
+      type: "region-grid",
+      supportsCountries: true, supportsProvinceGroups: true, supportsCustomOwnership: true
+    },
     // Blank canvas: empty editable map. Load a reference image as a backdrop and
     // trace a brand-new world (e.g. Westeros & Essos) with the draw tool.
     "blank": {

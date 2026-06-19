@@ -383,7 +383,7 @@
       const d = path(f);
       if (!d) return;
       const lbl = p.labelX != null ? toScreen(p.labelX, p.labelY) : null;
-      if (typ === "river") out.rivers.push(Object.assign(base, { d }));
+      if (typ === "river") out.rivers.push(Object.assign(base, { d, filled: !!(f.geometry && /Polygon/.test(f.geometry.type)) }));
       else if (typ === "lake") out.lakes.push(Object.assign(base, { d, c: lbl }));
       else if (typ === "mountain_range" || typ === "desert" || typ === "forest") out.relief.push(Object.assign(base, { typ, d, c: lbl }));
     });

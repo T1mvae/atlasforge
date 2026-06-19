@@ -1084,9 +1084,14 @@ function MapView() {
                   vectorEffect="non-scaling-stroke"></path>
               ))}
               {settings.showRivers !== false && phys.rivers.map((f) => (
-                <path key={"rv" + f.id} d={f.d} fill="none" stroke={waterColor}
-                  strokeOpacity={f.importance === "minor" ? 0.6 : 0.85}
-                  strokeWidth={RIVER_W[f.importance] || 0.5} strokeLinecap="round"
+                // game rivers (rivers.bmp) are water RIBBONS -> fill; NE rivers are
+                // centrelines -> stroke. A thin non-scaling stroke keeps ribbons
+                // visible when zoomed out.
+                <path key={"rv" + f.id} d={f.d}
+                  fill={f.filled ? waterColor : "none"} fillOpacity={f.filled ? 0.9 : undefined}
+                  stroke={waterColor} strokeOpacity={f.importance === "minor" ? 0.6 : 0.85}
+                  strokeWidth={f.filled ? 0.5 : (RIVER_W[f.importance] || 0.5)}
+                  strokeLinecap="round" strokeLinejoin="round"
                   vectorEffect="non-scaling-stroke"></path>
               ))}
             </g>

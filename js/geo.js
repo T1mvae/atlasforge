@@ -78,6 +78,7 @@
       kind: "localgeo", approx: "~1280",
       name: "World (real Earth — HOI4 states)",
       dataset: "/data/world_hoi4_states.geojson",
+      physicalDataset: "/data/world_hoi4_physical.geojson",
       type: "region-grid",
       supportsCountries: true, supportsProvinceGroups: true, supportsCustomOwnership: true
     },

@@ -13,9 +13,17 @@ from shapely.geometry.polygon import orient
 
 SRC = "OWB_helping_files"
 OUT = "data/owb_states_raw.geojson"
-DOWN = 2          # downscale the bmp (5632x2304 -> 2816x1152)
-MIN_AREA = 6      # drop sub-pixel state fragments (downscaled px)
+DOWN = 1          # vectorize at FULL res (5632x2304) so tiny urban states survive
+COORD_SCALE = 0.5 # then scale coords to the standard /2 frame (2816x1152) for alignment
+MIN_AREA = 1      # full-res px: keep even single-pixel enclaves
 SIMPLIFY = 1.0
+
+import hashlib
+def shade(sid):
+    # subtle, stable light beige/grey per state (the OWB "paintable white base")
+    h = int(hashlib.md5(str(sid).encode()).hexdigest()[:8], 16)
+    r = 226 + (h & 15); g = 226 + ((h >> 4) & 15); b = 224 + ((h >> 8) & 15)
+    return "#%02x%02x%02x" % (r, g, b)
 
 t0 = time.time()
 # ---- definition.csv: colour-key -> province id; province id -> terrain/type
@@ -47,7 +55,7 @@ print("localisation: %d state names" % len(loc), flush=True)
 
 # ---- states: id, real name, owner, category, provinces
 # Name source, best first: localisation[STATE_KEY] > filename "<id>-Name.txt" > "State <id>"
-prov_state = {}; states = {}
+prov_state = {}; prov_claims = {}; states = {}
 for fp in glob.glob(os.path.join(SRC, "states", "*.txt")):
     txt = open(fp, encoding="utf-8", errors="ignore").read()
     txt = re.sub(r"#.*", "", txt)   # strip HOI4 comments
@@ -69,8 +77,16 @@ for fp in glob.glob(os.path.join(SRC, "states", "*.txt")):
     pids = [int(x) for x in re.findall(r"\d+", pm.group(1))] if pm else []
     states[sid] = {"name": nm, "owner": owner, "cat": cat, "prov": pids}
     for p in pids:
-        prov_state[p] = sid
-print("states: %d, provinces referenced: %d (%.1fs)" % (len(states), len(prov_state), time.time() - t0), flush=True)
+        prov_claims.setdefault(p, []).append(sid)
+# Resolve province overlaps: detailed states (Chicago, Atlanta, Hoover Dam…) are
+# carved out of huge catch-all placeholders (e.g. "Vaultburg" claims 1286 provinces)
+# that still list the same provinces. The SMALLEST (most specific) state wins each
+# shared province, so the real named enclaves survive instead of being swallowed.
+for p, claimants in prov_claims.items():
+    prov_state[p] = min(claimants, key=lambda s: (len(states[s]["prov"]), -s))
+_overlaps = sum(1 for c in prov_claims.values() if len(c) > 1)
+print("states: %d, provinces referenced: %d, overlapping provinces resolved: %d (%.1fs)"
+      % (len(states), len(prov_state), _overlaps, time.time() - t0), flush=True)
 
 # ---- provinces.bmp -> province-id image -> state-id image
 im = Image.open(os.path.join(SRC, "provinces.bmp")).convert("RGB")
@@ -120,7 +136,7 @@ def orient_d3(g):
 
 def round_coords(o):
     if isinstance(o, (list, tuple)):
-        if o and isinstance(o[0], (int, float)): return [round(o[0], 1), round(o[1], 1)]
+        if o and isinstance(o[0], (int, float)): return [round(o[0] * COORD_SCALE, 1), round(o[1] * COORD_SCALE, 1)]
         return [round_coords(x) for x in o]
     return o
 
@@ -145,7 +161,7 @@ for s in sid_list:
     feats.append({"type": "Feature", "id": "s%d" % s, "geometry": gm,
         "properties": {"id": "s%d" % s, "name": info["name"], "owner": info["owner"],
                        "state_category": info["cat"], "terrain": terr[0][0] if terr else None,
-                       "color": None, "ownerCountryId": None, "notes": ""}})
+                       "color": shade(s), "ownerCountryId": None, "notes": ""}})
 
 json.dump({"type": "FeatureCollection", "features": feats}, open(OUT, "w"),
           ensure_ascii=False, separators=(",", ":"))

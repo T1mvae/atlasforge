@@ -17,3 +17,6 @@ uploads/
 /*.jpg
 /*.webp
 OWB_helping_files/
+
+# regenerable build intermediate
+data/owb_states_raw.geojson

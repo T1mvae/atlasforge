@@ -17,7 +17,9 @@ OUT = sys.argv[2] if len(sys.argv) > 2 else "data/owb_states_raw.geojson"
 DOWN = 1          # vectorize at FULL res so tiny states survive the downscale
 COORD_SCALE = 0.5 # then scale coords to the standard /2 frame (2816x1152) for alignment
 MIN_AREA = 1      # full-res px: keep even single-pixel enclaves
-SIMPLIFY = 1.0
+SIMPLIFY = 0.0    # 0 = exact pixel tiling (only drop collinear pts); per-feature
+                  # simplify >0 desyncs shared borders -> gaps/white holes. mapshaper
+                  # does the real (topological) simplify afterwards, gap-free.
 
 import hashlib
 def shade(sid):
@@ -114,7 +116,20 @@ for p, s in prov_state.items():
         pid2sid[p] = sid_to_lab[s]
 pidc = np.clip(pid_img, 0, maxpid + 1)
 lab_img = np.where(pid_img >= 0, pid2sid[pidc], 0).astype(np.int32)
-print("state-label image built (%.1fs)" % (time.time() - t0), flush=True)
+# LAND lookup (definition.csv type column) — only fill LAND gaps, never the ocean.
+pid_is_land = np.zeros(maxpid + 2, bool)
+for _pid, _ty in prov_type.items():
+    if 0 <= _pid <= maxpid + 1 and _ty == "land":
+        pid_is_land[_pid] = True
+# Fill gaps: LAND pixels whose province is in NO state (unassigned provinces, or
+# leftovers from mismatched/duplicate data) -> nearest state. Without this the
+# vectorized regions ring such pixels, leaving white holes/donuts inside the land.
+gap = pid_is_land[pidc] & (pid_img >= 0) & (lab_img == 0)
+ngap = int(gap.sum())
+if ngap:
+    ind = ndimage.distance_transform_edt(lab_img == 0, return_distances=False, return_indices=True)
+    lab_img = np.where(gap, lab_img[tuple(ind)], lab_img)
+print("state-label image built; filled %d unassigned land px (%.1fs)" % (ngap, time.time() - t0), flush=True)
 
 # ---- vectorize each state (one bbox per state via find_objects)
 objs = ndimage.find_objects(lab_img, max_label=len(sid_list))

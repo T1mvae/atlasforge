@@ -45,6 +45,14 @@ GEOREF_CP = [
     ((2132, 581), (131, 32)), ((2196, 532), (140, 38)), ((2062, 692), (121, 16)),
     ((1955, 448), (104, 46)), ((2262, 992), (146, -23)), ((2027, 1022), (122, -25)),
     ((2242, 1136), (146, -42)), ((2449, 1120), (172, -42)),
+    # densification (confident compact states)
+    ((1283, 375), (10, 56)), ((1365, 495), (25, 43)), ((1452, 569), (36, 34)),
+    ((1264, 514), (9, 40)), ((1514, 502), (43, 42)), ((491, 672), (-102, 23)),
+    ((681, 771), (-74, 4)), ((727, 745), (-66, 7)), ((696, 1062), (-71, -35)),
+    ((1440, 600), (34, 29)), ((1324, 880), (18, -12)), ((792, 1066), (-56, -33)),
+    ((2218, 486), (143, 43)), ((2086, 767), (125, 8)), ((2210, 878), (141, -5)),
+    ((1650, 412), (68, 48)), ((1660, 499), (64, 41)), ((1570, 545), (53, 32)),
+    ((1517, 571), (44, 33)),
 ]
 
 t0 = time.time()
@@ -127,8 +135,8 @@ def add_ne_rivers():
         print("  rivers: %s missing, skipped" % RIVERS_NE, flush=True); return 0
     ll = np.array([c[1] for c in GEOREF_CP], float)
     xy = np.array([c[0] for c in GEOREF_CP], float)
-    rx = RBFInterpolator(ll, xy[:, 0], kernel="thin_plate_spline", smoothing=1.0)
-    ry = RBFInterpolator(ll, xy[:, 1], kernel="thin_plate_spline", smoothing=1.0)
+    rx = RBFInterpolator(ll, xy[:, 0], kernel="thin_plate_spline", smoothing=0.0)
+    ry = RBFInterpolator(ll, xy[:, 1], kernel="thin_plate_spline", smoothing=0.0)
     riv = json.load(open(RIVERS_NE))
     JUMP = 90.0
     added = 0

@@ -8,15 +8,28 @@ function useStore() {
   );
 }
 
+// ---------- vassal shading ----------
+// A vassal's own colour blended toward its overlord's colour: its territory reads
+// as "part of the overlord's bloc" while each vassal keeps enough of its own hue to
+// stay distinct from the other vassals and from the overlord itself.
+const VASSAL_TINT = 0.4;
+function ownerColor(states, id) {
+  const st = states[id];
+  if (!st) return null;
+  if (st.vassalOf && states[st.vassalOf]) return ColorUtil.mixHex(st.color, states[st.vassalOf].color, VASSAL_TINT);
+  return st.color;
+}
+
 // ---------- status stripes (disputed / occupied / assimilation) ----------
 // Colours of every country involved, so a glance shows ALL sides:
 // disputed -> owner + claimants, occupied -> occupier + who it was taken from,
 // assimilation -> owner self-hatch. References state ids only (map-independent).
+// The owner's colour is vassal-shaded everywhere; other parties are shown true.
 function stripeColors(r, states) {
-  const own = r.owner && states[r.owner] ? states[r.owner].color : null;
+  const own = r.owner && states[r.owner] ? ownerColor(states, r.owner) : null;
   if (r.status === "disputed") {
     const ids = [r.owner, ...(r.claimants || [])].filter((x, i, a) => x && states[x] && a.indexOf(x) === i);
-    const cols = ids.map((x) => states[x].color);
+    const cols = ids.map((x) => (x === r.owner && own) ? own : states[x].color);
     return cols.length ? cols : (own ? [own] : null);
   }
   if (r.status === "occupied") {
@@ -98,18 +111,21 @@ function regionFill(r, states, settings, feat) {
   if (!st) return baseLand;
   const flagMode = settings.mapMode === "flag";
   const L = ColorUtil.lighten;
+  // owner colour, vassal-shaded toward the overlord (the status tints below are
+  // computed off this so a vassal's whole territory carries the overlord's shade).
+  const oc = ownerColor(states, r.owner) || st.color;
   switch (r.status) {
-    case "autonomy": return (flagMode && st.flag) ? `url(#flag-${r.owner})` : L(st.color, 0.30);
-    case "colony": return (flagMode && st.flag) ? `url(#flag-${r.owner})` : L(st.color, 0.52);
+    case "autonomy": return (flagMode && st.flag) ? `url(#flag-${r.owner})` : L(oc, 0.30);
+    case "colony": return (flagMode && st.flag) ? `url(#flag-${r.owner})` : L(oc, 0.52);
     case "disputed":
     case "occupied":
     case "assimilation": {
       const cols = stripeColors(r, states);
-      return cols ? `url(#${stripeId(cols, r.status)})` : st.color;
+      return cols ? `url(#${stripeId(cols, r.status)})` : oc;
     }
     default:
       if (st.flag && (flagMode || st.flagFill)) return `url(#flag-${r.owner})`;
-      return st.color;
+      return oc;
   }
 }
 
@@ -788,21 +804,6 @@ function MapView() {
 
   const stateLabels = useMemo(() => (ready ? computeStateLabels(project, bm) : []), [App.version, ready]);
 
-  // vassal marker: ring each vassal's territory in its overlord's colour. The
-  // fill is left untouched (each vassal keeps its own colour), so vassals of one
-  // overlord stay distinguishable from each other and from the overlord itself.
-  const vassalBorders = useMemo(() => {
-    if (!project || !meshes || !meshes.segs) return [];
-    const st = project.states, out = [];
-    for (const owner in meshes.segs) {
-      const seg = meshes.segs[owner], o = st[owner];
-      if (!seg || !o || !o.vassalOf) continue;
-      const over = st[o.vassalOf];
-      if (over) out.push({ owner, d: seg, color: over.color });
-    }
-    return out;
-  }, [meshes, App.version]);
-
   // named-autonomy overlays: union each autonomy's regions into one outline (same
   // topology-independent approach as the country border) + a label anchor. Works
   // on region-grid (bm.raw) maps only, matching the country-union-border constraint.
@@ -1095,12 +1096,6 @@ function MapView() {
                 <path className="border-coast" d={bm.raw ? bm.coastPath : meshes.coast} fill="none"
                   stroke={settings.borders} strokeOpacity="0.85" strokeWidth={bw * 0.75}></path>
               )}
-              {/* vassal ring: overlord-coloured outline drawn BEHIND the country
-                     border so the thin dark border sits on top of the colour band */}
-              {countryBordersOn && vassalBorders.map((v) => (
-                <path key={"vb" + v.owner} className="border-vassal" d={v.d} fill="none"
-                  stroke={v.color} strokeWidth={cbw * 1.7} strokeOpacity="0.92" strokeLinejoin="round"></path>
-              ))}
               {/* 3) country borders (different owners only) — own toggle + own thickness */}
               {countryBordersOn && meshes.state && <path className="border-countries" d={meshes.state} fill="none" stroke={ColorUtil.darken(settings.borders, 0.4)} strokeWidth={cbw} strokeLinejoin="round"></path>}
               {/* 4) named autonomy outlines — dashed, in the autonomy's own colour */}

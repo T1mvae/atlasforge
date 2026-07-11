@@ -166,10 +166,25 @@
       activeRegionLayerId: hasRegions ? "state" : null,
       regionLayers: [],                             // user/custom layers (default "state" layer ensured at runtime)
       customRegions: {},                            // id -> MapRegion (user-created, full geometry)
-      regionEdits: {}                               // imported regionId -> { name?, type?, color?, notes?, metadata? }
+      regionEdits: {},                              // imported regionId -> { name?, type?, color?, notes?, metadata? }
+      // ---- named autonomous entities inside a country (own border + label) ----
+      autonomies: {},                               // id -> { id, name, owner, color }
+      // ---- reusable custom values for country fields (persist project-wide) ----
+      valueLists: { ideology: [], government: [], religion: [], economy: [], culture: [] }
     };
   }
   window.newProjectData = newProjectData;
+
+  // migrate away region statuses that were removed from the model (they became
+  // country-level concepts) so older saved projects load cleanly.
+  const REMOVED_STATUS = { protectorate: 1, puppet: 1, integration: 1, neutral: 1 };
+  function normalizeStatuses(p) {
+    if (!p) return;
+    const fix = (o) => { if (o && REMOVED_STATUS[o.status]) o.status = "core"; };
+    for (const rid in (p.regions || {})) fix(p.regions[rid]);
+    for (const gid in (p.groups || {})) fix(p.groups[gid]);
+  }
+  window.normalizeStatuses = normalizeStatuses;
 
   // ---------- undo / redo ----------
   function politicalSlice(p) {
@@ -178,7 +193,8 @@
       regions: p.regions, groups: p.groups || {}, labels: p.labels, featLabels: p.featLabels || {}, years: p.years, snapshots: p.snapshots, currentYear: p.currentYear,
       displayMode: p.displayMode, activeSelectionMode: p.activeSelectionMode, activeRegionLayerId: p.activeRegionLayerId,
       regionLayers: p.regionLayers || [], customRegions: p.customRegions || {}, regionEdits: p.regionEdits || {},
-      regionGeomEdits: p.regionGeomEdits || { removed: {}, features: {} }, backdrop: p.backdrop || null
+      regionGeomEdits: p.regionGeomEdits || { removed: {}, features: {} }, backdrop: p.backdrop || null,
+      autonomies: p.autonomies || {}, valueLists: p.valueLists || {}
     });
   }
   function applySlice(p, json) {
@@ -283,7 +299,7 @@
         name: name || (App.ui.lang === "ru" ? "Государство " + (i + 1) : "State " + (i + 1)),
         color: nextAutoColor(),
         flag: null,
-        capital: "", gov: "", ideology: "", religion: "", culture: "",
+        capital: "", capitalRegion: null, gov: "", ideology: "", religion: "", culture: "",
         population: "", economy: "", army: "", notes: "",
         vassalOf: null,
         labelOffset: null
@@ -325,7 +341,7 @@
   function cleanupRegion(p, rid) {
     const r = p.regions[rid];
     if (!r) return;
-    const empty = !r.owner && !r.color && !r.name && !r.group && r.status === "core" &&
+    const empty = !r.owner && !r.color && !r.name && !r.group && !r.autonomyId && r.status === "core" &&
       !r.population && !r.culture && !r.religion && !r.language && !r.notes;
     if (empty) delete p.regions[rid];
   }
@@ -346,26 +362,33 @@
         if (r0 && r0.group && p.groups && p.groups[r0.group]) { gids.add(r0.group); return; }
         const r = regionEntry(p, rid);
         r.owner = owner;
-        if (!owner) r.status = "core";
+        if (!owner) { r.status = "core"; r.autonomyId = null; }
         cleanupRegion(p, rid);
       });
       gids.forEach((gid) => {
         p.groups[gid].owner = owner;
-        if (!owner) p.groups[gid].status = "core";
+        if (!owner) { p.groups[gid].status = "core"; p.groups[gid].autonomyId = null; }
       });
+      if (!owner) pruneAutonomies(p);
     }, Object.assign({ terr: true }, opts));
   };
 
   Actions.setRegion = function (rids, patch, opts) {
     Actions.mut((p) => {
+      // leaving "autonomy" status detaches the region from its autonomy entity
+      // so its outline/label stop covering it (and empty autonomies are pruned).
+      const leaveAuto = patch.status && patch.status !== "autonomy";
       const gids = new Set();
       rids.forEach((rid) => {
         const r0 = p.regions[rid];
         if (r0 && r0.group && p.groups && p.groups[r0.group]) { gids.add(r0.group); return; }
-        Object.assign(regionEntry(p, rid), patch);
+        const r = regionEntry(p, rid);
+        Object.assign(r, patch);
+        if (leaveAuto) r.autonomyId = null;
         cleanupRegion(p, rid);
       });
-      gids.forEach((gid) => Object.assign(p.groups[gid], patch));
+      gids.forEach((gid) => { Object.assign(p.groups[gid], patch); if (leaveAuto) p.groups[gid].autonomyId = null; });
+      if (leaveAuto) pruneAutonomies(p);
     }, opts);
   };
 
@@ -398,6 +421,66 @@
       rids.forEach((rid) => { regionEntry(p, rid).group = gid; });
     }, { terr: true });
     return gid;
+  };
+
+  // ---------- named autonomies (a subset of a country's regions, own border + label) ----------
+  function pluralOwner(p, rids) {
+    const counts = {}; let best = null, bn = 0;
+    rids.forEach((rid) => {
+      const e = window.effRegion(p, rid); const o = e && e.owner;
+      if (!o) return; counts[o] = (counts[o] || 0) + 1;
+      if (counts[o] > bn) { bn = counts[o]; best = o; }
+    });
+    return best;
+  }
+  // drop autonomy entries no region/group still points at (keeps the picker clean
+  // and the outline/label from lingering after members leave the autonomy).
+  function pruneAutonomies(p) {
+    if (!p.autonomies) return;
+    const used = new Set();
+    for (const rid in p.regions) { const a = p.regions[rid].autonomyId; if (a) used.add(a); }
+    for (const gid in (p.groups || {})) { const a = p.groups[gid].autonomyId; if (a) used.add(a); }
+    for (const id in p.autonomies) if (!used.has(id)) delete p.autonomies[id];
+  }
+  window.pruneAutonomies = pruneAutonomies;
+  Actions.createAutonomy = function (rids, name) {
+    let id = null;
+    Actions.mut((p) => {
+      p.autonomies = p.autonomies || {};
+      id = uid();
+      const owner = pluralOwner(p, rids);
+      p.autonomies[id] = {
+        id, owner,
+        name: name || (App.ui.lang === "ru" ? "Автономия" : "Autonomy"),
+        color: owner && p.states[owner] ? ColorUtil.lighten(p.states[owner].color, 0.45) : "#c8c8c8"
+      };
+      rids.forEach((rid) => {
+        const r0 = p.regions[rid];
+        if (r0 && r0.group && p.groups && p.groups[r0.group]) { p.groups[r0.group].autonomyId = id; return; }
+        regionEntry(p, rid).autonomyId = id;
+      });
+    }, { terr: true });
+    return id;
+  };
+  Actions.setRegionAutonomy = function (rids, autonomyId, opts) {
+    Actions.mut((p) => {
+      rids.forEach((rid) => {
+        const r0 = p.regions[rid];
+        if (r0 && r0.group && p.groups && p.groups[r0.group]) { p.groups[r0.group].autonomyId = autonomyId || null; return; }
+        const r = regionEntry(p, rid); r.autonomyId = autonomyId || null; cleanupRegion(p, rid);
+      });
+      pruneAutonomies(p);
+    }, Object.assign({ terr: true }, opts));
+  };
+  Actions.setAutonomy = function (id, patch, opts) {
+    Actions.mut((p) => { if (p.autonomies && p.autonomies[id]) Object.assign(p.autonomies[id], patch); }, opts);
+  };
+  Actions.deleteAutonomy = function (id) {
+    Actions.mut((p) => {
+      if (p.autonomies) delete p.autonomies[id];
+      for (const rid in p.regions) if (p.regions[rid].autonomyId === id) { p.regions[rid].autonomyId = null; cleanupRegion(p, rid); }
+      for (const gid in (p.groups || {})) if (p.groups[gid].autonomyId === id) p.groups[gid].autonomyId = null;
+    }, { terr: true });
   };
 
   Actions.ungroup = function (gid) {
@@ -465,6 +548,17 @@
   };
   Actions.setSettings = function (patch, opts) {
     Actions.mut((p) => Object.assign(p.settings, patch), opts);
+  };
+  // remember a custom country-field value (ideology/government/…) project-wide so
+  // it becomes a reusable dropdown suggestion and isn't retyped every time.
+  Actions.rememberValue = function (listKey, val) {
+    val = (val || "").trim();
+    if (!val) return;
+    Actions.mut((p) => {
+      p.valueLists = p.valueLists || {};
+      const arr = (p.valueLists[listKey] = p.valueLists[listKey] || []);
+      if (!arr.includes(val)) arr.push(val);
+    }, { undo: false });
   };
 
   // ---------- reference image backdrop (for tracing) ----------
@@ -625,8 +719,8 @@
         const id = uid();
         p.states[id] = {
           id, name: n, color: nextAutoColor(i), flag: null,
-          capital: "", gov: "", ideology: "", religion: "", culture: "",
-          population: "", economy: "", army: "", notes: "", labelOffset: null
+          capital: "", capitalRegion: null, gov: "", ideology: "", religion: "", culture: "",
+          population: "", economy: "", army: "", notes: "", vassalOf: null, labelOffset: null
         };
         p.stateOrder.push(id);
         byCountry[n].forEach((rid) => { regionEntry(p, rid).owner = id; });
@@ -644,6 +738,7 @@
     try { p = JSON.parse(localStorage.getItem(LS_KEY) || "null"); } catch (e) {}
     if (p && p.basemapId) {
       App.project = Object.assign(newProjectData(p.basemapId), p);
+      normalizeStatuses(App.project);
       App.emit();
       window.Geo.load(App.project);
     } else {

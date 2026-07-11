@@ -27,7 +27,16 @@ function stripeColors(r, states) {
   if (r.status === "assimilation") return own ? [own, ColorUtil.lighten(own, 0.55)] : null;
   return null;
 }
-function stripeId(cols) { return "pat-" + cols.map((c) => String(c).replace(/[^0-9a-fA-F]/g, "")).join("-"); }
+function stripeId(cols, kind) { return "pat-" + (kind || "x") + "-" + cols.map((c) => String(c).replace(/[^0-9a-fA-F]/g, "")).join("-"); }
+
+// relative luminance of a #rrggbb colour; used to pick a contrasting black/white
+// (capital stars, label halos). Non-hex (e.g. a url(#pattern) fill) -> mid grey.
+function luminance(hex) {
+  if (typeof hex !== "string" || hex[0] !== "#" || hex.length < 7) return 0.5;
+  const p = (i) => parseInt(hex.slice(i, i + 2), 16) / 255;
+  return 0.2126 * p(1) + 0.7152 * p(3) + 0.0722 * p(5);
+}
+function contrastBW(hex) { return luminance(hex) > 0.55 ? "#000000" : "#ffffff"; }
 
 // ---------- map-independent country borders ----------
 function geomToMP(g) {
@@ -41,7 +50,7 @@ function geomToMP(g) {
 // (no shared arcs needed) and works on every map. Per-owner cache keyed by
 // membership + geometry edits, so painting only re-unions the owner that changed.
 function ownerUnionPath(raw, proj, project, cacheRef) {
-  if (!proj || !raw || typeof polygonClipping === "undefined") return null;
+  if (!proj || !raw || typeof polygonClipping === "undefined") return { d: null, segs: null };
   const path = d3.geoPath(proj);
   const groups = new Map();
   raw.features.forEach((f) => {
@@ -56,6 +65,7 @@ function ownerUnionPath(raw, proj, project, cacheRef) {
   const cache = cacheRef.current || {};
   const fresh = {};
   let d = "";
+  const segs = {};
   groups.forEach((g, owner) => {
     const sig = owner + "@" + editKey + "@" + g.ids.sort().join(",");
     let seg = cache[sig];
@@ -66,17 +76,21 @@ function ownerUnionPath(raw, proj, project, cacheRef) {
       if (u && u.length) { try { seg = path({ type: "MultiPolygon", coordinates: u }) || ""; } catch (e) {} }
     }
     fresh[sig] = seg;
+    segs[owner] = seg;
     d += seg;
   });
   cacheRef.current = fresh;
-  return d || null;
+  return { d: d || null, segs };
 }
 
 // ---------- fill resolution ----------
 function regionFill(r, states, settings, feat) {
   // a dataset that ships its own per-region colour (e.g. the vectorized OWB map)
   // shows it as the base when the region has no owner / no manual override
-  const baseLand = (feat && feat.baseColor) ? feat.baseColor
+  // datasets that ship their own per-region colour still follow the active map
+  // style: blend that base colour a little toward the theme's land tone so the
+  // unowned land re-themes with the style (owned regions keep their own colour).
+  const baseLand = (feat && feat.baseColor) ? ColorUtil.mixHex(feat.baseColor, settings.land, 0.3)
     : (settings.provinceTint && feat) ? ColorUtil.provinceTint(settings.land, feat.id) : settings.land;
   if (!r) return baseLand;
   if (r.color) return r.color;
@@ -87,15 +101,11 @@ function regionFill(r, states, settings, feat) {
   switch (r.status) {
     case "autonomy": return (flagMode && st.flag) ? `url(#flag-${r.owner})` : L(st.color, 0.30);
     case "colony": return (flagMode && st.flag) ? `url(#flag-${r.owner})` : L(st.color, 0.52);
-    case "protectorate": return L(st.color, 0.40);
-    case "puppet": return L(st.color, 0.18);
-    case "integration": return ColorUtil.mixHex(st.color, settings.land, 0.30);
-    case "neutral": return ColorUtil.mixHex(st.color, settings.land, 0.6);
     case "disputed":
     case "occupied":
     case "assimilation": {
       const cols = stripeColors(r, states);
-      return cols ? `url(#${stripeId(cols)})` : st.color;
+      return cols ? `url(#${stripeId(cols, r.status)})` : st.color;
     }
     default:
       if (st.flag && (flagMode || st.flagFill)) return `url(#flag-${r.owner})`;
@@ -285,6 +295,7 @@ function MapView() {
   const gesture = useRef(null);
   const dragLabel = useRef(null);
   const unionCacheRef = useRef({});
+  const autonomyCacheRef = useRef({});
 
   const project = App.project;
   const bm = App.basemap;
@@ -746,9 +757,10 @@ function MapView() {
       // drawn from per-region outlines / landPath instead (continuous everywhere).
       // country borders from owner-region polygon unions (topology-independent,
       // survives split/merge/draw); region borders & coast come from outlines.
-      return { state: ownerUnionPath(bm.raw, bm.proj, p, unionCacheRef), coast: null, inner: null };
+      const u = ownerUnionPath(bm.raw, bm.proj, p, unionCacheRef);
+      return { state: u.d, segs: u.segs, coast: null, inner: null };
     }
-    return { coast: Geo.coastMesh(), inner: Geo.innerMesh(unitOf), state: Geo.stateMesh(ownerOf) };
+    return { coast: Geo.coastMesh(), inner: Geo.innerMesh(unitOf), state: Geo.stateMesh(ownerOf), segs: null };
   }, [ready, bm.topo, App.terrVersion]);
 
   // one concatenated outline of ALL regions: a single path strokes every border
@@ -761,20 +773,75 @@ function MapView() {
   // ---------- status patterns (multi-colour stripes per party-set) ----------
   const patterns = useMemo(() => {
     if (!project) return [];
-    const map = new Map(); // id -> colors[]
+    const map = new Map(); // id -> { colors, kind }
     const consider = (e) => {
       if (!e || !e.owner) return;
       if (e.status === "disputed" || e.status === "occupied" || e.status === "assimilation") {
         const cols = stripeColors(e, states);
-        if (cols) map.set(stripeId(cols), cols);
+        if (cols) map.set(stripeId(cols, e.status), { colors: cols, kind: e.status });
       }
     };
     for (const rid in regions) consider(effOf(rid));
     for (const gid in (project.groups || {})) consider(project.groups[gid]);
-    return [...map.entries()].map(([id, colors]) => ({ id, colors }));
+    return [...map.entries()].map(([id, v]) => ({ id, colors: v.colors, kind: v.kind }));
   }, [App.version]);
 
   const stateLabels = useMemo(() => (ready ? computeStateLabels(project, bm) : []), [App.version, ready]);
+
+  // vassal marker: ring each vassal's territory in its overlord's colour. The
+  // fill is left untouched (each vassal keeps its own colour), so vassals of one
+  // overlord stay distinguishable from each other and from the overlord itself.
+  const vassalBorders = useMemo(() => {
+    if (!project || !meshes || !meshes.segs) return [];
+    const st = project.states, out = [];
+    for (const owner in meshes.segs) {
+      const seg = meshes.segs[owner], o = st[owner];
+      if (!seg || !o || !o.vassalOf) continue;
+      const over = st[o.vassalOf];
+      if (over) out.push({ owner, d: seg, color: over.color });
+    }
+    return out;
+  }, [meshes, App.version]);
+
+  // named-autonomy overlays: union each autonomy's regions into one outline (same
+  // topology-independent approach as the country border) + a label anchor. Works
+  // on region-grid (bm.raw) maps only, matching the country-union-border constraint.
+  const autonomyOverlays = useMemo(() => {
+    if (!project || !bm.raw || typeof polygonClipping === "undefined") return [];
+    const autos = project.autonomies || {};
+    if (!Object.keys(autos).length) return [];
+    const path = d3.geoPath(bm.proj);
+    const groups = new Map(); // aid -> { ids, mps, best }
+    bm.raw.features.forEach((f) => {
+      const e = window.effRegion(project, f.id);
+      const aid = e && e.autonomyId;
+      if (!aid || !autos[aid] || !f.geometry || e.status !== "autonomy") return;
+      if (!groups.has(aid)) groups.set(aid, { ids: [], mps: [], best: null });
+      const g = groups.get(aid);
+      g.ids.push(f.id); g.mps.push(geomToMP(f.geometry));
+      const bf = bm.byId[f.id];
+      if (bf && (!g.best || bf.area > g.best.area)) g.best = bf;
+    });
+    const editKey = (window.GeomEdit && GeomEdit.editsKey) ? GeomEdit.editsKey(project) : "0";
+    const cache = autonomyCacheRef.current || {};
+    const fresh = {};
+    const out = [];
+    groups.forEach((g, aid) => {
+      const a = autos[aid];
+      const sig = aid + "@" + editKey + "@" + g.ids.sort().join(",");
+      let d = cache[sig];
+      if (d == null) {
+        let u = null;
+        try { u = polygonClipping.union.apply(polygonClipping, g.mps); } catch (e) { u = null; }
+        d = "";
+        if (u && u.length) { try { d = path({ type: "MultiPolygon", coordinates: u }) || ""; } catch (e) {} }
+      }
+      fresh[sig] = d;
+      if (d) out.push({ id: aid, d, color: a.color || "#c8c8c8", name: a.name, best: g.best });
+    });
+    autonomyCacheRef.current = fresh;
+    return out;
+  }, [App.version, ready]);
 
   const flagPatterns = useMemo(() => {
     if (!project || !ready) return [];
@@ -930,9 +997,16 @@ function MapView() {
           </filter>
           {patterns.map((p) => {
             const sw = 5, W = p.colors.length * sw;
+            // disputed -> clean diagonal colour stripes; occupied -> same bands
+            // PLUS perpendicular dark hatch lines (a woven "occupied" texture);
+            // assimilation -> opposite diagonal. Distinct textures at a glance.
+            const angle = p.kind === "assimilation" ? -45 : 45;
             return (
-              <pattern key={p.id} id={p.id} width={W} height={W} patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+              <pattern key={p.id} id={p.id} width={W} height={W} patternUnits="userSpaceOnUse" patternTransform={`rotate(${angle})`}>
                 {p.colors.map((c, i) => <rect key={i} x={i * sw} y="0" width={sw} height={W} fill={c}></rect>)}
+                {p.kind === "occupied" && [0, 1].map((i) => (
+                  <rect key={"h" + i} x="0" y={i * (W / 2) + W / 4 - 0.9} width={W} height="1.8" fill="#000000" fillOpacity="0.42"></rect>
+                ))}
               </pattern>
             );
           })}
@@ -1021,8 +1095,21 @@ function MapView() {
                 <path className="border-coast" d={bm.raw ? bm.coastPath : meshes.coast} fill="none"
                   stroke={settings.borders} strokeOpacity="0.85" strokeWidth={bw * 0.75}></path>
               )}
+              {/* vassal ring: overlord-coloured outline drawn BEHIND the country
+                     border so the thin dark border sits on top of the colour band */}
+              {countryBordersOn && vassalBorders.map((v) => (
+                <path key={"vb" + v.owner} className="border-vassal" d={v.d} fill="none"
+                  stroke={v.color} strokeWidth={cbw * 1.7} strokeOpacity="0.92" strokeLinejoin="round"></path>
+              ))}
               {/* 3) country borders (different owners only) — own toggle + own thickness */}
               {countryBordersOn && meshes.state && <path className="border-countries" d={meshes.state} fill="none" stroke={ColorUtil.darken(settings.borders, 0.4)} strokeWidth={cbw} strokeLinejoin="round"></path>}
+              {/* 4) named autonomy outlines — dashed, in the autonomy's own colour */}
+              {settings.showAutonomies !== false && autonomyOverlays.map((a) => (
+                <path key={"au" + a.id} className="border-autonomy" d={a.d} fill="none"
+                  stroke={ColorUtil.darken(a.color, 0.35)} strokeWidth={cbw * 0.9}
+                  strokeDasharray={`${(cbw * 2.2).toFixed(1)} ${(cbw * 1.5).toFixed(1)}`}
+                  strokeOpacity="0.95" strokeLinejoin="round"></path>
+              ))}
             </g>
           )}
           {/* ---- physical relief (under region overlay): ranges + deserts + forest ---- */}
@@ -1134,6 +1221,33 @@ function MapView() {
                     Math.min(15, Math.max(5, Math.sqrt(r.area) * 0.11)), 0.9)
                 : null
             ))}
+            {ready && settings.showAutonomies !== false && autonomyOverlays.map((a) => {
+              if (!a.best) return null;
+              const anc = featAnchor(a.best);
+              return (
+                <text key={"aul" + a.id} x={anc[0]} y={anc[1]} textAnchor="middle" pointerEvents="none"
+                  fontSize="7.5" fontStyle="italic" fill={ColorUtil.darken(a.color, 0.5)}
+                  stroke={settings.sea} strokeWidth="0.5" paintOrder="stroke"
+                  style={{ fontFamily: settings.labelFont, userSelect: "none", letterSpacing: "0.4px" }}>
+                  {a.name}
+                </text>
+              );
+            })}
+            {ready && settings.showCapitals !== false && project.stateOrder.map((sid) => {
+              const s = project.states[sid];
+              if (!s || !s.capitalRegion) return null;
+              const cf = bm.byId[s.capitalRegion];
+              if (!cf) return null;
+              const anc = featAnchor(cf);
+              const fillV = regionFill(effOf(s.capitalRegion), states, settings, cf);
+              const star = contrastBW(typeof fillV === "string" && fillV[0] === "#" ? fillV : s.color);
+              const sz = Math.min(15, Math.max(8, Math.sqrt(cf.area || 400) * 0.13));
+              return (
+                <text key={"cap" + sid} x={anc[0]} y={anc[1] + sz * 0.35} textAnchor="middle" pointerEvents="none"
+                  fontSize={sz} fill={star} stroke={star === "#ffffff" ? "rgba(0,0,0,0.5)" : "rgba(255,255,255,0.65)"} strokeWidth={sz * 0.05} paintOrder="stroke"
+                  style={{ userSelect: "none" }}>★</text>
+              );
+            })}
             {ready && settings.showStateLabels && stateLabels.map((l) => {
               const flagW = l.size * 1.4;
               return (
@@ -1147,7 +1261,7 @@ function MapView() {
                     className={l.atlas ? "country-label" : "country-label plain"}
                     x={l.x} y={l.y} textAnchor="middle" fontSize={l.size}
                     strokeWidth={Math.max(0.5, l.size * 0.13)}
-                    style={{ letterSpacing: (l.spacing || 0) + "px", cursor: "move" }}>
+                    style={{ fill: settings.labelColor, stroke: contrastBW(settings.labelColor), letterSpacing: (l.spacing || 0) + "px", cursor: "move" }}>
                     {l.name}
                   </text>
                 </g>

@@ -156,6 +156,7 @@
       if (!data.basemapId) throw new Error("not a project");
       const App = window.App;
       App.project = Object.assign(window.newProjectData(data.basemapId), data);
+      window.normalizeStatuses && window.normalizeStatuses(App.project);
       App.undoStack.length = 0; App.redoStack.length = 0;
       App.ui.selection = []; App.ui.activeState = null; App.ui.modal = null;
       App.emit();

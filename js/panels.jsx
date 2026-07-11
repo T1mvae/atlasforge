@@ -200,7 +200,73 @@ function SelectField({ label, value, onChange, options }) {
   );
 }
 
-const STATUSES = ["core", "autonomy", "colony", "protectorate", "puppet", "disputed", "occupied", "assimilation", "integration", "neutral"];
+// Built-in suggestion lists for country fields (localized). Users can always type
+// a custom value; new custom values are remembered project-wide (Actions.rememberValue).
+const VALUE_DEFAULTS = {
+  ideology: {
+    en: ["Democracy", "Liberalism", "Conservatism", "Social Democracy", "Socialism", "Communism", "Fascism", "Nationalism", "Monarchism", "Theocracy", "Anarchism", "Libertarianism", "Technocracy", "Centrism", "Populism", "Progressivism"],
+    ru: ["Демократия", "Либерализм", "Консерватизм", "Социал-демократия", "Социализм", "Коммунизм", "Фашизм", "Национализм", "Монархизм", "Теократия", "Анархизм", "Либертарианство", "Технократия", "Центризм", "Популизм", "Прогрессизм"]
+  },
+  government: {
+    en: ["Republic", "Presidential Republic", "Parliamentary Republic", "Constitutional Monarchy", "Absolute Monarchy", "Federation", "Confederation", "Empire", "Democracy", "Dictatorship", "Military Junta", "Theocracy", "Oligarchy", "City-state", "Tribal Council", "Anarchy"],
+    ru: ["Республика", "Президентская республика", "Парламентская республика", "Конституционная монархия", "Абсолютная монархия", "Федерация", "Конфедерация", "Империя", "Демократия", "Диктатура", "Военная хунта", "Теократия", "Олигархия", "Город-государство", "Племенной совет", "Анархия"]
+  },
+  economy: {
+    en: ["Market", "Planned", "Mixed", "Agrarian", "Industrial", "Post-industrial", "Feudal", "Mercantile", "Subsistence", "Resource-based", "Command"],
+    ru: ["Рыночная", "Плановая", "Смешанная", "Аграрная", "Индустриальная", "Постиндустриальная", "Феодальная", "Меркантильная", "Натуральная", "Ресурсная", "Командная"]
+  },
+  religion: {
+    en: ["Christianity", "Catholicism", "Orthodoxy", "Protestantism", "Islam", "Sunni Islam", "Shia Islam", "Judaism", "Hinduism", "Buddhism", "Paganism", "Animism", "Atheism", "Secular"],
+    ru: ["Христианство", "Католицизм", "Православие", "Протестантизм", "Ислам", "Суннизм", "Шиизм", "Иудаизм", "Индуизм", "Буддизм", "Язычество", "Анимизм", "Атеизм", "Светское"]
+  },
+  culture: { en: [], ru: [] } // very map-dependent -> seeded from the map + custom
+};
+
+// Distinct values already present in the loaded map (so dropdowns reflect the map).
+function mapVocab(listKey) {
+  const set = new Set();
+  const add = (v) => { if (v && typeof v === "string" && v.trim()) set.add(v.trim()); };
+  const p = App.project, bm = App.basemap;
+  if (listKey === "culture") (bm && bm.features ? bm.features : []).forEach((f) => add(f.cultArea));
+  if (listKey === "culture" || listKey === "religion") {
+    for (const rid in (p.regions || {})) add(p.regions[rid][listKey]);
+    for (const gid in (p.groups || {})) add(p.groups[gid][listKey]);
+  }
+  return [...set];
+}
+
+// A free-text input backed by a <datalist> of built-ins + map values + remembered
+// custom values. Typing a brand-new value both sets the field AND remembers it.
+function ComboField({ label, listKey, stateField, value, onChange }) {
+  const p = App.project;
+  const lang = App.ui.lang === "ru" ? "ru" : "en";
+  const builtins = (VALUE_DEFAULTS[listKey] && VALUE_DEFAULTS[listKey][lang]) || [];
+  const opts = React.useMemo(() => {
+    const set = new Set();
+    const add = (v) => { if (v && typeof v === "string" && v.trim()) set.add(v.trim()); };
+    builtins.forEach(add);
+    ((p.valueLists || {})[listKey] || []).forEach(add);
+    mapVocab(listKey).forEach(add);
+    Object.keys(p.states || {}).forEach((sid) => add(p.states[sid][stateField]));
+    return [...set].sort((a, b) => a.localeCompare(b));
+  }, [App.version, listKey, lang]);
+  const commit = (v) => {
+    const val = (v || "").trim();
+    onChange(val);
+    if (val && builtins.indexOf(val) < 0) Actions.rememberValue(listKey, val);
+  };
+  return (
+    <Field label={label}>
+      <input className="input" list={"dl-" + listKey} value={value || ""}
+        onChange={(e) => onChange(e.target.value)}
+        onBlur={(e) => commit(e.target.value)}
+        onKeyDown={(e) => { if (e.key === "Enter") commit(e.target.value); }}></input>
+      <datalist id={"dl-" + listKey}>{opts.map((o) => <option key={o} value={o}></option>)}</datalist>
+    </Field>
+  );
+}
+
+const STATUSES = ["core", "autonomy", "colony", "disputed", "occupied", "assimilation"];
 
 // Extra inputs that appear under the status field for statuses that involve a
 // SECOND (or several) countries: disputed -> any number of claimants, occupied ->
@@ -232,6 +298,37 @@ function StatusExtras({ status, claimants, occupiedFrom, owner, onChange }) {
     );
   }
   return null;
+}
+
+// Group the selected autonomy regions into a NAMED autonomous entity that draws
+// its own border + label. Shown only when the status is "autonomy".
+function AutonomyPicker({ sel, owner, autonomyId }) {
+  const p = App.project;
+  const autos = p.autonomies || {};
+  const list = Object.keys(autos).map((k) => autos[k]).filter((a) => !owner || owner === "__mixed" || a.owner === owner);
+  const cur = autonomyId && autos[autonomyId] ? autos[autonomyId] : null;
+  return (
+    <Field label={t("f.autonomy")}>
+      <select className="select" value={autonomyId || ""} onChange={(e) => {
+        const v = e.target.value;
+        if (v === "__new") {
+          const nm = prompt(t("autonomy.nameAsk"), t("autonomy.new"));
+          if (nm) Actions.createAutonomy(sel, nm);
+        } else Actions.setRegionAutonomy(sel, v || null);
+      }}>
+        <option value="">{t("misc.none")}</option>
+        {list.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
+        <option value="__new">＋ {t("autonomy.new")}</option>
+      </select>
+      {cur && (
+        <div className="field-row" style={{ marginTop: 4 }}>
+          <input className="input" value={cur.name} onChange={(e) => Actions.setAutonomy(cur.id, { name: e.target.value }, { undo: false })}></input>
+          <input type="color" className="color-input" value={cur.color || "#c8c8c8"} onChange={(e) => Actions.setAutonomy(cur.id, { color: e.target.value })}></input>
+          <button className="btn icon danger" style={{ height: 26, width: 26 }} title={t("autonomy.remove")} onClick={() => Actions.setRegionAutonomy(sel, null)}>✕</button>
+        </div>
+      )}
+    </Field>
+  );
 }
 
 // ---------- Map settings tab ----------
@@ -289,6 +386,7 @@ function MapTab() {
       <Field label={t("map.countryBorderW") + " — " + (s.countryBorderW != null ? (+s.countryBorderW).toFixed(1) : "1.6")}>
         <input type="range" className="range" min="0.4" max="4" step="0.1" value={s.countryBorderW != null ? s.countryBorderW : 1.6} onChange={(e) => set({ countryBorderW: +e.target.value })}></input>
       </Field>
+      <Check label={t("map.showAutonomies")} checked={s.showAutonomies !== false} onChange={(v) => set({ showAutonomies: v })}></Check>
       {App.basemap.topo && <Check label={t("map.showCoastlines")} checked={s.showCoastlines !== false} onChange={(v) => set({ showCoastlines: v })}></Check>}
       {supportsRegions && <Check label={t("map.showRegionBorders")} checked={s.showRegionBorders !== false} onChange={(v) => set({ showRegionBorders: v })}></Check>}
 
@@ -316,6 +414,7 @@ function MapTab() {
         </React.Fragment>
       )}
       <Check label={t("map.showStateLabels")} checked={s.showStateLabels} onChange={(v) => set({ showStateLabels: v })}></Check>
+      <Check label={t("map.showCapitals")} checked={s.showCapitals !== false} onChange={(v) => set({ showCapitals: v })}></Check>
       <Check label={t("map.atlasLabels")} checked={s.labelAtlas !== false} onChange={(v) => set({ labelAtlas: v })}></Check>
       <Check label={t("map.showLabels")} checked={s.showLabels} onChange={(v) => set({ showLabels: v })}></Check>
       <Check label={t("map.showFlags")} checked={s.showFlags} onChange={(v) => set({ showFlags: v })}></Check>
@@ -361,6 +460,17 @@ function StateTab() {
   if (!s) return <div className="props-body"><div className="muted">{t("state.none")}</div></div>;
   const set = (patch) => Actions.setState(sid, patch, { undo: false });
   const counts = stateStats();
+  const capOptions = React.useMemo(() => {
+    const out = [], bm = App.basemap;
+    for (const rid in p.regions) {
+      const e = effRegion(p, rid);
+      if (!e || e.owner !== sid) continue;
+      const f = bm && bm.byId ? bm.byId[rid] : null;
+      out.push({ id: rid, name: (p.regions[rid] && p.regions[rid].name) || (f && f.name) || rid });
+    }
+    out.sort((a, b) => String(a.name).localeCompare(String(b.name)));
+    return out;
+  }, [App.version, sid]);
   return (
     <div className="props-body">
       <TextField label={t("f.name")} value={s.name} onChange={(v) => set({ name: v })}></TextField>
@@ -415,13 +525,18 @@ function StateTab() {
       })()}
 
       <div className="props-section-title">{t("props.state")}</div>
-      <TextField label={t("f.capital")} value={s.capital} onChange={(v) => set({ capital: v })}></TextField>
-      <TextField label={t("f.gov")} value={s.gov} onChange={(v) => set({ gov: v })}></TextField>
-      <TextField label={t("f.ideology")} value={s.ideology} onChange={(v) => set({ ideology: v })}></TextField>
-      <TextField label={t("f.religion")} value={s.religion} onChange={(v) => set({ religion: v })}></TextField>
-      <TextField label={t("f.culture")} value={s.culture} onChange={(v) => set({ culture: v })}></TextField>
+      <Field label={t("f.capital")}>
+        <select className="select" value={s.capitalRegion || ""} onChange={(e) => set({ capitalRegion: e.target.value || null })}>
+          <option value="">{t("misc.none")}</option>
+          {capOptions.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}
+        </select>
+      </Field>
+      <ComboField label={t("f.gov")} listKey="government" stateField="gov" value={s.gov} onChange={(v) => set({ gov: v })}></ComboField>
+      <ComboField label={t("f.ideology")} listKey="ideology" stateField="ideology" value={s.ideology} onChange={(v) => set({ ideology: v })}></ComboField>
+      <ComboField label={t("f.religion")} listKey="religion" stateField="religion" value={s.religion} onChange={(v) => set({ religion: v })}></ComboField>
+      <ComboField label={t("f.culture")} listKey="culture" stateField="culture" value={s.culture} onChange={(v) => set({ culture: v })}></ComboField>
       <TextField label={t("f.population")} value={s.population} onChange={(v) => set({ population: v })}></TextField>
-      <TextField label={t("f.economy")} value={s.economy} onChange={(v) => set({ economy: v })}></TextField>
+      <ComboField label={t("f.economy")} listKey="economy" stateField="economy" value={s.economy} onChange={(v) => set({ economy: v })}></ComboField>
       <TextField label={t("f.army")} value={s.army} onChange={(v) => set({ army: v })}></TextField>
       <AreaField label={t("f.notes")} value={s.notes} onChange={(v) => set({ notes: v })}></AreaField>
       <button className="btn outline danger" onClick={() => { if (confirm(t("state.deleteConfirm"))) Actions.deleteState(sid); }}>{t("state.delete")}</button>
@@ -600,6 +715,7 @@ function RegionTab() {
           </select>
         </Field>
         <StatusExtras status={g.status} claimants={g.claimants} occupiedFrom={g.occupiedFrom} owner={g.owner} onChange={(patch) => setG(patch)}></StatusExtras>
+        {g.status === "autonomy" && <AutonomyPicker sel={sel} owner={g.owner} autonomyId={g.autonomyId}></AutonomyPicker>}
         <Field label={t("f.color")}>
           <div className="field-row">
             <input type="color" className="color-input" value={g.color || "#cccccc"} onChange={(e) => setG({ color: e.target.value })}></input>
@@ -671,6 +787,7 @@ function RegionTab() {
         </select>
       </Field>
       <StatusExtras status={r.status} claimants={r.claimants} occupiedFrom={r.occupiedFrom} owner={effFirst.owner} onChange={(patch) => setAll(patch)}></StatusExtras>
+      {r.status === "autonomy" && <AutonomyPicker sel={sel} owner={effFirst.owner} autonomyId={effFirst.autonomyId}></AutonomyPicker>}
       <Field label={t("f.color")}>
         <div className="field-row">
           <input type="color" className="color-input" value={r.color || "#cccccc"} onChange={(e) => setAll({ color: e.target.value })}></input>

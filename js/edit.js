@@ -183,6 +183,7 @@
       religion: e0.religion || "", language: e0.language || "", notes: "" };
     if (e0.claimants && e0.claimants.length) r.claimants = e0.claimants.slice();
     if (e0.occupiedFrom) r.occupiedFrom = e0.occupiedFrom;
+    if (e0.autonomyId) r.autonomyId = e0.autonomyId;
     return r;
   }
 
@@ -212,7 +213,7 @@
                  culturalArea: srcProps.culturalArea || null, admin: srcProps.admin || null }
       };
       const pol = politicalClone(recs[0]);
-      if (pol) { if (!sameStatus) { pol.status = "core"; delete pol.claimants; delete pol.occupiedFrom; } pr.regions[newId] = pol; }
+      if (pol) { if (!sameStatus) { pol.status = "core"; delete pol.claimants; delete pol.occupiedFrom; delete pol.autonomyId; } pr.regions[newId] = pol; }
     }, "edit.mergedOk");
     return newId;
   };

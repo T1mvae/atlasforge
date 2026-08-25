@@ -1,5 +1,6 @@
 # build inputs / scratch — not part of the published site
 tools/cache/
+tools/__pycache__/
 screenshots/
 uploads/
 *.log
@@ -22,3 +23,4 @@ OWB_helping_files/
 data/owb_states_raw.geojson
 data/world_hoi4_raw.geojson
 World_helping_files/
+map_data_agot/

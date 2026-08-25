@@ -82,6 +82,43 @@
       type: "region-grid",
       supportsCountries: true, supportsProvinceGroups: true, supportsCustomOwnership: true
     },
+    // A Game of Thrones (CK3 mod) — Westeros & Essos, built from the mod's own
+    // map_data by tools/build_agot_from_mod.py: provinces.png + definition.csv give
+    // the cells, the province-history banner comments give the CK3 title hierarchy
+    // (barony -> county -> duchy -> kingdom), so the SAME pixel frame ships at four
+    // nested levels. Game projection (pixel coords), all four fully editable.
+    "agot": {
+      kind: "localgeo", approx: "~1870",
+      name: "A Game of Thrones — counties",
+      dataset: "/data/agot_counties.geojson",
+      physicalDataset: "/data/agot_physical.geojson",
+      type: "region-grid",
+      supportsCountries: true, supportsProvinceGroups: true, supportsCustomOwnership: true
+    },
+    "agot_duchies": {
+      kind: "localgeo", approx: "~615",
+      name: "A Game of Thrones — duchies",
+      dataset: "/data/agot_duchies.geojson",
+      physicalDataset: "/data/agot_physical.geojson",
+      type: "region-grid",
+      supportsCountries: true, supportsProvinceGroups: true, supportsCustomOwnership: true
+    },
+    "agot_kingdoms": {
+      kind: "localgeo", approx: "~45",
+      name: "A Game of Thrones — kingdoms",
+      dataset: "/data/agot_kingdoms.geojson",
+      physicalDataset: "/data/agot_physical.geojson",
+      type: "region-grid",
+      supportsCountries: true, supportsProvinceGroups: true, supportsCustomOwnership: true
+    },
+    "agot_baronies": {
+      kind: "localgeo", approx: "~10430",
+      name: "A Game of Thrones — baronies (full detail)",
+      dataset: "/data/agot_baronies.geojson",
+      physicalDataset: "/data/agot_physical.geojson",
+      type: "region-grid",
+      supportsCountries: true, supportsProvinceGroups: true, supportsCustomOwnership: true
+    },
     // Blank canvas: empty editable map. Load a reference image as a backdrop and
     // trace a brand-new world (e.g. Westeros & Essos) with the draw tool.
     "blank": {

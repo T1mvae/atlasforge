@@ -88,7 +88,7 @@
     // (barony -> county -> duchy -> kingdom), so the SAME pixel frame ships at four
     // nested levels. Game projection (pixel coords), all four fully editable.
     "agot": {
-      kind: "localgeo", approx: "~1965",
+      kind: "localgeo", approx: "~4130",
       name: "A Game of Thrones — counties",
       dataset: "/data/agot_counties.geojson",
       physicalDataset: "/data/agot_physical.geojson",
@@ -96,7 +96,7 @@
       supportsCountries: true, supportsProvinceGroups: true, supportsCustomOwnership: true
     },
     "agot_duchies": {
-      kind: "localgeo", approx: "~620",
+      kind: "localgeo", approx: "~720",
       name: "A Game of Thrones — duchies",
       dataset: "/data/agot_duchies.geojson",
       physicalDataset: "/data/agot_physical.geojson",
@@ -104,7 +104,7 @@
       supportsCountries: true, supportsProvinceGroups: true, supportsCustomOwnership: true
     },
     "agot_kingdoms": {
-      kind: "localgeo", approx: "~46",
+      kind: "localgeo", approx: "~68",
       name: "A Game of Thrones — kingdoms",
       dataset: "/data/agot_kingdoms.geojson",
       physicalDataset: "/data/agot_physical.geojson",
@@ -112,7 +112,7 @@
       supportsCountries: true, supportsProvinceGroups: true, supportsCustomOwnership: true
     },
     "agot_baronies": {
-      kind: "localgeo", approx: "~10530",
+      kind: "localgeo", approx: "~23110",
       name: "A Game of Thrones — baronies (full detail)",
       dataset: "/data/agot_baronies.geojson",
       physicalDataset: "/data/agot_physical.geojson",

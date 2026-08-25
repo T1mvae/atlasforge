@@ -194,10 +194,108 @@ def derive_titles(dirname, king_key, king_name):
     log("%s: %d provinces titled from %d landmasses" % (dirname, made, n))
     return made
 
+# The far east (Essos Expanded) ships 14,550 provinces with no titles at all: the
+# definition keys are auto-generated colour codes, there are no county/duchy banners,
+# and its geographical regions name duchies that map_data gives no way to resolve to
+# provinces. What it DOES carry per province is the culture, and that is real mod
+# data naming real realms — Dothraki, Feicui Ren (Yi Ti), Qartheen, Jogos Nhai. So the
+# hierarchy is built from it: culture -> kingdom, each contiguous stretch of a culture
+# -> duchy, and inside a duchy the provinces are clustered into counties the same size
+# as the rest of the map so the far east stays paintable at the same granularity.
+FAR_EAST_COUNTY = 6      # baronies per generated county (the map's own average is 5.6)
+FAR_EAST_MIN_PX = 400    # ignore specks left over between two cultures
+
+def derive_far_east(dirname, culture_dir):
+    idx = layer_index(SRCSTATE, dirname)
+    if idx is None: return 0
+    off = layer_offset(SRCSTATE, dirname)
+    mask = SRCSTATE["origin"] == idx
+
+    # culture per province, read from the sibling revision that carries it
+    cul = {}
+    cf = os.path.join(SRC, culture_dir, "provinces", "k_generated.txt")
+    if os.path.isfile(cf):
+        for pid, body in re.findall(r"^(\d+)\s*=\s*\{(.*?)^\}",
+                                    open(cf, encoding="utf-8-sig", errors="ignore").read(), re.S | re.M):
+            m = re.search(r"culture\s*=\s*(\w+)", body)
+            if m: cul[int(pid) + off] = m.group(1)
+    # the handful of provinces the compat files do name
+    real = {}
+    for fp in glob.glob(os.path.join(SRC, dirname, "provinces", "*.txt")):
+        t = open(fp, encoding="utf-8-sig", errors="ignore").read()
+        for m in re.finditer(r"^#\s*([^\n#=]{2,50})\s*\n\s*(\d+)\s*=\s*\{", t, re.M):
+            real[int(m.group(2)) + off] = m.group(1).strip()
+
+    # per-province pixel count and centroid inside this layer
+    vals = pidc[mask]
+    ys, xs = np.nonzero(mask)
+    n = MAXPID + 2
+    cnt = np.bincount(vals, minlength=n).astype(np.float64)
+    cx = np.bincount(vals, weights=xs.astype(np.float64), minlength=n)
+    cy = np.bincount(vals, weights=ys.astype(np.float64), minlength=n)
+    del vals, xs, ys
+    ids = [int(p) for p in np.nonzero(cnt)[0] if p > 0]
+    log("  %s: %d provinces, %d with a culture, %d with a real name"
+        % (dirname, len(ids), sum(1 for p in ids if p in cul), sum(1 for p in ids if p in real)))
+
+    from scipy.cluster.vq import kmeans2
+    made = 0
+    county_no = {}
+    by_cul = {}
+    for p in ids: by_cul.setdefault(cul.get(p, "unknown"), []).append(p)
+    lut = np.zeros(n, np.int32)
+    for culture in sorted(by_cul):
+        members = by_cul[culture]
+        kking = "k_fe_" + culture
+        NAME_OVERRIDE[kking] = pretty(culture)
+        for i, p in enumerate(members): lut[p] = 1
+        comp_img = np.where(mask, lut[pidc], 0)
+        lab, ncomp = ndimage.label(comp_img, ndimage.generate_binary_structure(2, 2))
+        for i, p in enumerate(members): lut[p] = 0
+        # a province belongs to the component holding most of its pixels
+        home = {}
+        for c in range(1, ncomp + 1):
+            sel = lab == c
+            if int(sel.sum()) < FAR_EAST_MIN_PX: continue
+            pv, pc = np.unique(pidc[sel], return_counts=True)
+            for q, k in zip(pv, pc):
+                q = int(q)
+                if cnt[q] > 0 and cul.get(q, "unknown") == culture and k > home.get(q, (0, 0))[0]:
+                    home[q] = (int(k), c)
+        groups = {}
+        for q, (_k, c) in home.items(): groups.setdefault(c, []).append(q)
+        multi = len(groups) > 1
+        for j, c in enumerate(sorted(groups), start=1):
+            mem = sorted(groups[c])
+            dkey = "d_fe_%s_%d" % (culture, c)
+            NAME_OVERRIDE[dkey] = pretty(culture) + (" %d" % j if multi else "")
+            pts = np.array([[cx[q] / cnt[q], cy[q] / cnt[q]] for q in mem])
+            k = max(1, int(round(len(mem) / float(FAR_EAST_COUNTY))))
+            if k > 1 and len(mem) > k:
+                _, assign = kmeans2(pts, k, minit="++", seed=c, missing="warn")
+            else:
+                assign = np.zeros(len(mem), int)
+            seq = {}
+            for q, a in zip(mem, assign):
+                ckey = "c_fe_%s_%d_%d" % (culture, c, int(a))
+                if ckey not in NAME_OVERRIDE:
+                    county_no[culture] = county_no.get(culture, 0) + 1
+                    NAME_OVERRIDE[ckey] = "%s %d" % (pretty(culture), county_no[culture])
+                seq[ckey] = seq.get(ckey, 0) + 1
+                # the only real names map_data gives are the Yingzao monuments — they
+                # belong on the holding itself, never on a whole county or duchy
+                bkey = "b_fe_%d" % q
+                NAME_OVERRIDE[bkey] = real.get(q) or ("%s %d" % (NAME_OVERRIDE[ckey], seq[ckey]))
+                prov[q] = {"b": bkey, "c": ckey, "d": dkey, "k": kking}
+                made += 1
+    log("  %s: %d provinces titled" % (dirname, made))
+    return made
+
 nb = parse_base(os.path.join(SRC, "provinces"))
 no = parse_overlay(os.path.join(SRCSTATE["dirs"][1], "provinces")) if len(SRCSTATE["dirs"]) > 1 else 0
 log("history: %d from base, %d from submod (%.1fs)" % (nb, no, time.time() - t0))
 derive_titles("map_data_summer_isles", "k_summer_islands", "Summer Islands")
+derive_far_east("map_data_further_east", "map_data_essos_expanded")
 
 # Land provinces with no history line at all (the submod only writes the ones that
 # hold something): adopt the title of a sibling barony — b_asshai_9 follows
@@ -360,6 +458,7 @@ def county_props(lab):
             "region": region_of(e["d"]),
             "regionName": pretty(re.sub(r"^world_", "", region_of(e["d"]) or "")),
             "baronies": e["n"], "color": shade(e["k"], key),
+            "generated": True if key.startswith(("c_fe_", "c_summer_islands_")) else None,
             "owner": None, "ownerCountryId": None, "notes": ""}
 vectorize(lab_c, len(counties), county_props, os.path.join(OUTDIR, "agot_counties.geojson"), "counties")
 
@@ -377,6 +476,7 @@ def duchy_props(lab):
             "region": region_of(key),
             "regionName": pretty(re.sub(r"^world_", "", region_of(key) or "")),
             "type": "historical", "counties": len(e["c"]),
+            "generated": True if key.startswith(("d_fe_", "d_summer_islands_")) else None,
             "provinceIds": sorted(county_lab[c] for c in e["c"]),
             "provinceCount": len(e["c"]), "color": None, "notes": ""}
 vectorize(c2d[lab_c], len(duchies), duchy_props, os.path.join(OUTDIR, "agot_duchies.geojson"), "duchies")
@@ -404,6 +504,7 @@ def barony_props(lab):
             "duchy": v["d"], "duchyName": pretty(v["d"]),
             "kingdom": v["k"], "kingdomName": pretty(v["k"]),
             "region": region_of(v["d"]), "color": shade(v["k"], key + str(p)),
+            "generated": True if key.startswith("b_fe_") else None,
             "owner": None, "ownerCountryId": None, "notes": ""}
 vectorize(lab_b, len(land_pids), barony_props, os.path.join(OUTDIR, "agot_baronies.geojson"), "baronies")
 log("done (%.1fs)" % (time.time() - t0))

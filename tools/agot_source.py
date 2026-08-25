@@ -9,6 +9,13 @@ way every integration adds and nothing that already works is repainted.
     base  map_data_agot                 the AGOT mod itself
      +1   map_data_legacy_of_valyria    Valyria, Volantis, Slaver's Bay, Sothoryos, Asshai
      +2   map_data_summer_isles         the Summer Isles
+     +3   map_data_further_east         the far east: the Dothraki Sea, Yi Ti, Jogos Nhai,
+     +4   map_data_essos_expanded       Qarth, Leng, Ulthos, Mossovy, the Cannibal Sands
+
+The last two are the same mod one revision apart — their province rasters are pixel
+for pixel identical and their definitions differ in a single province — so the newer
+`further_east` goes first and `essos_expanded` fills nothing. It is still listed,
+because it is the one that carries the per-province culture the far east is grouped by.
 
 "Blank" means a huge impassable block — what a mod paints over the parts of the world
 it has not made yet. Small impassable ridges are real terrain and are left alone.
@@ -33,6 +40,8 @@ BIG_FILLER_PX = 50000        # an impassable province this big is unmade world, 
 LAYERS = [
     {"dir": "map_data_legacy_of_valyria", "offset": 0,      "mode": "wins"},
     {"dir": "map_data_summer_isles",      "offset": 400000, "mode": "fill"},
+    {"dir": "map_data_further_east",      "offset": 300000, "mode": "fill"},
+    {"dir": "map_data_essos_expanded",    "offset": 200000, "mode": "fill"},
 ]
 
 

@@ -232,14 +232,14 @@ function TemplatesModal() {
     { id: "admin1", name: t("tmpl.admin1.name"), desc: t("tmpl.admin1.desc"), count: "~4600", feats: ["region-grid", "physical", "countries"] },
     { id: "world_hoi4", name: t("tmpl.worldhoi4.name"), desc: t("tmpl.worldhoi4.desc"), count: "~1770", feats: ["region-grid", "physical", "countries"] },
     { id: "owb", name: t("tmpl.owb.name"), desc: t("tmpl.owb.desc"), count: "~1984", feats: ["region-grid", "physical", "countries"] },
-    { id: "agot", name: t("tmpl.agot.name"), desc: t("tmpl.agot.desc"), count: "~1965", feats: ["region-grid", "physical", "countries"] },
+    { id: "agot", name: t("tmpl.agot.name"), desc: t("tmpl.agot.desc"), count: "~4130", feats: ["region-grid", "physical", "countries"] },
     { id: "blank", name: t("tmpl.blank.name"), desc: t("tmpl.blank.desc"), count: "0", feats: ["draw", "physical"] }
   ];
   // Other base maps kept available but out of the main gallery.
   const classic = [
-    { id: "agot_duchies", name: t("tmpl.agotd.name"), desc: t("tmpl.agotd.desc"), count: "~620" },
-    { id: "agot_kingdoms", name: t("tmpl.agotk.name"), desc: t("tmpl.agotk.desc"), count: "~45" },
-    { id: "agot_baronies", name: t("tmpl.agotb.name"), desc: t("tmpl.agotb.desc"), count: "~10530" },
+    { id: "agot_duchies", name: t("tmpl.agotd.name"), desc: t("tmpl.agotd.desc"), count: "~720" },
+    { id: "agot_kingdoms", name: t("tmpl.agotk.name"), desc: t("tmpl.agotk.desc"), count: "~68" },
+    { id: "agot_baronies", name: t("tmpl.agotb.name"), desc: t("tmpl.agotb.desc"), count: "~23110" },
     { id: "best_regions_world", name: t("tmpl.best.name"), desc: t("tmpl.best.desc"), count: "~2550" },
     { id: "atlas_world", name: t("tmpl.atlas.name"), desc: t("tmpl.atlas.desc"), count: "~1250" },
     { id: "world_states", name: t("tmpl.worldstates.name"), desc: t("tmpl.worldstates.desc"), count: "~1050" },

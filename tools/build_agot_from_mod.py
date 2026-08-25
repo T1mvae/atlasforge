@@ -27,16 +27,11 @@ from shapely.geometry import box, mapping, MultiPolygon
 from shapely.ops import unary_union
 from shapely.geometry.polygon import orient
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from agot_source import load as load_source, BASE_OFFSET
+from agot_source import load as load_source, BASE_OFFSET, layer_index, layer_offset
 
 Image.MAX_IMAGE_PIXELS = None
 SRC = sys.argv[1] if len(sys.argv) > 1 else "map_data_agot"
 OUTDIR = sys.argv[2] if len(sys.argv) > 2 else "data"
-# a nested folder that also looks like map_data = a submod extending this map
-OVERLAYS = sorted(d for d in glob.glob(os.path.join(SRC, "map_data_*"))
-                  if os.path.isfile(os.path.join(d, "provinces.png")))
-MAPDIR = OVERLAYS[-1] if OVERLAYS else SRC     # images + definition + default.map
-
 COORD_SCALE = 0.25   # provinces.png is 9216x6144 -> a 2304x1536 working frame
 NDIG = 2             # rounding is deterministic, so shared borders stay identical
 SIMPLIFY = 0.0       # exact pixel tiling; mapshaper does the topological simplify
@@ -45,7 +40,6 @@ IMPASSABLE_MIN_PX = 50000   # bigger impassable blocks stay units of their own
 
 t0 = time.time()
 def log(m): print(m, flush=True)
-log("base %s, map data %s" % (SRC, MAPDIR))
 
 # ---------------------------------------------------------------- names
 SMALL = {"of", "the", "by", "in", "on", "at", "and", "upon", "de", "a", "an", "under", "to"}
@@ -82,7 +76,7 @@ W, H      = SRCSTATE["W"], SRCSTATE["H"]
 MAXPID    = SRCSTATE["maxpid"]
 prov_barony = SRCSTATE["barony"]
 LAND, MOUNT = SRCSTATE["land"], SRCSTATE["mount"]
-MAPDIR    = SRCSTATE["mapdir"]
+MAPDIR    = SRCSTATE["dirs"][1] if len(SRCSTATE["dirs"]) > 1 else SRC
 pidc      = np.clip(pid_img, 0, MAXPID + 1)
 prov_px   = np.bincount(pidc.ravel(), minlength=MAXPID + 2)
 # ids the submod re-used for somewhere else entirely: the base history for them is
@@ -170,9 +164,40 @@ def parse_overlay(folder):
             if depth < 0: depth = 0
     return n
 
+# Some submods ship real barony names in definition.csv but no CK3 title banners
+# anywhere in map_data (the Summer Isles: 100 named holdings, no landed_titles).
+# Give each barony its own county — the base map has plenty of one-barony counties
+# too — and let the connected landmasses be the duchies, each named after its
+# largest holding, which is the convention CK3 itself follows.
+def derive_titles(dirname, king_key, king_name):
+    idx = layer_index(SRCSTATE, dirname)
+    if idx is None: return 0
+    off = layer_offset(SRCSTATE, dirname)
+    NAME_OVERRIDE[king_key] = king_name
+    mask = SRCSTATE["origin"] == idx
+    lab, n = ndimage.label(mask, ndimage.generate_binary_structure(2, 2))
+    tag = king_key[2:]
+    made = 0
+    for comp in range(1, n + 1):
+        ids, counts = np.unique(pid_img[lab == comp], return_counts=True)
+        ids = [(int(c), int(i)) for i, c in zip(ids, counts) if i > 0]
+        if not ids: continue
+        big = max(ids)[1]
+        dkey = "d_%s_%s" % (tag, slug(stem(prov_barony.get(big, "") or str(big))))
+        NAME_OVERRIDE[dkey] = pretty(prov_barony.get(big) or "")
+        for _px, p in ids:
+            key = prov_barony.get(p) or ("b_%d" % p)
+            ckey = "c_%s_%s" % (tag, slug(key[2:] if key.startswith("b_") else key))
+            NAME_OVERRIDE[ckey] = pretty(key)
+            prov[p] = {"b": key, "c": ckey, "d": dkey, "k": king_key}
+            made += 1
+    log("%s: %d provinces titled from %d landmasses" % (dirname, made, n))
+    return made
+
 nb = parse_base(os.path.join(SRC, "provinces"))
-no = parse_overlay(os.path.join(MAPDIR, "provinces")) if MAPDIR != SRC else 0
+no = parse_overlay(os.path.join(SRCSTATE["dirs"][1], "provinces")) if len(SRCSTATE["dirs"]) > 1 else 0
 log("history: %d from base, %d from submod (%.1fs)" % (nb, no, time.time() - t0))
+derive_titles("map_data_summer_isles", "k_summer_islands", "Summer Islands")
 
 # Land provinces with no history line at all (the submod only writes the ones that
 # hold something): adopt the title of a sibling barony — b_asshai_9 follows
@@ -198,8 +223,7 @@ log("titles: %d counties, %d duchies, %d kingdoms" % (len(counties), len(duchies
 
 # ---------------------------------------------------------------- geographical regions
 duchy_region = {}
-for gf in sorted(set(glob.glob(os.path.join(SRC, "geographical_regions", "*.txt"))) |
-                 set(glob.glob(os.path.join(MAPDIR, "geographical_regions", "*.txt")))):
+for gf in sorted({f for d in SRCSTATE["dirs"] for f in glob.glob(os.path.join(d, "geographical_regions", "*.txt"))}):
     txt = re.sub(r"#.*", "", open(gf, encoding="utf-8-sig", errors="ignore").read())
     for m in re.finditer(r"(world_[A-Za-z0-9_]+)\s*=\s*\{(.*?)\n\}", txt, re.S):
         dm = re.search(r"duchies\s*=\s*\{([^}]*)\}", m.group(2))

@@ -219,7 +219,11 @@ const VALUE_DEFAULTS = {
     en: ["Christianity", "Catholicism", "Orthodoxy", "Protestantism", "Islam", "Sunni Islam", "Shia Islam", "Judaism", "Hinduism", "Buddhism", "Paganism", "Animism", "Atheism", "Secular"],
     ru: ["Христианство", "Католицизм", "Православие", "Протестантизм", "Ислам", "Суннизм", "Шиизм", "Иудаизм", "Индуизм", "Буддизм", "Язычество", "Анимизм", "Атеизм", "Светское"]
   },
-  culture: { en: [], ru: [] } // very map-dependent -> seeded from the map + custom
+  culture: { en: [], ru: [] }, // very map-dependent -> seeded from the map + custom
+  language: {
+    en: ["English", "Spanish", "French", "Portuguese", "German", "Russian", "Arabic", "Hindi", "Mandarin Chinese", "Japanese", "Korean", "Latin"],
+    ru: ["Английский", "Испанский", "Французский", "Португальский", "Немецкий", "Русский", "Арабский", "Хинди", "Китайский", "Японский", "Корейский", "Латынь"]
+  }
 };
 
 // Distinct values already present in the loaded map (so dropdowns reflect the map).
@@ -228,7 +232,7 @@ function mapVocab(listKey) {
   const add = (v) => { if (v && typeof v === "string" && v.trim()) set.add(v.trim()); };
   const p = App.project, bm = App.basemap;
   if (listKey === "culture") (bm && bm.features ? bm.features : []).forEach((f) => add(f.cultArea));
-  if (listKey === "culture" || listKey === "religion") {
+  if (listKey === "culture" || listKey === "religion" || listKey === "language") {
     for (const rid in (p.regions || {})) add(p.regions[rid][listKey]);
     for (const gid in (p.groups || {})) add(p.groups[gid][listKey]);
   }
@@ -533,8 +537,9 @@ function StateTab() {
       </Field>
       <ComboField label={t("f.gov")} listKey="government" stateField="gov" value={s.gov} onChange={(v) => set({ gov: v })}></ComboField>
       <ComboField label={t("f.ideology")} listKey="ideology" stateField="ideology" value={s.ideology} onChange={(v) => set({ ideology: v })}></ComboField>
-      <ComboField label={t("f.religion")} listKey="religion" stateField="religion" value={s.religion} onChange={(v) => set({ religion: v })}></ComboField>
-      <ComboField label={t("f.culture")} listKey="culture" stateField="culture" value={s.culture} onChange={(v) => set({ culture: v })}></ComboField>
+      <ComboField label={t("f.officialReligion")} listKey="religion" stateField="religion" value={s.religion} onChange={(v) => set({ religion: v })}></ComboField>
+      <ComboField label={t("f.officialCulture")} listKey="culture" stateField="culture" value={s.culture} onChange={(v) => set({ culture: v })}></ComboField>
+      <ComboField label={t("f.officialLanguage")} listKey="language" stateField="language" value={s.language} onChange={(v) => set({ language: v })}></ComboField>
       <TextField label={t("f.population")} value={s.population} onChange={(v) => set({ population: v })}></TextField>
       <ComboField label={t("f.economy")} listKey="economy" stateField="economy" value={s.economy} onChange={(v) => set({ economy: v })}></ComboField>
       <TextField label={t("f.army")} value={s.army} onChange={(v) => set({ army: v })}></TextField>
@@ -724,9 +729,9 @@ function RegionTab() {
         </Field>
         <div className="props-section-title">{t("props.region")}</div>
         <TextField label={t("f.population")} value={g.population} onChange={(v) => setG({ population: v })}></TextField>
-        <TextField label={t("f.culture")} value={g.culture} onChange={(v) => setG({ culture: v })}></TextField>
-        <TextField label={t("f.language")} value={g.language} onChange={(v) => setG({ language: v })}></TextField>
-        <TextField label={t("f.religion")} value={g.religion} onChange={(v) => setG({ religion: v })}></TextField>
+        <ComboField label={t("f.culture")} listKey="culture" stateField="culture" value={g.culture} onChange={(v) => setG({ culture: v })}></ComboField>
+        <ComboField label={t("f.language")} listKey="language" stateField="language" value={g.language} onChange={(v) => setG({ language: v })}></ComboField>
+        <ComboField label={t("f.religion")} listKey="religion" stateField="religion" value={g.religion} onChange={(v) => setG({ religion: v })}></ComboField>
         <AreaField label={t("f.notes")} value={g.notes} onChange={(v) => setG({ notes: v })}></AreaField>
         <button className="btn outline danger" onClick={() => { Actions.ungroup(gid); Actions.select([], false); }}>{t("group.split")}</button>
       </div>
@@ -798,9 +803,9 @@ function RegionTab() {
         <React.Fragment>
           <div className="props-section-title">{t("props.region")}</div>
           <TextField label={t("f.population")} value={r.population} onChange={(v) => setAll({ population: v })}></TextField>
-          <TextField label={t("f.culture")} value={r.culture} onChange={(v) => setAll({ culture: v })}></TextField>
-          <TextField label={t("f.language")} value={r.language} onChange={(v) => setAll({ language: v })}></TextField>
-          <TextField label={t("f.religion")} value={r.religion} onChange={(v) => setAll({ religion: v })}></TextField>
+          <ComboField label={t("f.culture")} listKey="culture" stateField="culture" value={r.culture} onChange={(v) => setAll({ culture: v })}></ComboField>
+          <ComboField label={t("f.language")} listKey="language" stateField="language" value={r.language} onChange={(v) => setAll({ language: v })}></ComboField>
+          <ComboField label={t("f.religion")} listKey="religion" stateField="religion" value={r.religion} onChange={(v) => setAll({ religion: v })}></ComboField>
           <AreaField label={t("f.notes")} value={r.notes} onChange={(v) => setAll({ notes: v })}></AreaField>
           {f && <button className="btn outline" onClick={() => MapAPI.zoomTo(f.b)}>{t("zoom.fit")} → {r.name || f.name}</button>}
           {window.GeomEdit && GeomEdit.enabled() && (

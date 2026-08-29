@@ -9,10 +9,9 @@
 #   default.map     which ids are sea / lake / river / impassable
 #   provinces/*.txt province history; its banner comments carry the CK3 title
 #                   hierarchy, and the FILE name carries the kingdom
-# When a submod folder is present its provinces.png / definition.csv / default.map
-# WIN (it repaints and re-numbers part of the map), and its province history is
-# merged on top of the base one — base entries for ids the submod re-used are
-# dropped, so nothing keeps a stale title.
+# The official AGOT source is authoritative. A submod may only add land where the
+# official map has a large blank impassable block; it cannot repaint or rename an
+# official province. Each source still gets an independent ID range.
 #
 # Output: four nested levels in the SAME pixel frame (game projection):
 #   data/agot_counties.geojson  (the primary editable map)
@@ -76,18 +75,13 @@ W, H      = SRCSTATE["W"], SRCSTATE["H"]
 MAXPID    = SRCSTATE["maxpid"]
 prov_barony = SRCSTATE["barony"]
 LAND, MOUNT = SRCSTATE["land"], SRCSTATE["mount"]
-MAPDIR    = SRCSTATE["dirs"][1] if len(SRCSTATE["dirs"]) > 1 else SRC
 pidc      = np.clip(pid_img, 0, MAXPID + 1)
 prov_px   = np.bincount(pidc.ravel(), minlength=MAXPID + 2)
-# ids the submod re-used for somewhere else entirely: the base history for them is
-# only valid for the pixels that came from the BASE raster (id + BASE_OFFSET).
 # only ids that actually own pixels in the composite are real units
 LAND  = {p for p in LAND if prov_px[p] > 0}
 MOUNT = {p for p in MOUNT if prov_px[p] > 0}
-base_barony = {p - BASE_OFFSET: k for p, k in prov_barony.items() if p > BASE_OFFSET}
-REPAINTED = {p for p, k in base_barony.items() if prov_barony.get(p, k) != k}
-log("provinces: %d land + %d impassable carry pixels, %d ids re-used by the submod (%.1fs)"
-    % (len(LAND), len(MOUNT), len(REPAINTED), time.time() - t0))
+log("provinces: %d land + %d impassable carry pixels (%.1fs)"
+    % (len(LAND), len(MOUNT), time.time() - t0))
 
 # ---------------------------------------------------------------- province history
 # Base (AGOT) files carry a two-line banner per province:
@@ -98,8 +92,7 @@ RE_ID = re.compile(r"^\s*(\d+)\s*=\s*\{")
 prov = {}
 
 def parse_base(folder):
-    """Base titles land twice: on the raw id (unless the submod re-used it) and on
-    id+BASE_OFFSET, which is what the pixels the submod blanked out now carry."""
+    """Official titles are assigned only to the official source's ID range."""
     n = 0
     for fp in sorted(glob.glob(os.path.join(folder, "*.txt"))):
         base = os.path.basename(fp)[:-4]
@@ -113,12 +106,10 @@ def parse_base(folder):
                 mm = RE_ID.match(line)
                 if mm and cd:
                     pid = int(mm.group(1))
-                    if pid not in REPAINTED:
-                        prov[pid] = {"b": prov_barony.get(pid), "c": cd[0], "d": cd[1], "k": king}
-                        n += 1
                     off = pid + BASE_OFFSET
                     if off in prov_barony:
                         prov[off] = {"b": prov_barony[off], "c": cd[0], "d": cd[1], "k": king}
+                        n += 1
             depth += line.count("{") - line.count("}")
             if depth < 0: depth = 0
     return n

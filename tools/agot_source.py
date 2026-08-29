@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """AtlasForge — the composited A Game of Thrones map source.
 
-The AGOT mod's `map_data` can carry submod folders nested inside it that extend the
-same 9216x6144 image. They are stacked in a fixed order and **an earlier layer always
-keeps what it already covers** — a later one may only fill what is still blank. That
-way every integration adds and nothing that already works is repainted.
+The official AGOT mod is the authoritative source. Its submod folders are stacked
+after it and may **only fill territory that the official map leaves blank**. They can
+never repaint, renumber, or rename an official province. Within the additions, an
+earlier layer also keeps what it already covers, so every integration only adds.
 
     base  map_data_agot                 the AGOT mod itself
      +1   map_data_legacy_of_valyria    Valyria, Volantis, Slaver's Bay, Sothoryos, Asshai
@@ -20,11 +20,6 @@ because it is the one that carries the per-province culture the far east is grou
 "Blank" means a huge impassable block — what a mod paints over the parts of the world
 it has not made yet. Small impassable ridges are real terrain and are left alone.
 
-Legacy_of_valyria is the one exception to the fill-only rule: it was integrated before
-that rule existed and *wins* where it drew real provinces (it reworked the Rhoyne), with
-the base filling the parts it blanked back to `impassable_land` — Lorath, Norvos, Qohor
-and the Axe. Changing it now would silently repaint an already published map.
-
 Every layer gets its own id offset, because the submods re-use the raw province numbers
 for completely different places. `load()` returns one unified id space.
 """
@@ -36,12 +31,12 @@ Image.MAX_IMAGE_PIXELS = None
 BASE_OFFSET = 100000
 BIG_FILLER_PX = 50000        # an impassable province this big is unmade world, not terrain
 
-# stacked in priority order; the first entry that covers a pixel keeps it
+# Stacked after the official source in priority order; each can only fill a blank pixel.
 LAYERS = [
-    {"dir": "map_data_legacy_of_valyria", "offset": 0,      "mode": "wins"},
-    {"dir": "map_data_summer_isles",      "offset": 400000, "mode": "fill"},
-    {"dir": "map_data_further_east",      "offset": 300000, "mode": "fill"},
-    {"dir": "map_data_essos_expanded",    "offset": 200000, "mode": "fill"},
+    {"dir": "map_data_legacy_of_valyria", "offset": 0},
+    {"dir": "map_data_summer_isles",      "offset": 400000},
+    {"dir": "map_data_further_east",      "offset": 300000},
+    {"dir": "map_data_essos_expanded",    "offset": 200000},
 ]
 
 
@@ -111,23 +106,10 @@ def load(src="map_data_agot", log=print):
     layers = [dict(spec, **_read_layer(spec["path"])) for spec in present]
     dirs = [src] + [l["path"] for l in layers]
 
-    # ---- layer 1 may win outright (see the module docstring); the rest only fill
-    first = layers[0]
-    if first["mode"] == "wins":
-        use_base = base["real"] & ~first["real"]
-        pid = np.where(use_base, base["pid"] + BASE_OFFSET, first["pid"] + first["offset"])
-        origin = np.where(use_base, 0, 1).astype(np.int16)
-        covered = base["real"] | first["real"]
-        log("layer 1 %-26s wins: covers %d px, base fills the %d px it left blank, "
-            "adds %d px the base did not have"
-            % (first["dir"], int(first["real"].sum()), int(use_base.sum()),
-               int((first["real"] & ~base["real"]).sum())))
-        rest = layers[1:]
-    else:
-        pid = base["pid"] + BASE_OFFSET
-        origin = np.zeros((H, W), np.int16)
-        covered = base["real"]
-        rest = layers
+    # ---- the official source is always authoritative; additions only fill blanks
+    pid = base["pid"] + BASE_OFFSET
+    origin = np.zeros((H, W), np.int16)
+    covered = base["real"]
 
     barony = {p + BASE_OFFSET: k for p, k in base["barony"].items()}
     cls = {k: {p + BASE_OFFSET for p in v} for k, v in base["cls"].items()}
@@ -135,8 +117,8 @@ def load(src="map_data_agot", log=print):
         for p, k in l["barony"].items(): barony[p + l["offset"]] = k
         for k, v in l["cls"].items(): cls[k] |= {p + l["offset"] for p in v}
 
-    # ---- every later layer may only fill what is still blank
-    for i, l in enumerate(rest, start=len(layers) - len(rest) + 1):
+    # ---- every addition may only fill what is still blank
+    for i, l in enumerate(layers, start=1):
         add = l["real"] & ~covered
         n = int(add.sum())
         pid = np.where(add, l["pid"] + l["offset"], pid)

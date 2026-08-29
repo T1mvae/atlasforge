@@ -170,7 +170,7 @@
       // ---- named autonomous entities inside a country (own border + label) ----
       autonomies: {},                               // id -> { id, name, owner, color }
       // ---- reusable custom values for country fields (persist project-wide) ----
-      valueLists: { ideology: [], government: [], religion: [], economy: [], culture: [] }
+      valueLists: { ideology: [], government: [], religion: [], economy: [], culture: [], language: [] }
     };
   }
   window.newProjectData = newProjectData;
@@ -183,6 +183,16 @@
     const fix = (o) => { if (o && REMOVED_STATUS[o.status]) o.status = "core"; };
     for (const rid in (p.regions || {})) fix(p.regions[rid]);
     for (const gid in (p.groups || {})) fix(p.groups[gid]);
+    // Older saved maps predate the shared language catalogue and the state-level
+    // official-language field. Keep their data intact while bringing the schema
+    // forward on load.
+    p.valueLists = p.valueLists || {};
+    ["ideology", "government", "religion", "economy", "culture", "language"].forEach((key) => {
+      if (!Array.isArray(p.valueLists[key])) p.valueLists[key] = [];
+    });
+    for (const sid in (p.states || {})) {
+      if (p.states[sid].language == null) p.states[sid].language = "";
+    }
   }
   window.normalizeStatuses = normalizeStatuses;
 
@@ -299,7 +309,7 @@
         name: name || (App.ui.lang === "ru" ? "Государство " + (i + 1) : "State " + (i + 1)),
         color: nextAutoColor(),
         flag: null,
-        capital: "", capitalRegion: null, gov: "", ideology: "", religion: "", culture: "",
+        capital: "", capitalRegion: null, gov: "", ideology: "", religion: "", culture: "", language: "",
         population: "", economy: "", army: "", notes: "",
         vassalOf: null,
         labelOffset: null
@@ -719,7 +729,7 @@
         const id = uid();
         p.states[id] = {
           id, name: n, color: nextAutoColor(i), flag: null,
-          capital: "", capitalRegion: null, gov: "", ideology: "", religion: "", culture: "",
+          capital: "", capitalRegion: null, gov: "", ideology: "", religion: "", culture: "", language: "",
           population: "", economy: "", army: "", notes: "", vassalOf: null, labelOffset: null
         };
         p.stateOrder.push(id);

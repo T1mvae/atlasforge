@@ -298,6 +298,9 @@
   Actions.setRegionColor = function (id, color) { Actions.editRegion(id, { color }); };
   Actions.setRegionNotes = function (id, notes) { Actions.editRegion(id, { notes }); };
   Actions.setRegionMeta = function (id, patch) { Actions.editRegion(id, { metadata: patch }); };
+  Actions.setRegionsMeta = function (ids, patch) {
+    Actions.mut((p) => (ids || []).forEach((id) => editRegion(p, id, { metadata: patch })), { undo: false, region: true });
+  };
 
   Actions.deleteRegion = function (id) {
     Actions.mut((p) => {

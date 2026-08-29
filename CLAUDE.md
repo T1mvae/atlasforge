@@ -40,6 +40,7 @@ No-build, in-browser app. Everything hangs off `window` globals; there are no mo
 - `project.states` = **countries**.
 - `project.regions[featureId]` = per-base-feature **political/ownership records** (`{owner, status, color, name, group, autonomyId, ...}`). Despite the name these ARE the base-map cells (provinces / state-cells). **Always resolve through `window.effRegion(p, id)`**, which substitutes the merge-group's record when a cell belongs to a group.
 - `project.groups` = legacy merged-cell groups (one shared political record for many cells).
+- `project.catalogs` = reusable dictionaries for cultures, religions, languages and forms of government. Records keep `{name, color, parent, description}`; actual state/region fields deliberately store the display name, so `Actions.saveCatalogEntry` can rename every current and timeline use safely.
 - `window.RegionModel` (`regions.js`) = a **separate** mid-level region layer — do not confuse it with `project.regions`.
 - Imported geometry is re-derived from `data/*.geojson` on every load and is never stored in the project JSON; only diffs/edits/political data persist.
 

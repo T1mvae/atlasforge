@@ -137,9 +137,13 @@ const TERRAIN_COLORS = {
 
 // Province fill, chosen by the project display mode. Region display modes mute the
 // province base so the region overlay reads clearly; provinces always stay the base.
-function provinceFill(displayMode, r, states, settings, feat) {
+function provinceFill(displayMode, r, states, settings, feat, project) {
   if (displayMode === "terrain") return TERRAIN_COLORS[feat && feat.terrain] || settings.land;
   if (displayMode === "province") return feat ? ColorUtil.provinceTint(settings.land, feat.id) : settings.land;
+  if (["culture", "religion", "language"].includes(displayMode)) {
+    const value = window.Metadata && Metadata.value(project, displayMode, r, feat);
+    return value ? Metadata.color(project, displayMode, value) : settings.land;
+  }
   if (RegionModel.modeType[displayMode]) {
     // a region display mode: keep a soft owner hint but dim it under the regions
     const owner = r && r.owner ? states[r.owner] : null;
@@ -1032,7 +1036,7 @@ function MapView() {
           <g id="regions" clipPath={ready && bm.clipLand && bm.landPath ? "url(#land-clip)" : undefined}
              pointerEvents={regionInteractive ? "none" : "auto"}>
             {ready && bm.features.map((f) => {
-              const fillV = provinceFill(displayMode, effOf(f.id), states, settings, f);
+              const fillV = provinceFill(displayMode, effOf(f.id), states, settings, f, project);
               // with topo meshes the borders are drawn separately; stroke each
               // fill with ITS OWN colour (screen-constant ~1px) so anti-aliasing
               // seams and hairline gaps between neighbours never show the sea

@@ -161,7 +161,7 @@
       backdrop: null,                               // { x, y, w, h, opacity, visible } — small, in undo slice
       backdropHref: null,                           // data URL — kept OUT of the undo slice (big)
       // ---- mid-level region layer model ----
-      displayMode: "country",                       // country|province|stateRegion|historicalRegion|culturalRegion|geographicalRegion|politicalRegion|terrain
+      displayMode: "country",                       // country|province|culture|religion|language|...Region|terrain
       activeSelectionMode: "province",              // province | region
       activeRegionLayerId: hasRegions ? "state" : null,
       regionLayers: [],                             // user/custom layers (default "state" layer ensured at runtime)
@@ -170,7 +170,10 @@
       // ---- named autonomous entities inside a country (own border + label) ----
       autonomies: {},                               // id -> { id, name, owner, color }
       // ---- reusable custom values for country fields (persist project-wide) ----
-      valueLists: { ideology: [], government: [], religion: [], economy: [], culture: [], language: [] }
+      valueLists: { ideology: [], government: [], religion: [], economy: [], culture: [], language: [] },
+      // ---- named metadata dictionaries; values in states/regions stay plain text
+      // so old projects remain compatible and a rename can safely update every use.
+      catalogs: { culture: [], religion: [], language: [], government: [] }
     };
   }
   window.newProjectData = newProjectData;
@@ -190,6 +193,10 @@
     ["ideology", "government", "religion", "economy", "culture", "language"].forEach((key) => {
       if (!Array.isArray(p.valueLists[key])) p.valueLists[key] = [];
     });
+    p.catalogs = p.catalogs || {};
+    ["culture", "religion", "language", "government"].forEach((key) => {
+      if (!Array.isArray(p.catalogs[key])) p.catalogs[key] = [];
+    });
     for (const sid in (p.states || {})) {
       if (p.states[sid].language == null) p.states[sid].language = "";
     }
@@ -204,7 +211,7 @@
       displayMode: p.displayMode, activeSelectionMode: p.activeSelectionMode, activeRegionLayerId: p.activeRegionLayerId,
       regionLayers: p.regionLayers || [], customRegions: p.customRegions || {}, regionEdits: p.regionEdits || {},
       regionGeomEdits: p.regionGeomEdits || { removed: {}, features: {} }, backdrop: p.backdrop || null,
-      autonomies: p.autonomies || {}, valueLists: p.valueLists || {}
+      autonomies: p.autonomies || {}, valueLists: p.valueLists || {}, catalogs: p.catalogs || {}
     });
   }
   function applySlice(p, json) {
@@ -357,6 +364,48 @@
   }
   window.regionEntry = regionEntry;
 
+  // ---------- reusable culture / religion / language / government dictionaries ----------
+  const CATALOG_FIELDS = ["culture", "religion", "language", "government"];
+  const STATE_CATALOG_FIELD = { government: "gov", culture: "culture", religion: "religion", language: "language" };
+  function normMeta(v) { return (v || "").trim(); }
+  function metadataValue(p, field, record, feat) {
+    const own = record && normMeta(record[field]);
+    // Dataset cultural areas are useful defaults until the user assigns a value.
+    if (own) return own;
+    return field === "culture" && feat ? normMeta(feat.cultArea) : "";
+  }
+  function catalogEntry(p, field, name) {
+    name = normMeta(name);
+    return ((p.catalogs && p.catalogs[field]) || []).find((e) => normMeta(e.name) === name) || null;
+  }
+  function metadataColor(p, field, name) {
+    const e = catalogEntry(p, field, name);
+    if (e && /^#[0-9a-f]{6}$/i.test(e.color || "")) return e.color;
+    let h = 2166136261;
+    const s = field + ":" + name;
+    for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); }
+    h >>>= 0;
+    return ColorUtil.hslToHex(h % 360, 42 + ((h >>> 9) % 16), 45 + ((h >>> 17) % 17));
+  }
+  function catalogValues(p, field) {
+    const values = new Set();
+    const add = (v) => { v = normMeta(v); if (v) values.add(v); };
+    ((p.catalogs && p.catalogs[field]) || []).forEach((e) => add(e.name));
+    ((p.valueLists && p.valueLists[field]) || []).forEach(add);
+    const sf = STATE_CATALOG_FIELD[field];
+    if (sf) Object.keys(p.states || {}).forEach((sid) => add(p.states[sid][sf]));
+    if (field !== "government") {
+      Object.keys(p.regions || {}).forEach((rid) => add(p.regions[rid][field]));
+      Object.keys(p.groups || {}).forEach((gid) => add(p.groups[gid][field]));
+      Object.keys(p.customRegions || {}).forEach((id) => add((p.customRegions[id].metadata || {})[field]));
+      Object.keys(p.regionEdits || {}).forEach((id) => add(((p.regionEdits[id] || {}).metadata || {})[field]));
+      (App.regionData.regions || []).forEach((r) => add((r.metadata || {})[field]));
+      if (field === "culture") (App.basemap.features || []).forEach((f) => add(f.cultArea));
+    }
+    return [...values].sort((a, b) => a.localeCompare(b));
+  }
+  window.Metadata = { fields: CATALOG_FIELDS, stateField: STATE_CATALOG_FIELD, value: metadataValue, color: metadataColor, entry: catalogEntry, values: catalogValues };
+
   // effective data for a region: its merge-group entry (if any) wins
   window.effRegion = function (p, rid) {
     const r = p.regions[rid];
@@ -400,6 +449,15 @@
       gids.forEach((gid) => { Object.assign(p.groups[gid], patch); if (leaveAuto) p.groups[gid].autonomyId = null; });
       if (leaveAuto) pruneAutonomies(p);
     }, opts);
+  };
+
+  Actions.selectByMetadata = function (field, value) {
+    const p = App.project;
+    const rids = [];
+    App.basemap.features.forEach((f) => {
+      if (metadataValue(p, field, window.effRegion(p, f.id), f) === value) rids.push(f.id);
+    });
+    Actions.select(rids, false);
   };
 
   // ---------- merge groups (custom geographic / cultural regions) ----------
@@ -568,7 +626,55 @@
       p.valueLists = p.valueLists || {};
       const arr = (p.valueLists[listKey] = p.valueLists[listKey] || []);
       if (!arr.includes(val)) arr.push(val);
+      if (CATALOG_FIELDS.includes(listKey)) {
+        p.catalogs = p.catalogs || {};
+        const list = (p.catalogs[listKey] = p.catalogs[listKey] || []);
+        if (!list.some((e) => normMeta(e.name) === val)) list.push({ name: val, color: null, parent: "", description: "" });
+      }
     }, { undo: false });
+  };
+
+  // Rename is intentionally global: current map, country records, merged regions,
+  // remembered suggestions and every timeline snapshot move together.
+  Actions.saveCatalogEntry = function (field, oldName, patch) {
+    if (!CATALOG_FIELDS.includes(field)) return;
+    const name = normMeta(patch && patch.name);
+    if (!name) return;
+    Actions.mut((p) => {
+      p.catalogs = p.catalogs || {};
+      let entries = (p.catalogs[field] = p.catalogs[field] || []);
+      const old = normMeta(oldName);
+      let entry = entries.find((e) => normMeta(e.name) === old) || entries.find((e) => normMeta(e.name) === name);
+      if (!entry) { entry = { name, color: null, parent: "", description: "" }; entries.push(entry); }
+      if (old && old !== name) {
+        const renameIn = (target) => {
+          const sf = STATE_CATALOG_FIELD[field];
+          if (sf) Object.keys(target.states || {}).forEach((sid) => { if (target.states[sid][sf] === old) target.states[sid][sf] = name; });
+          if (field !== "government") {
+            Object.keys(target.regions || {}).forEach((rid) => { if (target.regions[rid][field] === old) target.regions[rid][field] = name; });
+            Object.keys(target.groups || {}).forEach((gid) => { if (target.groups[gid][field] === old) target.groups[gid][field] = name; });
+            Object.keys(target.customRegions || {}).forEach((id) => {
+              const meta = target.customRegions[id].metadata || {};
+              if (meta[field] === old) meta[field] = name;
+            });
+            Object.keys(target.regionEdits || {}).forEach((id) => {
+              const meta = (target.regionEdits[id] || {}).metadata || {};
+              if (meta[field] === old) meta[field] = name;
+            });
+          }
+        };
+        renameIn(p);
+        Object.keys(p.snapshots || {}).forEach((year) => renameIn(p.snapshots[year]));
+        const vals = (p.valueLists && p.valueLists[field]) || [];
+        p.valueLists[field] = [...new Set(vals.map((v) => v === old ? name : v))];
+        entries.forEach((e) => { if (e.parent === old) e.parent = name; });
+        entries = entries.filter((e) => e === entry || normMeta(e.name) !== name);
+        p.catalogs[field] = entries;
+      }
+      Object.assign(entry, { name, color: patch.color || null, parent: patch.parent || "", description: patch.description || "" });
+      const values = (p.valueLists[field] = p.valueLists[field] || []);
+      if (!values.includes(name)) values.push(name);
+    });
   };
 
   // ---------- reference image backdrop (for tracing) ----------

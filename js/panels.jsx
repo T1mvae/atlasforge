@@ -236,14 +236,17 @@ function mapVocab(listKey) {
     for (const rid in (p.regions || {})) add(p.regions[rid][listKey]);
     for (const gid in (p.groups || {})) add(p.groups[gid][listKey]);
   }
+  if (window.Metadata && Metadata.fields.includes(listKey)) Metadata.values(p, listKey).forEach(add);
   return [...set];
 }
 
-// A free-text input backed by a <datalist> of built-ins + map values + remembered
-// custom values. Typing a brand-new value both sets the field AND remembers it.
+// A real dropdown backed by built-ins + project values. "Custom…" keeps the
+// free-text workflow without relying on browser-specific <datalist> UI.
 function ComboField({ label, listKey, stateField, value, onChange }) {
   const p = App.project;
   const lang = App.ui.lang === "ru" ? "ru" : "en";
+  const [customMode, setCustomMode] = React.useState(false);
+  const [customValue, setCustomValue] = React.useState(value || "");
   const builtins = (VALUE_DEFAULTS[listKey] && VALUE_DEFAULTS[listKey][lang]) || [];
   const opts = React.useMemo(() => {
     const set = new Set();
@@ -259,13 +262,22 @@ function ComboField({ label, listKey, stateField, value, onChange }) {
     onChange(val);
     if (val && builtins.indexOf(val) < 0) Actions.rememberValue(listKey, val);
   };
+  const displayOpts = value && !opts.includes(value) ? [value].concat(opts) : opts;
+  const selectValue = customMode ? "__custom" : (value ? value : "");
   return (
     <Field label={label}>
-      <input className="input" list={"dl-" + listKey} value={value || ""}
-        onChange={(e) => onChange(e.target.value)}
-        onBlur={(e) => commit(e.target.value)}
-        onKeyDown={(e) => { if (e.key === "Enter") commit(e.target.value); }}></input>
-      <datalist id={"dl-" + listKey}>{opts.map((o) => <option key={o} value={o}></option>)}</datalist>
+      <select className="select" value={selectValue} onChange={(e) => {
+        if (e.target.value === "__custom") { setCustomMode(true); setCustomValue(""); return; }
+        setCustomMode(false); commit(e.target.value);
+      }}>
+        <option value="">{t("misc.none")}</option>
+        {displayOpts.map((o) => <option key={o} value={o}>{o}</option>)}
+        <option value="__custom">{t("misc.customValue")}</option>
+      </select>
+      {customMode && <input className="input" autoFocus placeholder={t("misc.customValueHint")} value={customValue}
+        onChange={(e) => { setCustomValue(e.target.value); onChange(e.target.value); }}
+        onBlur={(e) => { commit(e.target.value); setCustomMode(false); }}
+        onKeyDown={(e) => { if (e.key === "Enter") { commit(e.target.value); setCustomMode(false); } }}></input>}
     </Field>
   );
 }
@@ -342,7 +354,7 @@ function MapTab() {
   const set = (patch) => Actions.setSettings(patch, { undo: false });
   const mode = s.mapMode || "color";
   const supportsRegions = RegionModel.supportsRegions();
-  const displayModes = ["country", "province", "terrain"].concat(
+  const displayModes = ["country", "province", "culture", "religion", "language", "terrain"].concat(
     supportsRegions ? ["stateRegion", "historicalRegion", "culturalRegion", "geographicalRegion", "politicalRegion"] : []);
   return (
     <div className="props-body">
@@ -445,6 +457,78 @@ function MapTab() {
           </div>
         </React.Fragment>
       )}
+    </div>
+  );
+}
+
+// ---------- reusable metadata dictionaries ----------
+const CATALOG_TABS = ["culture", "religion", "language", "government"];
+
+function CatalogEntryEditor({ field, name, parents }) {
+  const p = App.project;
+  const source = (window.Metadata && Metadata.entry(p, field, name)) || { name, color: Metadata.color(p, field, name), parent: "", description: "" };
+  const [draft, setDraft] = React.useState({ name: source.name || "", color: source.color || "#888888", parent: source.parent || "", description: source.description || "" });
+  React.useEffect(() => {
+    setDraft({ name: source.name || "", color: source.color || Metadata.color(App.project, field, name), parent: source.parent || "", description: source.description || "" });
+  }, [field, name, source.name, source.color, source.parent, source.description]);
+  const set = (patch) => setDraft((d) => Object.assign({}, d, patch));
+  return (
+    <div className="catalog-entry">
+      <div className="catalog-entry-head">
+        <input className="input" value={draft.name} onChange={(e) => set({ name: e.target.value })}></input>
+        <input type="color" className="color-input" value={draft.color || "#888888"} onChange={(e) => set({ color: e.target.value })}></input>
+      </div>
+      <select className="select" value={draft.parent || ""} onChange={(e) => set({ parent: e.target.value })}>
+        <option value="">{t("catalog.noParent")}</option>
+        {parents.filter((v) => v !== name).map((v) => <option key={v} value={v}>{v}</option>)}
+      </select>
+      <textarea className="textarea catalog-description" rows="2" placeholder={t("catalog.description")} value={draft.description || ""} onChange={(e) => set({ description: e.target.value })}></textarea>
+      <div className="field-row">
+        <button className="btn outline" style={{ fontSize: 11 }} onClick={() => Actions.saveCatalogEntry(field, name, draft)}>{t("catalog.save")}</button>
+        {field !== "government" && <button className="btn outline" style={{ fontSize: 11 }} onClick={() => Actions.selectByMetadata(field, name)}>{t("catalog.selectUsed")}</button>}
+      </div>
+    </div>
+  );
+}
+
+function CatalogTab() {
+  useStore();
+  const p = App.project;
+  const [field, setField] = React.useState("culture");
+  const [newName, setNewName] = React.useState("");
+  const values = (window.Metadata ? Metadata.values(p, field) : []).filter(Boolean);
+  const [applyValue, setApplyValue] = React.useState("");
+  React.useEffect(() => { if (!values.includes(applyValue)) setApplyValue(values[0] || ""); }, [field, values.join("\u0001")]);
+  const add = () => {
+    const name = newName.trim();
+    if (!name) return;
+    Actions.saveCatalogEntry(field, "", { name, color: Metadata.color(p, field, name), parent: "", description: "" });
+    setNewName("");
+  };
+  const selected = App.ui.selection || [];
+  return (
+    <div className="props-body catalog-panel">
+      <div className="chip-row catalog-tabs">
+        {CATALOG_TABS.map((k) => <button key={k} className={"chip" + (field === k ? " on" : "")} onClick={() => setField(k)}>{t("catalog." + k)}</button>)}
+      </div>
+      <div className="muted">{t("catalog.hint")}</div>
+      {field !== "government" && <div className="catalog-apply">
+        <div className="props-section-title">{t("catalog.bulk")}</div>
+        <select className="select" value={applyValue} onChange={(e) => setApplyValue(e.target.value)} disabled={!values.length}>
+          {!values.length && <option value="">{t("catalog.empty")}</option>}
+          {values.map((v) => <option key={v} value={v}>{v}</option>)}
+        </select>
+        <button className="btn primary" disabled={!selected.length || !applyValue} onClick={() => Actions.setRegion(selected, { [field]: applyValue })}>
+          {t("catalog.apply")} ({selected.length})
+        </button>
+      </div>}
+      <div className="catalog-add">
+        <input className="input" placeholder={t("catalog.new")} value={newName} onChange={(e) => setNewName(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") add(); }}></input>
+        <button className="btn outline" onClick={add}>{t("catalog.add")}</button>
+      </div>
+      <div className="catalog-list">
+        {values.map((name) => <CatalogEntryEditor key={field + "|" + name} field={field} name={name} parents={values}></CatalogEntryEditor>)}
+      </div>
     </div>
   );
 }
@@ -622,6 +706,12 @@ function RegionPropsPanel() {
   // ----- multiple regions -----
   if (sel.length > 1) {
     const owner = RegionModel.regionOwner(RegionModel.resolve(sel[0]));
+    const resolved = sel.map((id) => RegionModel.resolve(id)).filter(Boolean);
+    const commonMeta = (key) => {
+      const first = ((resolved[0] || {}).metadata || {})[key] || "";
+      return resolved.every((r) => ((r.metadata || {})[key] || "") === first) ? first : "";
+    };
+    const setAllMeta = (key, value) => Actions.setRegionsMeta(sel, { [key]: value });
     return (
       <div className="props-body">
         <div className="muted"><b style={{ color: "var(--text)" }}>{sel.length}</b> {t("region.multiRegion")}</div>
@@ -634,6 +724,10 @@ function RegionPropsPanel() {
         <button className="btn primary" onClick={() => { const nm = prompt(t("region.countryName"), ""); if (nm !== null) Actions.createCountryFromRegions(sel, nm || null); }}>
           {t("region.createCountry")}
         </button>
+        <div className="props-section-title">{t("props.region")}</div>
+        <ComboField label={t("f.culture")} listKey="culture" stateField="culture" value={commonMeta("culture")} onChange={(v) => setAllMeta("culture", v)}></ComboField>
+        <ComboField label={t("f.language")} listKey="language" stateField="language" value={commonMeta("language")} onChange={(v) => setAllMeta("language", v)}></ComboField>
+        <ComboField label={t("f.religion")} listKey="religion" stateField="religion" value={commonMeta("religion")} onChange={(v) => setAllMeta("religion", v)}></ComboField>
         <div className="props-section-title">{t("region.createLarger")}</div>
         <div className="muted" style={{ fontSize: 11 }}>{t("region.createLargerHint")}</div>
         <NewRegionForm defaultType="historical" onCreate={(name, type) => Actions.createRegionFromRegions(sel, { name, type })}></NewRegionForm>
@@ -675,7 +769,9 @@ function RegionPropsPanel() {
       </button>
       <div className="props-section-title">{t("props.region")}</div>
       <AreaField label={t("f.notes")} value={r.notes} onChange={(v) => Actions.setRegionNotes(id, v)}></AreaField>
-      {META_FIELDS.map((k) => (
+      {META_FIELDS.map((k) => ["culture", "language", "religion"].includes(k) ? (
+        <ComboField key={k} label={t("meta." + k)} listKey={k} stateField={k} value={meta[k] == null ? "" : meta[k]} onChange={(v) => setMeta(k, v)}></ComboField>
+      ) : (
         <TextField key={k} label={t("meta." + k)} value={meta[k] == null ? "" : meta[k]} onChange={(v) => setMeta(k, v)}></TextField>
       ))}
       <div className="field-row" style={{ marginTop: 6 }}>
@@ -744,6 +840,10 @@ function RegionTab() {
   const setAll = (patch) => Actions.setRegion(sel, patch, { undo: false });
   const effFirst = effRegion(p, rid) || {};
   const commonOwner = multi ? (sel.every((x) => (effRegion(p, x) || {}).owner === effFirst.owner) ? effFirst.owner : "__mixed") : effFirst.owner;
+  const commonMeta = (key) => {
+    const first = effFirst[key] || "";
+    return sel.every((x) => ((effRegion(p, x) || {})[key] || "") === first) ? first : "";
+  };
 
   return (
     <div className="props-body">
@@ -799,13 +899,13 @@ function RegionTab() {
           {r.color && <button className="btn outline" style={{ height: 26, fontSize: 11 }} onClick={() => setAll({ color: null })}>↺</button>}
         </div>
       </Field>
+      <div className="props-section-title">{t("props.region")}</div>
+      {!multi && <TextField label={t("f.population")} value={r.population} onChange={(v) => setAll({ population: v })}></TextField>}
+      <ComboField label={t("f.culture")} listKey="culture" stateField="culture" value={commonMeta("culture")} onChange={(v) => setAll({ culture: v })}></ComboField>
+      <ComboField label={t("f.language")} listKey="language" stateField="language" value={commonMeta("language")} onChange={(v) => setAll({ language: v })}></ComboField>
+      <ComboField label={t("f.religion")} listKey="religion" stateField="religion" value={commonMeta("religion")} onChange={(v) => setAll({ religion: v })}></ComboField>
       {!multi && (
         <React.Fragment>
-          <div className="props-section-title">{t("props.region")}</div>
-          <TextField label={t("f.population")} value={r.population} onChange={(v) => setAll({ population: v })}></TextField>
-          <ComboField label={t("f.culture")} listKey="culture" stateField="culture" value={r.culture} onChange={(v) => setAll({ culture: v })}></ComboField>
-          <ComboField label={t("f.language")} listKey="language" stateField="language" value={r.language} onChange={(v) => setAll({ language: v })}></ComboField>
-          <ComboField label={t("f.religion")} listKey="religion" stateField="religion" value={r.religion} onChange={(v) => setAll({ religion: v })}></ComboField>
           <AreaField label={t("f.notes")} value={r.notes} onChange={(v) => setAll({ notes: v })}></AreaField>
           {f && <button className="btn outline" onClick={() => MapAPI.zoomTo(f.b)}>{t("zoom.fit")} → {r.name || f.name}</button>}
           {window.GeomEdit && GeomEdit.enabled() && (
@@ -839,12 +939,12 @@ function PropsPanel() {
   useStore();
   if (!App.project) return <div className="props-panel"></div>;
   const tab = App.ui.panel;
-  const Tabs = { map: MapTab, state: StateTab, region: RegionTab };
+  const Tabs = { map: MapTab, state: StateTab, region: RegionTab, catalog: CatalogTab };
   const Body = Tabs[tab] || MapTab;
   return (
     <div className="props-panel" data-screen-label="Properties panel">
       <div className="props-tabs">
-        {["map", "state", "region"].map((k) => (
+        {["map", "state", "region", "catalog"].map((k) => (
           <button key={k} className={"props-tab" + (tab === k ? " active" : "")} onClick={() => Actions.ui({ panel: k })}>
             {t("props." + k)}
           </button>

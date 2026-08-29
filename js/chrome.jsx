@@ -143,7 +143,20 @@ function Legend() {
   const counts = stateStats();
   const pos = App.ui.legendPos || { x: 276, y: 56 };
   const rows = p.stateOrder.map((id) => p.states[id]).filter(Boolean);
-  if (!rows.length) return null;
+  const metadataField = ["culture", "religion", "language"].includes(p.displayMode) ? p.displayMode : null;
+  const metadataRows = (() => {
+    if (!metadataField || !window.Metadata) return [];
+    const found = new Map();
+    App.basemap.features.forEach((f) => {
+      const value = Metadata.value(p, metadataField, window.effRegion(p, f.id), f);
+      if (!value) return;
+      found.set(value, (found.get(value) || 0) + 1);
+    });
+    return [...found].map(([name, count]) => ({ name, count, color: Metadata.color(p, metadataField, name) }))
+      .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
+  })();
+  if (!metadataField && !rows.length) return null;
+  if (metadataField && !metadataRows.length) return null;
 
   const onDown = (e) => {
     drag.current = { sx: e.clientX, sy: e.clientY, ox: pos.x, oy: pos.y };
@@ -159,11 +172,17 @@ function Legend() {
   return (
     <div className="legend" ref={ref} style={{ left: pos.x, top: pos.y }}>
       <div className="legend-head" onPointerDown={onDown}>
-        <span>{t("legend.title")}</span>
+        <span>{metadataField ? t("legend." + metadataField) : t("legend.title")}</span>
         <button className="btn icon" style={{ height: 18, width: 18, fontSize: 11 }} onClick={() => Actions.ui({ showLegend: false })}>✕</button>
       </div>
       <div className="legend-body">
-        {rows.map((s) => (
+        {metadataField ? metadataRows.map((row) => (
+          <div key={row.name} className="legend-row" style={{ cursor: "pointer" }} onClick={() => Actions.selectByMetadata(metadataField, row.name)}>
+            <span className="state-swatch" style={{ background: row.color }}></span>
+            <span>{row.name}</span>
+            <span className="legend-count">{row.count}</span>
+          </div>
+        )) : rows.map((s) => (
           <div key={s.id} className="legend-row" style={{ cursor: "pointer" }} onClick={() => Actions.ui({ activeState: s.id, panel: "state" })}>
             <span className="state-swatch" style={{ background: s.color }}></span>
             {s.flag && <img className="state-flag-mini" src={s.flag} alt=""></img>}

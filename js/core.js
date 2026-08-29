@@ -378,6 +378,8 @@
     name = normMeta(name);
     return ((p.catalogs && p.catalogs[field]) || []).find((e) => normMeta(e.name) === name) || null;
   }
+  let catalogValueCacheVersion = -1;
+  let catalogValueCache = {};
   function metadataColor(p, field, name) {
     const e = catalogEntry(p, field, name);
     if (e && /^#[0-9a-f]{6}$/i.test(e.color || "")) return e.color;
@@ -388,6 +390,11 @@
     return ColorUtil.hslToHex(h % 360, 42 + ((h >>> 9) % 16), 45 + ((h >>> 17) % 17));
   }
   function catalogValues(p, field) {
+    if (catalogValueCacheVersion !== App.version) {
+      catalogValueCacheVersion = App.version;
+      catalogValueCache = {};
+    }
+    if (catalogValueCache[field]) return catalogValueCache[field];
     const values = new Set();
     const add = (v) => { v = normMeta(v); if (v) values.add(v); };
     ((p.catalogs && p.catalogs[field]) || []).forEach((e) => add(e.name));
@@ -402,7 +409,9 @@
       (App.regionData.regions || []).forEach((r) => add((r.metadata || {})[field]));
       if (field === "culture") (App.basemap.features || []).forEach((f) => add(f.cultArea));
     }
-    return [...values].sort((a, b) => a.localeCompare(b));
+    const result = [...values].sort((a, b) => a.localeCompare(b));
+    catalogValueCache[field] = result;
+    return result;
   }
   window.Metadata = { fields: CATALOG_FIELDS, stateField: STATE_CATALOG_FIELD, value: metadataValue, color: metadataColor, entry: catalogEntry, values: catalogValues };
 

@@ -231,12 +231,12 @@ function mapVocab(listKey) {
   const set = new Set();
   const add = (v) => { if (v && typeof v === "string" && v.trim()) set.add(v.trim()); };
   const p = App.project, bm = App.basemap;
+  if (window.Metadata && Metadata.fields.includes(listKey)) return Metadata.values(p, listKey);
   if (listKey === "culture") (bm && bm.features ? bm.features : []).forEach((f) => add(f.cultArea));
   if (listKey === "culture" || listKey === "religion" || listKey === "language") {
     for (const rid in (p.regions || {})) add(p.regions[rid][listKey]);
     for (const gid in (p.groups || {})) add(p.groups[gid][listKey]);
   }
-  if (window.Metadata && Metadata.fields.includes(listKey)) Metadata.values(p, listKey).forEach(add);
   return [...set];
 }
 
@@ -496,7 +496,9 @@ function CatalogTab() {
   const p = App.project;
   const [field, setField] = React.useState("culture");
   const [newName, setNewName] = React.useState("");
+  const [query, setQuery] = React.useState("");
   const values = (window.Metadata ? Metadata.values(p, field) : []).filter(Boolean);
+  const visibleValues = values.filter((name) => !query.trim() || name.toLowerCase().includes(query.trim().toLowerCase())).slice(0, 100);
   const [applyValue, setApplyValue] = React.useState("");
   React.useEffect(() => { if (!values.includes(applyValue)) setApplyValue(values[0] || ""); }, [field, values.join("\u0001")]);
   const add = () => {
@@ -526,8 +528,10 @@ function CatalogTab() {
         <input className="input" placeholder={t("catalog.new")} value={newName} onChange={(e) => setNewName(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") add(); }}></input>
         <button className="btn outline" onClick={add}>{t("catalog.add")}</button>
       </div>
+      {values.length > 12 && <input className="input" placeholder={t("catalog.search")} value={query} onChange={(e) => setQuery(e.target.value)}></input>}
+      {visibleValues.length < values.length && <div className="muted">{t("catalog.showing").replace("{shown}", visibleValues.length).replace("{total}", values.length)}</div>}
       <div className="catalog-list">
-        {values.map((name) => <CatalogEntryEditor key={field + "|" + name} field={field} name={name} parents={values}></CatalogEntryEditor>)}
+        {visibleValues.map((name) => <CatalogEntryEditor key={field + "|" + name} field={field} name={name} parents={values}></CatalogEntryEditor>)}
       </div>
     </div>
   );

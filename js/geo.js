@@ -90,7 +90,7 @@
     "agot": {
       kind: "localgeo", approx: "~4130",
       name: "A Game of Thrones — counties",
-      dataset: "/data/agot_counties.geojson",
+      dataset: "/data/agot_counties.geojson?v=10e54520b6",
       physicalDataset: "/data/agot_physical.geojson",
       type: "region-grid",
       supportsCountries: true, supportsProvinceGroups: true, supportsCustomOwnership: true
@@ -98,7 +98,7 @@
     "agot_duchies": {
       kind: "localgeo", approx: "~720",
       name: "A Game of Thrones — duchies",
-      dataset: "/data/agot_duchies.geojson",
+      dataset: "/data/agot_duchies.geojson?v=0b06856bfb",
       physicalDataset: "/data/agot_physical.geojson",
       type: "region-grid",
       supportsCountries: true, supportsProvinceGroups: true, supportsCustomOwnership: true
@@ -106,7 +106,7 @@
     "agot_kingdoms": {
       kind: "localgeo", approx: "~68",
       name: "A Game of Thrones — kingdoms",
-      dataset: "/data/agot_kingdoms.geojson",
+      dataset: "/data/agot_kingdoms.geojson?v=1e2afa7ac9",
       physicalDataset: "/data/agot_physical.geojson",
       type: "region-grid",
       supportsCountries: true, supportsProvinceGroups: true, supportsCustomOwnership: true
@@ -114,7 +114,7 @@
     "agot_baronies": {
       kind: "localgeo", approx: "~23110",
       name: "A Game of Thrones — baronies (full detail)",
-      dataset: "/data/agot_baronies.geojson",
+      dataset: "/data/agot_baronies.geojson?v=936eb38ec5",
       physicalDataset: "/data/agot_physical.geojson",
       type: "region-grid",
       supportsCountries: true, supportsProvinceGroups: true, supportsCustomOwnership: true

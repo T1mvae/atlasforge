@@ -348,6 +348,36 @@
     const per = ringLength(poly[0]);
     return per > 0 && a / (per * per) < 0.02; // long and thin (a compact hole is ~0.06-0.08)
   }
+  // Morphological dilate / erode by `d` built from polygon-clipping unions of
+  // per-edge quads and per-vertex octagons (there is no buffer op available).
+  // closing = erode(dilate(U)) fills every gap narrower than ~2d.
+  function edgeBuffers(mp, d) {
+    const out = [];
+    const oct = (c) => {
+      const r = [];
+      for (let i = 0; i < 8; i++) { const a = i * Math.PI / 4; r.push([c[0] + Math.cos(a) * d, c[1] + Math.sin(a) * d]); }
+      r.push(r[0]);
+      return [r];
+    };
+    mp.forEach((poly) => poly.forEach((ring) => {
+      for (let i = 0; i + 1 < ring.length; i++) {
+        const a = ring[i], b = ring[i + 1];
+        let nx = -(b[1] - a[1]), ny = b[0] - a[0];
+        const len = Math.hypot(nx, ny);
+        if (!len) continue;
+        nx = nx / len * d; ny = ny / len * d;
+        out.push([[[a[0] + nx, a[1] + ny], [b[0] + nx, b[1] + ny], [b[0] - nx, b[1] - ny], [a[0] - nx, a[1] - ny], [a[0] + nx, a[1] + ny]]]);
+        out.push(oct(a));
+      }
+    }));
+    return out;
+  }
+  function closing(mp, d) {
+    const dil = pcUnion([mp].concat(edgeBuffers(mp, d)));
+    if (!dil) return null;
+    const rim = pcUnion(edgeBuffers(dil, d));
+    return rim ? pcDiff(dil, rim) : dil;
+  }
   function edGeom(ed, id) {
     if (ed.features[id]) return ed.features[id].geometry;
     const f = App.basemap.rawById && App.basemap.rawById[id];
@@ -365,19 +395,42 @@
       const pad = Math.hypot(bb[2] - bb[0], bb[3] - bb[1]) * 0.02 || 1e-6; // units are lon/lat or pixels
       const rect = rectMP([bb[0] - pad, bb[1] - pad, bb[2] + pad, bb[3] + pad]);
       const near = (feats) => feats.filter((f) => f.geometry && bboxOverlap(geomBBox(f.geometry), bb, pad)).map((f) => toMP(f.geometry));
+      const nowNear = near(GeomEdit.applyToCollection(bm.raw, ed).features);
       const covered0 = pcUnion(near(base));
-      const coveredNow = pcUnion(near(GeomEdit.applyToCollection(bm.raw, ed).features));
-      if (!covered0 || !coveredNow) return;
-      const gaps = pcDiff(pcIntersect(covered0, rect) || [], pcIntersect(coveredNow, rect) || []);
-      if (!gaps || !gaps.length) return;
+      const coveredNow = pcUnion(nowNear);
+      if (!coveredNow) return;
+      // 1) land the base dataset covered that nothing covers now (exact; sliver cuts, moved vertices)
+      const gaps = (covered0 && pcDiff(pcIntersect(covered0, rect) || [], pcIntersect(coveredNow, rect) || [])) || [];
       const gArea = mpArea(g);
       let changed = false;
+      const absorb = (gap) => {
+        const u = pcUnion([g, [gap]]);
+        if (!u || u.length > g.length) return false; // touches at a point only, or not at all
+        g = u; changed = true; stats.filled++;
+        return true;
+      };
       gaps.forEach((gap) => {
         if (!isSliver(gap, gArea)) { stats.skipped++; return; }
-        const u = pcUnion([g, [gap]]);
-        if (!u || u.length > g.length) return; // touches at a point only, or not at all
-        g = u; changed = true; stats.filled++;
+        absorb(gap);
       });
+      // 2) hairline gaps the base never covered (hand-drawn maps, gaps inherited
+      //    from the source data): morphological closing of a thin band around
+      //    the region; a piece counts only if it touches this region AND some
+      //    other one, so coastal notches and bays are left alone
+      const d = Math.hypot(bb[2] - bb[0], bb[3] - bb[1]) * 0.004 || 1e-6;
+      const band = rectMP([bb[0] - 4 * d, bb[1] - 4 * d, bb[2] + 4 * d, bb[3] + 4 * d]);
+      const U = pcIntersect(coveredNow, band);
+      const closed = U && U.length ? closing(U, d) : null;
+      const gaps2 = closed ? pcDiff(closed, U) : null;
+      if (gaps2 && gaps2.length) {
+        const others = nowNear.filter((m) => m !== null && mpArea(pcIntersect(m, g) || []) < gArea * 0.999);
+        gaps2.forEach((gap) => {
+          if (mpArea([gap]) > gArea * 0.05) { stats.skipped++; return; }
+          const touchesOther = others.some((m) => { const u = pcUnion([m, [gap]]); return u && u.length <= m.length; });
+          if (!touchesOther) return;
+          absorb(gap);
+        });
+      }
       if (changed) {
         const props0 = rawProps(id);
         ed.features[id] = { geometry: fromMP(g), name: props0.name || id, props: carryProps(props0) };

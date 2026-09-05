@@ -603,6 +603,7 @@
       { proj: projInfo.proj, geographic: projInfo.geographic });
     result.features.sort((a, b) => b.area - a.area);
     result.raw = eff;
+    result.base = baseGj; // pristine dataset (before edits) — gap healing compares against it
     result.physicalDefs = def.physical || null;
     result.physicalDatasets = def.physicalDataset ? localCandidates(def.physicalDataset) : null;
     return { result, topo, topoObj };
@@ -1160,6 +1161,7 @@
         path: result.path,
         proj: result.proj,
         raw: result.raw || null,
+        base: result.base || null,
         rawById: null,
         physicalRaw: null
       };

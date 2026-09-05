@@ -209,9 +209,17 @@ body {
 
 /* ---------- Right properties panel ---------- */
 .props-panel {
-  width: 264px; background: var(--panel); border-left: 1px solid var(--border);
+  width: 320px; flex: 0 0 auto; background: var(--panel); border-left: 1px solid var(--border);
   display: flex; flex-direction: column; min-height: 0; z-index: 20;
 }
+/* drag handle overlapping the panel's left edge */
+.panel-resizer {
+  position: relative; z-index: 21; flex: 0 0 6px; width: 6px; margin-right: -6px;
+  cursor: col-resize; background: transparent; transition: background 0.12s;
+}
+.panel-resizer:hover, body.resizing .panel-resizer { background: var(--accent); opacity: 0.55; }
+body.resizing { cursor: col-resize; user-select: none; }
+body.resizing .map-stage { pointer-events: none; }
 .props-tabs { display: flex; padding: 8px 8px 0; gap: 2px; border-bottom: 1px solid var(--border); }
 .props-tab {
   flex: 1; padding: 7px 4px; border: none; background: transparent; color: var(--text-dim);
@@ -257,6 +265,7 @@ body {
 .catalog-entry { padding: 8px; border: 1px solid var(--border-soft); border-radius: var(--radius); background: var(--panel-2); display: flex; flex-direction: column; gap: 6px; }
 .catalog-entry-head { display: flex; gap: 6px; align-items: center; }
 .catalog-entry-head .color-input { flex: 0 0 34px; }
+.catalog-entry-head .btn.icon { flex: 0 0 28px; height: 28px; }
 .catalog-description { min-height: 44px; }
 
 /* ---------- Map stage ---------- */
@@ -399,7 +408,7 @@ body {
 
 /* ---------- Present mode ---------- */
 .app.present .topbar, .app.present .toolbar, .app.present .states-panel,
-.app.present .props-panel, .app.present .timeline, .app.present .zoom-controls,
+.app.present .props-panel, .app.present .panel-resizer, .app.present .timeline, .app.present .zoom-controls,
 .app.present .minimap, .app.present .statusbar { display: none; }
 .present-exit {
   position: fixed; top: 12px; right: 12px; z-index: 50;

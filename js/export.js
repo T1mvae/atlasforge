@@ -61,7 +61,12 @@
     const App = window.App;
     const p = App.project;
     const counts = window.stateStats();
-    const rows = p.stateOrder.map((id) => p.states[id]).filter(Boolean);
+    // culture / religion / language modes export their own legend, coloured
+    // from the catalogs exactly like the on-screen one
+    const metaField = ["culture", "religion", "language"].includes(p.displayMode) && window.Metadata ? p.displayMode : null;
+    const rows = metaField
+      ? window.Metadata.legend(p, metaField).slice(0, 40).map((r) => ({ id: r.name, name: r.name, color: r.color, count: r.count }))
+      : p.stateOrder.map((id) => p.states[id]).filter(Boolean).map((s) => ({ id: s.id, name: s.name, color: s.color, count: counts[s.id] || 0 }));
     if (!rows.length) return;
     const pad = 12 * scale, rowH = 20 * scale, sw = 14 * scale;
     const font = `${12 * scale}px Helvetica, Arial, sans-serif`;
@@ -79,7 +84,7 @@
     ctx.fill(); ctx.stroke();
     ctx.fillStyle = "#222";
     ctx.font = `bold ${12 * scale}px Helvetica, Arial, sans-serif`;
-    ctx.fillText(window.t("legend.title"), x + pad, y + pad + 10 * scale);
+    ctx.fillText(window.t(metaField ? "legend." + metaField : "legend.title"), x + pad, y + pad + 10 * scale);
     ctx.font = font;
     rows.forEach((s, i) => {
       const ry = y + pad + 18 * scale + i * rowH;
@@ -88,7 +93,7 @@
       ctx.strokeStyle = "rgba(0,0,0,0.3)";
       ctx.strokeRect(x + pad, ry, sw, sw);
       ctx.fillStyle = "#222";
-      ctx.fillText(`${s.name}  (${counts[s.id] || 0})`, x + pad + sw + 8 * scale, ry + sw - 3 * scale);
+      ctx.fillText(`${s.name}  (${s.count})`, x + pad + sw + 8 * scale, ry + sw - 3 * scale);
     });
   }
 

@@ -144,17 +144,7 @@ function Legend() {
   const pos = App.ui.legendPos || { x: 276, y: 56 };
   const rows = p.stateOrder.map((id) => p.states[id]).filter(Boolean);
   const metadataField = ["culture", "religion", "language"].includes(p.displayMode) ? p.displayMode : null;
-  const metadataRows = (() => {
-    if (!metadataField || !window.Metadata) return [];
-    const found = new Map();
-    App.basemap.features.forEach((f) => {
-      const value = Metadata.value(p, metadataField, window.effRegion(p, f.id), f);
-      if (!value) return;
-      found.set(value, (found.get(value) || 0) + 1);
-    });
-    return [...found].map(([name, count]) => ({ name, count, color: Metadata.color(p, metadataField, name) }))
-      .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
-  })();
+  const metadataRows = metadataField && window.Metadata ? Metadata.legend(p, metadataField) : [];
   if (!metadataField && !rows.length) return null;
   if (metadataField && !metadataRows.length) return null;
 

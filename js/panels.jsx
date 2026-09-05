@@ -275,7 +275,7 @@ function ComboField({ label, listKey, stateField, value, onChange }) {
         <option value="__custom">{t("misc.customValue")}</option>
       </select>
       {customMode && <input className="input" autoFocus placeholder={t("misc.customValueHint")} value={customValue}
-        onChange={(e) => { setCustomValue(e.target.value); onChange(e.target.value); }}
+        onChange={(e) => setCustomValue(e.target.value)}
         onBlur={(e) => { commit(e.target.value); setCustomMode(false); }}
         onKeyDown={(e) => { if (e.key === "Enter") { commit(e.target.value); setCustomMode(false); } }}></input>}
     </Field>
@@ -427,6 +427,19 @@ function MapTab() {
               checked={k === "mountains" ? (s.snap || {})[k] === true : (s.snap || {})[k] !== false}
               onChange={(v) => set({ snap: Object.assign({}, s.snap, { [k]: v }) })}></Check>
           ))}
+          <Check label={t("edit.smoothLine")} checked={s.cutSmooth !== false} onChange={(v) => set({ cutSmooth: v })}></Check>
+          <button className="btn outline" style={{ fontSize: 11 }} title={t("edit.healAllHint")}
+            disabled={!Object.keys((App.project.regionGeomEdits || {}).features || {}).length}
+            onClick={() => Actions.healGaps(null)}>{t("edit.healAll")}</button>
+          <div className="field-row">
+            <button className="btn outline" style={{ fontSize: 11, flex: 1 }} title={t("edit.repairHint")}
+              disabled={!Object.keys((App.project.regionGeomEdits || {}).features || {}).length}
+              onClick={() => Actions.repairEdited("simplify")}>{t("edit.repairSimplify")}</button>
+            <button className="btn outline" style={{ fontSize: 11, flex: 1 }} title={t("edit.repairHint")}
+              disabled={!Object.keys((App.project.regionGeomEdits || {}).features || {}).length}
+              onClick={() => Actions.repairEdited("smooth")}>{t("edit.repairSmooth")}</button>
+          </div>
+          <div className="muted" style={{ fontSize: 11 }}>{t("edit.repairHint")}</div>
         </React.Fragment>
       )}
       <Check label={t("map.showStateLabels")} checked={s.showStateLabels} onChange={(v) => set({ showStateLabels: v })}></Check>
@@ -464,28 +477,75 @@ function MapTab() {
 // ---------- reusable metadata dictionaries ----------
 const CATALOG_TABS = ["culture", "religion", "language", "government"];
 
+const CATALOG_KINDS = ["", "derived", "mixed"]; // plain / split off (one parent) / mixed (two parents)
+
 function CatalogEntryEditor({ field, name, parents }) {
   const p = App.project;
-  const source = (window.Metadata && Metadata.entry(p, field, name)) || { name, color: Metadata.color(p, field, name), parent: "", description: "" };
-  const [draft, setDraft] = React.useState({ name: source.name || "", color: source.color || "#888888", parent: source.parent || "", description: source.description || "" });
-  React.useEffect(() => {
-    setDraft({ name: source.name || "", color: source.color || Metadata.color(App.project, field, name), parent: source.parent || "", description: source.description || "" });
-  }, [field, name, source.name, source.color, source.parent, source.description]);
+  const source = (window.Metadata && Metadata.entry(p, field, name)) || { name, color: Metadata.color(p, field, name), parent: "", parent2: "", kind: "", description: "" };
+  const fromSource = () => ({ name: source.name || "", color: source.color || Metadata.color(App.project, field, name), parent: source.parent || "",
+    parent2: source.parent2 || "", kind: source.kind || (source.parent2 ? "mixed" : ""), description: source.description || "" });
+  const [draft, setDraft] = React.useState(fromSource);
+  React.useEffect(() => { setDraft(fromSource()); }, [field, name, source.name, source.color, source.parent, source.parent2, source.kind, source.description]);
   const set = (patch) => setDraft((d) => Object.assign({}, d, patch));
+  const kinds = field === "culture";
+  const showParent2 = kinds && draft.kind === "mixed";
+  const usage = Metadata.usage(p, field, name);
+  const [mergeInto, setMergeInto] = React.useState("");
+  const parentColor = Metadata.parentColor(p, field, draft);
+  const lineage = draft.kind === "mixed" && draft.parent && draft.parent2 ? draft.parent + " + " + draft.parent2 : (draft.parent ? "← " + draft.parent : "");
   return (
     <div className="catalog-entry">
       <div className="catalog-entry-head">
         <input className="input" value={draft.name} onChange={(e) => set({ name: e.target.value })}></input>
         <input type="color" className="color-input" value={draft.color || "#888888"} onChange={(e) => set({ color: e.target.value })}></input>
+        <button className="btn icon danger" title={t("catalog.delete")} onClick={() => {
+          const u = Metadata.usage(p, field, name);
+          let msg = t("catalog.deleteConfirm").replace("{name}", name).replace("{states}", u.states).replace("{regions}", u.regions);
+          if (u.dataset) msg += "\n\n" + t("catalog.datasetNote");
+          if (!confirm(msg)) return;
+          Actions.deleteCatalogEntry(field, name);
+          Actions.toast(t("catalog.deleted"));
+        }}>✕</button>
       </div>
+      {kinds && (
+        <select className="select" value={draft.kind || ""} onChange={(e) => set({ kind: e.target.value, parent2: e.target.value === "mixed" ? draft.parent2 : "" })}>
+          {CATALOG_KINDS.map((k) => <option key={k} value={k}>{t("catalog.kind" + (k || "Plain"))}</option>)}
+        </select>
+      )}
       <select className="select" value={draft.parent || ""} onChange={(e) => set({ parent: e.target.value })}>
-        <option value="">{t("catalog.noParent")}</option>
-        {parents.filter((v) => v !== name).map((v) => <option key={v} value={v}>{v}</option>)}
+        <option value="">{t(showParent2 ? "catalog.parent" : "catalog.noParent")}</option>
+        {parents.filter((v) => v !== name && v !== draft.parent2).map((v) => <option key={v} value={v}>{v}</option>)}
       </select>
+      {showParent2 && (
+        <select className="select" value={draft.parent2 || ""} onChange={(e) => set({ parent2: e.target.value })}>
+          <option value="">{t("catalog.parent2")}</option>
+          {parents.filter((v) => v !== name && v !== draft.parent).map((v) => <option key={v} value={v}>{v}</option>)}
+        </select>
+      )}
+      {(lineage || parentColor) && (
+        <div className="field-row" style={{ justifyContent: "space-between" }}>
+          <span className="muted">{lineage}</span>
+          {parentColor && <button className="btn outline" style={{ fontSize: 11 }} title={parentColor} onClick={() => set({ color: parentColor })}>
+            <span className="state-swatch" style={{ background: parentColor, marginRight: 4 }}></span>{t("catalog.colorFromParents")}
+          </button>}
+        </div>
+      )}
       <textarea className="textarea catalog-description" rows="2" placeholder={t("catalog.description")} value={draft.description || ""} onChange={(e) => set({ description: e.target.value })}></textarea>
+      <div className="muted">{t("catalog.usage").replace("{states}", usage.states).replace("{regions}", usage.regions)}{usage.dataset ? " · " + t("catalog.fromDataset") : ""}</div>
       <div className="field-row">
         <button className="btn outline" style={{ fontSize: 11 }} onClick={() => Actions.saveCatalogEntry(field, name, draft)}>{t("catalog.save")}</button>
         {field !== "government" && <button className="btn outline" style={{ fontSize: 11 }} onClick={() => Actions.selectByMetadata(field, name)}>{t("catalog.selectUsed")}</button>}
+      </div>
+      <div className="field-row">
+        <select className="select" value={mergeInto} onChange={(e) => setMergeInto(e.target.value)}>
+          <option value="">{t("catalog.mergeInto")}</option>
+          {parents.filter((v) => v !== name).map((v) => <option key={v} value={v}>{v}</option>)}
+        </select>
+        <button className="btn outline" style={{ fontSize: 11, flex: "0 0 auto" }} disabled={!mergeInto} onClick={() => {
+          if (!confirm(t("catalog.mergeConfirm").replace("{from}", name).replace("{into}", mergeInto))) return;
+          Actions.mergeCatalogEntry(field, name, mergeInto);
+          Actions.toast(t("catalog.merged"));
+        }}>{t("catalog.merge")}</button>
       </div>
     </div>
   );
@@ -625,9 +685,17 @@ function StateTab() {
       </Field>
       <ComboField label={t("f.gov")} listKey="government" stateField="gov" value={s.gov} onChange={(v) => set({ gov: v })}></ComboField>
       <ComboField label={t("f.ideology")} listKey="ideology" stateField="ideology" value={s.ideology} onChange={(v) => set({ ideology: v })}></ComboField>
-      <ComboField label={t("f.officialReligion")} listKey="religion" stateField="religion" value={s.religion} onChange={(v) => set({ religion: v })}></ComboField>
-      <ComboField label={t("f.officialCulture")} listKey="culture" stateField="culture" value={s.culture} onChange={(v) => set({ culture: v })}></ComboField>
-      <ComboField label={t("f.officialLanguage")} listKey="language" stateField="language" value={s.language} onChange={(v) => set({ language: v })}></ComboField>
+      <ComboField label={t("f.officialReligion")} listKey="religion" stateField="religion" value={s.religion} onChange={(v) => Actions.setStateMeta(sid, "religion", v)}></ComboField>
+      <ComboField label={t("f.officialCulture")} listKey="culture" stateField="culture" value={s.culture} onChange={(v) => Actions.setStateMeta(sid, "culture", v)}></ComboField>
+      <ComboField label={t("f.officialLanguage")} listKey="language" stateField="language" value={s.language} onChange={(v) => Actions.setStateMeta(sid, "language", v)}></ComboField>
+      <div className="muted" style={{ fontSize: 11 }}>{t("state.metaHint")}</div>
+      {(s.culture || s.religion || s.language) && (
+        <button className="btn outline" style={{ fontSize: 11 }} onClick={() => {
+          let n = 0;
+          ["culture", "religion", "language"].forEach((f) => { if ((s[f] || "").trim()) n += Actions.setStateMeta(sid, f, s[f], { force: true }); });
+          Actions.toast(t("state.metaApplied").replace("{n}", n));
+        }}>{t("state.metaApplyAll")}</button>
+      )}
       <TextField label={t("f.population")} value={s.population} onChange={(v) => set({ population: v })}></TextField>
       <ComboField label={t("f.economy")} listKey="economy" stateField="economy" value={s.economy} onChange={(v) => set({ economy: v })}></ComboField>
       <TextField label={t("f.army")} value={s.army} onChange={(v) => set({ army: v })}></TextField>
@@ -862,6 +930,9 @@ function RegionTab() {
           ) : (
             <button className="btn primary" onClick={() => Actions.groupRegions(sel)}>{t("group.merge")}</button>
           )}
+          {window.GeomEdit && GeomEdit.enabled() && (
+            <button className="btn outline" title={t("edit.healHint")} onClick={() => Actions.healGaps(sel)}>{t("edit.healBtn")} ({sel.length})</button>
+          )}
           {RegionModel.supportsRegions() && (
             <React.Fragment>
               <div className="props-section-title">{t("region.fromProvinces")}</div>
@@ -908,6 +979,9 @@ function RegionTab() {
       <ComboField label={t("f.culture")} listKey="culture" stateField="culture" value={commonMeta("culture")} onChange={(v) => setAll({ culture: v })}></ComboField>
       <ComboField label={t("f.language")} listKey="language" stateField="language" value={commonMeta("language")} onChange={(v) => setAll({ language: v })}></ComboField>
       <ComboField label={t("f.religion")} listKey="religion" stateField="religion" value={commonMeta("religion")} onChange={(v) => setAll({ religion: v })}></ComboField>
+      {commonOwner && commonOwner !== "__mixed" && p.states[commonOwner] && ["culture", "religion", "language"].some((k) => (p.states[commonOwner][k] || "").trim()) && (
+        <button className="btn outline" style={{ fontSize: 11 }} onClick={() => Actions.toast(t("region.resetToStateDone").replace("{n}", Actions.resetRegionMetaToState(sel)))}>{t("region.resetToState")}</button>
+      )}
       {!multi && (
         <React.Fragment>
           <AreaField label={t("f.notes")} value={r.notes} onChange={(v) => setAll({ notes: v })}></AreaField>
@@ -918,6 +992,7 @@ function RegionTab() {
               <div className="field-row" style={{ flexWrap: "wrap", gap: 4 }}>
                 <button className="btn outline" style={{ fontSize: 11 }} onClick={() => GeomEdit.startEdit(rid)}>{t("edit.editBorders")}</button>
                 <button className="btn outline" style={{ fontSize: 11 }} onClick={() => { Actions.ui({ tool: "split" }); Actions.toast(t("edit.splitHint")); }}>{t("edit.splitBtn")}</button>
+                <button className="btn outline" style={{ fontSize: 11 }} title={t("edit.healHint")} onClick={() => Actions.healGaps([rid])}>{t("edit.healBtnHot")}</button>
                 <button className="btn outline danger" style={{ fontSize: 11 }} onClick={() => {
                   if (!confirm(t("edit.deleteAsk"))) return;
                   const merge = confirm(t("edit.deleteMergeAsk"));
@@ -946,7 +1021,7 @@ function PropsPanel() {
   const Tabs = { map: MapTab, state: StateTab, region: RegionTab, catalog: CatalogTab };
   const Body = Tabs[tab] || MapTab;
   return (
-    <div className="props-panel" data-screen-label="Properties panel">
+    <div className="props-panel" data-screen-label="Properties panel" style={{ width: App.ui.propsWidth || 320 }}>
       <div className="props-tabs">
         {["map", "state", "region", "catalog"].map((k) => (
           <button key={k} className={"props-tab" + (tab === k ? " active" : "")} onClick={() => Actions.ui({ panel: k })}>
@@ -959,4 +1034,34 @@ function PropsPanel() {
   );
 }
 
-Object.assign(window, { Toolbar, StatesPanel, PropsPanel });
+// drag handle on the left edge of the properties panel; width persists in UI prefs
+function PanelResizer() {
+  useStore();
+  if (App.ui.present) return null;
+  const onDown = (e) => {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    const el = e.currentTarget;
+    try { el.setPointerCapture(e.pointerId); } catch (err) {}
+    document.body.classList.add("resizing");
+    let raf = false, pending = App.ui.propsWidth;
+    const host = el.parentElement.getBoundingClientRect(); // not window.innerWidth: the app may be embedded
+    const move = (ev) => {
+      pending = host.right - ev.clientX;
+      if (!raf) { raf = true; requestAnimationFrame(() => { raf = false; Actions.setPropsWidth(pending); }); }
+    };
+    const up = () => {
+      Actions.setPropsWidth(pending); // apply the final position even if no frame was pending
+      el.removeEventListener("pointermove", move);
+      el.removeEventListener("pointerup", up);
+      el.removeEventListener("pointercancel", up);
+      document.body.classList.remove("resizing");
+    };
+    el.addEventListener("pointermove", move);
+    el.addEventListener("pointerup", up);
+    el.addEventListener("pointercancel", up);
+  };
+  return <div className="panel-resizer" title={t("props.resize")} onPointerDown={onDown}></div>;
+}
+
+Object.assign(window, { Toolbar, StatesPanel, PropsPanel, PanelResizer });

@@ -307,6 +307,7 @@ function MapView() {
   const svgRef = useRef(null);
   const zoomRef = useRef(null);
   const marqueeRef = useRef(null);
+  const rubberRef = useRef(null);     // split/draw: dashed segment from the last vertex to the cursor
   const minimapRef = useRef(null);
   const minimapVpRef = useRef(null);
   const hoverRef = useRef(null);
@@ -475,18 +476,24 @@ function MapView() {
   const finishGeomDraw = useCallback(() => {
     const gd = App.ui.geomDraw;
     if (!gd || !gd.pts.length) { App.ui.geomDraw = null; App.emit(); return; }
+    if (rubberRef.current) rubberRef.current.style.display = "none";
+    const smooth = window.GeomEdit && App.project && App.project.settings && App.project.settings.cutSmooth !== false;
+    const k = view.current.k;
+    let pts = gd.pts;
     if (gd.tool === "split") {
-      if (gd.pts.length < 2) { Actions.toast(t("edit.tooFewPoints")); return; }
-      const mid = gd.pts[Math.floor(gd.pts.length / 2)];
+      if (pts.length < 2) { Actions.toast(t("edit.tooFewPoints")); return; }
+      if (smooth && pts.length >= 3) pts = GeomEdit.smoothLine(pts, k, false);
+      const mid = pts[Math.floor(pts.length / 2)];
       const target = App.ui.selection[0] || (window.GeomEdit && GeomEdit.regionAt(mid[0], mid[1]));
       if (!target) { Actions.toast(t("edit.noTarget")); App.ui.geomDraw = null; App.emit(); return; }
-      Actions.splitRegionGeometry(target, gd.pts);
+      Actions.splitRegionGeometry(target, pts);
     } else {
-      if (gd.pts.length < 3) { Actions.toast(t("edit.tooFewPoints")); return; }
+      if (pts.length < 3) { Actions.toast(t("edit.tooFewPoints")); return; }
+      if (smooth && pts.length >= 4) pts = GeomEdit.smoothLine(pts, k, true);
       const cut = confirm(t("edit.drawCutAsk"));
       const nm = prompt(t("edit.drawNameAsk"), "");
       if (nm === null) { App.ui.geomDraw = null; App.emit(); return; }
-      Actions.drawNewRegion(gd.pts, cut ? "cut" : "draft", nm || null);
+      Actions.drawNewRegion(pts, cut ? "cut" : "draft", nm || null);
     }
     App.ui.geomDraw = null;
     App.emit();
@@ -520,8 +527,8 @@ function MapView() {
       const mh = e.target.dataset ? e.target.dataset.midpoint : null;
       if (vh) {
         const [ri, vi] = vh.split(":").map(Number);
-        if (e.altKey) { // delete vertex
-          if (sess.rings[ri].pts.length > 3) { sess.rings[ri].pts.splice(vi, 1); App.emit(); }
+        if (e.altKey) { // delete vertex (neighbours sharing it drop it too)
+          if (GeomEdit.removeVertex(sess, ri, vi)) App.emit();
           else Actions.toast(t("edit.minPoints"));
         } else {
           gesture.current = { mode: "vertex", ri, vi };
@@ -531,10 +538,8 @@ function MapView() {
       }
       if (mh) { // insert a vertex at the segment midpoint and start dragging it
         const [ri, vi] = mh.split(":").map(Number);
-        const r = sess.rings[ri];
-        const a = r.pts[vi], b2 = r.pts[(vi + 1) % r.pts.length];
-        r.pts.splice(vi + 1, 0, [(a[0] + b2[0]) / 2, (a[1] + b2[1]) / 2]);
-        gesture.current = { mode: "vertex", ri, vi: vi + 1 };
+        const nvi = GeomEdit.insertVertex(sess, ri, vi);
+        gesture.current = { mode: "vertex", ri, vi: nvi };
         App.emit();
         e.stopPropagation();
         return;
@@ -550,6 +555,8 @@ function MapView() {
       const last = gd.pts[gd.pts.length - 1];
       if (!last || Math.hypot(last[0] - pt[0], last[1] - pt[1]) > 1.5 / k) gd.pts.push(pt);
       if (e.detail >= 2 && gd.pts.length >= (tool === "split" ? 2 : 3)) { finishGeomDraw(); return; }
+      // hold and drag = freehand line; a plain click just adds one vertex
+      gesture.current = { mode: "freehand", tool, moved: false };
       App.emit();
       return;
     }
@@ -615,6 +622,29 @@ function MapView() {
       }
       hoverRef.current.textContent = txt;
     }
+    // split / draw in progress: sample freehand points while the button is
+    // held, otherwise show a rubber band from the last vertex to the cursor.
+    // Both touch the DOM directly — an App.emit() per mousemove would re-render
+    // every province.
+    const gd = App.ui.geomDraw;
+    if (gd && gd.pts.length && rubberRef.current) {
+      const [mx, my] = clientToMap(e);
+      const last = gd.pts[gd.pts.length - 1];
+      if (g && g.mode === "freehand") {
+        const k = view.current.k;
+        if (Math.hypot(last[0] - mx, last[1] - my) > 2 / k) {
+          gd.pts.push([mx, my]);
+          g.moved = true;
+          if (!g.raf) { g.raf = true; requestAnimationFrame(() => { g.raf = false; App.emit(); }); }
+        }
+        rubberRef.current.style.display = "none";
+        return;
+      }
+      rubberRef.current.setAttribute("d", "M" + last[0].toFixed(2) + "," + last[1].toFixed(2) + "L" + mx.toFixed(2) + "," + my.toFixed(2));
+      rubberRef.current.style.display = "block";
+    } else if (rubberRef.current && rubberRef.current.style.display !== "none") {
+      rubberRef.current.style.display = "none";
+    }
     if (!g) return;
     if (g.mode === "bdmove" || g.mode === "bdresize") {
       const [mx, my] = clientToMap(e);
@@ -633,7 +663,9 @@ function MapView() {
       if (sess && sess.rings[g.ri]) {
         const [mx, my] = clientToMap(e);
         const pt = window.GeomEdit ? GeomEdit.snap([mx, my], view.current.k) : [mx, my];
-        sess.rings[g.ri].pts[g.vi] = pt;
+        // mutate in place: a shared vertex is the same object in the neighbour's ring
+        const cur = sess.rings[g.ri].pts[g.vi];
+        cur[0] = pt[0]; cur[1] = pt[1];
         if (!g.raf) {
           g.raf = true;
           requestAnimationFrame(() => { g.raf = false; App.emit(); });
@@ -696,6 +728,14 @@ function MapView() {
     if (!g) return;
     if (g.mode === "bdmove" || g.mode === "bdresize") { Actions.endStroke(); return; }
     if (g.mode === "vertex") { App.emit(); return; }
+    if (g.mode === "freehand") {
+      const gd = App.ui.geomDraw;
+      if (g.moved && gd && gd.pts.length && window.GeomEdit) {
+        gd.pts[gd.pts.length - 1] = GeomEdit.snap(gd.pts[gd.pts.length - 1], view.current.k);
+        App.emit();
+      }
+      return;
+    }
     if (g.mode === "label") {
       const dl = dragLabel.current;
       dragLabel.current = null;
@@ -1292,6 +1332,10 @@ function MapView() {
             const k = view.current.k;
             return (
               <g data-export-skip="1">
+                {(App.ui.geomEdit.neighbors || []).map((nb) => nb.rings.map((r, ri) => (
+                  <path key={nb.id + ":" + ri} d={"M" + r.pts.map((p) => p[0].toFixed(2) + "," + p[1].toFixed(2)).join("L") + "Z"}
+                    fill="none" stroke="#3d7bc4" strokeOpacity="0.55" strokeWidth={1 / k} strokeDasharray={`${3 / k} ${2 / k}`} pointerEvents="none"></path>
+                )))}
                 {App.ui.geomEdit.rings.map((r, ri) => {
                   const dstr = "M" + r.pts.map((p) => p[0].toFixed(2) + "," + p[1].toFixed(2)).join("L") + "Z";
                   return (
@@ -1306,7 +1350,7 @@ function MapView() {
                               width={4.4 / k} height={4.4 / k}
                               fill="#ffffff" stroke="#ff9f2e" strokeWidth={0.9 / k} style={{ cursor: "copy" }}></rect>
                             <circle data-vertex={ri + ":" + vi} cx={p[0]} cy={p[1]} r={4 / k}
-                              fill="#ff9f2e" stroke="#ffffff" strokeWidth={1 / k} style={{ cursor: "grab" }}></circle>
+                              fill="#ff9f2e" stroke={GeomEdit.isShared(App.ui.geomEdit, p) ? "#3d7bc4" : "#ffffff"} strokeWidth={GeomEdit.isShared(App.ui.geomEdit, p) ? 1.6 / k : 1 / k} style={{ cursor: "grab" }}></circle>
                           </React.Fragment>
                         );
                       })}
@@ -1317,6 +1361,7 @@ function MapView() {
             );
           })()}
           <rect ref={marqueeRef} data-export-skip="1" style={{ display: "none" }} fill="rgba(61,123,196,0.15)" stroke="#3d7bc4" strokeWidth="1" vectorEffect="non-scaling-stroke"></rect>
+          <path ref={rubberRef} data-export-skip="1" style={{ display: "none" }} fill="none" stroke="#ff9f2e" strokeOpacity="0.7" strokeWidth="1.2" strokeDasharray="4 3" vectorEffect="non-scaling-stroke" pointerEvents="none"></path>
         </g>
       </svg>
 
@@ -1336,7 +1381,7 @@ function MapView() {
 
       {App.ui.geomEdit && (
         <div className="geom-bar" data-export-skip="1">
-          <span className="muted">{t("edit.editingBorders")}</span>
+          <span className="muted">{t("edit.editingBorders")}{(App.ui.geomEdit.neighbors || []).length ? " · " + t("edit.sharedHint").replace("{n}", App.ui.geomEdit.neighbors.length) : ""}</span>
           <button className="btn outline" onClick={() => GeomEdit.smoothEdit()}>{t("edit.smooth")}</button>
           <button className="btn outline" onClick={() => GeomEdit.simplifyEdit()}>{t("edit.simplify")}</button>
           <button className="btn primary" onClick={() => GeomEdit.saveEdit()}>{t("edit.save")}</button>
@@ -1346,6 +1391,10 @@ function MapView() {
       {!App.ui.geomEdit && App.ui.geomDraw && (
         <div className="geom-bar" data-export-skip="1">
           <span className="muted">{t(App.ui.geomDraw.tool === "split" ? "edit.splitHint" : "edit.drawHint")}</span>
+          <label className="check-row" style={{ fontSize: 12 }}>
+            <input type="checkbox" checked={settings.cutSmooth !== false} onChange={(e) => Actions.setSettings({ cutSmooth: e.target.checked }, { undo: false })}></input>
+            {t("edit.smoothLine")}
+          </label>
           <button className="btn primary" disabled={App.ui.geomDraw.pts.length < (App.ui.geomDraw.tool === "split" ? 2 : 3)}
             onClick={finishGeomDraw}>{t("edit.finish")}</button>
           <button className="btn outline" onClick={() => { App.ui.geomDraw = null; Actions.ui({ tool: "select" }); }}>{t("edit.cancel")}</button>

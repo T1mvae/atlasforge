@@ -42,7 +42,10 @@ function AppRoot() {
         return;
       }
       const tools = { v: "select", b: "paint", g: "fill", e: "erase", t: "label", h: "pan" };
-      if (tools[k]) { Actions.ui({ tool: tools[k] }); return; }
+      if (tools[k]) { App.ui.geomDraw = null; Actions.ui({ tool: tools[k] }); return; }
+      const geomOk = window.GeomEdit && GeomEdit.enabled();
+      if (geomOk && (k === "s" || k === "d")) { App.ui.geomDraw = null; Actions.ui({ tool: k === "s" ? "split" : "draw" }); return; }
+      if (geomOk && k === "q") { Actions.healGaps(App.ui.selection.length ? App.ui.selection : null); return; }
       if (k === "p") { Actions.ui({ present: !App.ui.present }); return; }
       if (k === "f") { window.MapAPI && MapAPI.fit(); return; }
       if (k === "+" || k === "=") { window.MapAPI && MapAPI.zoomBy(1.4); return; }
@@ -67,6 +70,7 @@ function AppRoot() {
         <StatesPanel></StatesPanel>
         <MapView></MapView>
         <Legend></Legend>
+        <PanelResizer></PanelResizer>
         <PropsPanel></PropsPanel>
         {App.ui.present && (
           <button className="btn outline present-exit" onClick={() => Actions.ui({ present: false })}>{t("present.exit")}</button>

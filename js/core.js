@@ -81,7 +81,8 @@
       showLegend: true,
       legendPos: null,
       toast: null,
-      playing: false
+      playing: false,
+      propsWidth: 320            // right properties panel width (px), persisted
     },
     project: null,
     basemap: { status: "idle", features: [], byId: {}, sphere: "", count: 0, error: null, topo: null, topoObj: null },
@@ -134,6 +135,7 @@
           showLakes: true,
           showMountains: true,
           snap: { borders: true, rivers: true, lakes: true, mountains: false },
+          cutSmooth: true,
           showRivers: true,
           showLakes: true,
           showMountains: true,
@@ -277,7 +279,7 @@
 
   function saveUiPrefs() {
     try {
-      localStorage.setItem(LS_UI, JSON.stringify({ lang: App.ui.lang, theme: App.ui.theme }));
+      localStorage.setItem(LS_UI, JSON.stringify({ lang: App.ui.lang, theme: App.ui.theme, propsWidth: App.ui.propsWidth }));
     } catch (e) {}
   }
 
@@ -367,7 +369,29 @@
   // ---------- reusable culture / religion / language / government dictionaries ----------
   const CATALOG_FIELDS = ["culture", "religion", "language", "government"];
   const STATE_CATALOG_FIELD = { government: "gov", culture: "culture", religion: "religion", language: "language" };
+  const STATE_META_FIELDS = ["culture", "religion", "language"]; // flow from a country to its provinces
   function normMeta(v) { return (v || "").trim(); }
+  // where a value is used: country records, province / group / region-layer
+  // records, and whether the base dataset itself carries it (undeletable).
+  function metadataUsage(p, field, name) {
+    name = normMeta(name);
+    const sf = STATE_CATALOG_FIELD[field];
+    let states = 0, regions = 0;
+    if (sf) Object.keys(p.states || {}).forEach((sid) => { if (normMeta(p.states[sid][sf]) === name) states++; });
+    if (field !== "government") {
+      Object.keys(p.regions || {}).forEach((rid) => { if (normMeta(p.regions[rid][field]) === name) regions++; });
+      Object.keys(p.groups || {}).forEach((gid) => { if (normMeta(p.groups[gid][field]) === name) regions++; });
+      Object.keys(p.customRegions || {}).forEach((id) => { if (normMeta((p.customRegions[id].metadata || {})[field]) === name) regions++; });
+      Object.keys(p.regionEdits || {}).forEach((id) => { if (normMeta(((p.regionEdits[id] || {}).metadata || {})[field]) === name) regions++; });
+    }
+    let dataset = false;
+    if (field === "culture") dataset = (App.basemap.features || []).some((f) => normMeta(f.cultArea) === name);
+    if (!dataset && field !== "government") {
+      dataset = (App.regionData.regions || []).some((r) => normMeta((r.metadata || {})[field]) === name &&
+        !(p.regionEdits && p.regionEdits[r.id] && normMeta((p.regionEdits[r.id].metadata || {})[field]) === name));
+    }
+    return { states, regions, dataset };
+  }
   function metadataValue(p, field, record, feat) {
     const own = record && normMeta(record[field]);
     // Dataset cultural areas are useful defaults until the user assigns a value.
@@ -413,7 +437,31 @@
     catalogValueCache[field] = result;
     return result;
   }
-  window.Metadata = { fields: CATALOG_FIELDS, stateField: STATE_CATALOG_FIELD, value: metadataValue, color: metadataColor, entry: catalogEntry, values: catalogValues };
+  // legend rows for a metadata display mode: every value on the map with its
+  // province count and colour (shared by the on-screen legend and PNG export)
+  function metadataLegend(p, field) {
+    const found = new Map();
+    (App.basemap.features || []).forEach((f) => {
+      const value = metadataValue(p, field, window.effRegion(p, f.id), f);
+      if (value) found.set(value, (found.get(value) || 0) + 1);
+    });
+    return [...found].map(([name, count]) => ({ name, count, color: metadataColor(p, field, name) }))
+      .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
+  }
+  // suggested colour from an entry's parents: a mixed culture blends both, a
+  // split-off one is a recognisable variation of its single parent
+  function metadataParentColor(p, field, entry) {
+    if (!entry) return null;
+    const c1 = entry.parent ? metadataColor(p, field, entry.parent) : null;
+    const c2 = entry.parent2 ? metadataColor(p, field, entry.parent2) : null;
+    if (entry.kind === "mixed" && c1 && c2) return ColorUtil.mixHex(c1, c2, 0.5);
+    if (c1) {
+      const seed = metadataColor({ catalogs: {} }, field, entry.name || "x"); // hash colour of the name
+      return ColorUtil.mixHex(c1, seed, 0.3);
+    }
+    return null;
+  }
+  window.Metadata = { fields: CATALOG_FIELDS, stateField: STATE_CATALOG_FIELD, value: metadataValue, color: metadataColor, entry: catalogEntry, values: catalogValues, usage: metadataUsage, legend: metadataLegend, parentColor: metadataParentColor };
 
   // effective data for a region: its merge-group entry (if any) wins
   window.effRegion = function (p, rid) {
@@ -425,17 +473,26 @@
   Actions.assign = function (rids, owner, opts = {}) {
     Actions.mut((p) => {
       const gids = new Set();
+      // a province joining a country picks up its culture / religion / language
+      // unless it already has its own value
+      const st = owner ? p.states[owner] : null;
+      const inherit = (rec) => {
+        if (!st) return;
+        STATE_META_FIELDS.forEach((f) => { if (normMeta(st[f]) && !normMeta(rec[f])) rec[f] = normMeta(st[f]); });
+      };
       rids.forEach((rid) => {
         const r0 = p.regions[rid];
         if (r0 && r0.group && p.groups && p.groups[r0.group]) { gids.add(r0.group); return; }
         const r = regionEntry(p, rid);
         r.owner = owner;
         if (!owner) { r.status = "core"; r.autonomyId = null; }
+        inherit(r);
         cleanupRegion(p, rid);
       });
       gids.forEach((gid) => {
         p.groups[gid].owner = owner;
         if (!owner) { p.groups[gid].status = "core"; p.groups[gid].autonomyId = null; }
+        inherit(p.groups[gid]);
       });
       if (!owner) pruneAutonomies(p);
     }, Object.assign({ terr: true }, opts));
@@ -643,6 +700,24 @@
     }, { undo: false });
   };
 
+  // Replace every use of a catalog value in one project (or snapshot) record set.
+  function rewriteMetaValue(target, field, old, next) {
+    const sf = STATE_CATALOG_FIELD[field];
+    if (sf) Object.keys(target.states || {}).forEach((sid) => { if (target.states[sid][sf] === old) target.states[sid][sf] = next; });
+    if (field !== "government") {
+      Object.keys(target.regions || {}).forEach((rid) => { if (target.regions[rid][field] === old) target.regions[rid][field] = next; });
+      Object.keys(target.groups || {}).forEach((gid) => { if (target.groups[gid][field] === old) target.groups[gid][field] = next; });
+      Object.keys(target.customRegions || {}).forEach((id) => {
+        const meta = target.customRegions[id].metadata || {};
+        if (meta[field] === old) meta[field] = next;
+      });
+      Object.keys(target.regionEdits || {}).forEach((id) => {
+        const meta = (target.regionEdits[id] || {}).metadata || {};
+        if (meta[field] === old) meta[field] = next;
+      });
+    }
+  }
+
   // Rename is intentionally global: current map, country records, merged regions,
   // remembered suggestions and every timeline snapshot move together.
   Actions.saveCatalogEntry = function (field, oldName, patch) {
@@ -656,34 +731,111 @@
       let entry = entries.find((e) => normMeta(e.name) === old) || entries.find((e) => normMeta(e.name) === name);
       if (!entry) { entry = { name, color: null, parent: "", description: "" }; entries.push(entry); }
       if (old && old !== name) {
-        const renameIn = (target) => {
-          const sf = STATE_CATALOG_FIELD[field];
-          if (sf) Object.keys(target.states || {}).forEach((sid) => { if (target.states[sid][sf] === old) target.states[sid][sf] = name; });
-          if (field !== "government") {
-            Object.keys(target.regions || {}).forEach((rid) => { if (target.regions[rid][field] === old) target.regions[rid][field] = name; });
-            Object.keys(target.groups || {}).forEach((gid) => { if (target.groups[gid][field] === old) target.groups[gid][field] = name; });
-            Object.keys(target.customRegions || {}).forEach((id) => {
-              const meta = target.customRegions[id].metadata || {};
-              if (meta[field] === old) meta[field] = name;
-            });
-            Object.keys(target.regionEdits || {}).forEach((id) => {
-              const meta = (target.regionEdits[id] || {}).metadata || {};
-              if (meta[field] === old) meta[field] = name;
-            });
-          }
-        };
-        renameIn(p);
-        Object.keys(p.snapshots || {}).forEach((year) => renameIn(p.snapshots[year]));
+        rewriteMetaValue(p, field, old, name);
+        Object.keys(p.snapshots || {}).forEach((year) => rewriteMetaValue(p.snapshots[year], field, old, name));
         const vals = (p.valueLists && p.valueLists[field]) || [];
         p.valueLists[field] = [...new Set(vals.map((v) => v === old ? name : v))];
-        entries.forEach((e) => { if (e.parent === old) e.parent = name; });
+        entries.forEach((e) => { if (e.parent === old) e.parent = name; if (e.parent2 === old) e.parent2 = name; });
         entries = entries.filter((e) => e === entry || normMeta(e.name) !== name);
         p.catalogs[field] = entries;
       }
-      Object.assign(entry, { name, color: patch.color || null, parent: patch.parent || "", description: patch.description || "" });
+      // kind: "" plain | "derived" (one parent, split off) | "mixed" (two parents)
+      const kind = patch.kind === "mixed" || patch.kind === "derived" ? patch.kind : "";
+      Object.assign(entry, { name, color: patch.color || null, parent: patch.parent || "", parent2: kind === "mixed" ? (patch.parent2 || "") : "",
+        kind, description: patch.description || "" });
       const values = (p.valueLists[field] = p.valueLists[field] || []);
       if (!values.includes(name)) values.push(name);
     });
+  };
+
+  // Deleting a value clears it everywhere it is used (and in every snapshot);
+  // children lose their parent link. Dataset defaults (feat.cultArea) survive.
+  Actions.deleteCatalogEntry = function (field, name) {
+    if (!CATALOG_FIELDS.includes(field)) return;
+    name = normMeta(name);
+    if (!name) return;
+    Actions.mut((p) => {
+      p.catalogs = p.catalogs || {};
+      p.catalogs[field] = (p.catalogs[field] || []).filter((e) => normMeta(e.name) !== name);
+      p.catalogs[field].forEach((e) => { if (normMeta(e.parent) === name) e.parent = ""; if (normMeta(e.parent2) === name) e.parent2 = ""; });
+      if (p.valueLists && p.valueLists[field]) p.valueLists[field] = p.valueLists[field].filter((v) => normMeta(v) !== name);
+      rewriteMetaValue(p, field, name, "");
+      Object.keys(p.snapshots || {}).forEach((year) => rewriteMetaValue(p.snapshots[year], field, name, ""));
+      Object.keys(p.regions || {}).forEach((rid) => cleanupRegion(p, rid));
+    }, { region: true });
+  };
+
+  // Merge `from` into `into`: every use is rewritten (snapshots too), children
+  // of `from` re-parent to `into`, and the `from` entry disappears.
+  Actions.mergeCatalogEntry = function (field, from, into) {
+    if (!CATALOG_FIELDS.includes(field)) return;
+    from = normMeta(from); into = normMeta(into);
+    if (!from || !into || from === into) return;
+    Actions.mut((p) => {
+      p.catalogs = p.catalogs || {};
+      const entries = (p.catalogs[field] = p.catalogs[field] || []);
+      if (!entries.some((e) => normMeta(e.name) === into)) entries.push({ name: into, color: null, parent: "", parent2: "", kind: "", description: "" });
+      p.catalogs[field] = entries.filter((e) => normMeta(e.name) !== from);
+      p.catalogs[field].forEach((e) => {
+        if (normMeta(e.parent) === from) e.parent = normMeta(e.name) === into ? "" : into;
+        if (normMeta(e.parent2) === from) e.parent2 = normMeta(e.name) === into ? "" : into;
+        if (e.parent2 && normMeta(e.parent2) === normMeta(e.parent)) { e.parent2 = ""; if (e.kind === "mixed") e.kind = "derived"; } // both parents collapsed into one
+      });
+      p.valueLists = p.valueLists || {};
+      p.valueLists[field] = [...new Set(((p.valueLists[field] || []).filter((v) => normMeta(v) !== from)).concat([into]))];
+      rewriteMetaValue(p, field, from, into);
+      Object.keys(p.snapshots || {}).forEach((year) => rewriteMetaValue(p.snapshots[year], field, from, into));
+    }, { region: true });
+  };
+
+  // Put the owner's culture / religion / language back on the selected provinces
+  Actions.resetRegionMetaToState = function (rids) {
+    let n = 0;
+    Actions.mut((p) => {
+      const done = new Set();
+      rids.forEach((rid) => {
+        const r0 = p.regions[rid];
+        const rec = r0 && r0.group && p.groups && p.groups[r0.group] ? p.groups[r0.group] : r0;
+        if (!rec || !rec.owner || done.has(rec)) return;
+        done.add(rec);
+        const st = p.states[rec.owner];
+        if (!st) return;
+        let changed = false;
+        STATE_META_FIELDS.forEach((f) => { const v = normMeta(st[f]); if (v && normMeta(rec[f]) !== v) { rec[f] = v; changed = true; } });
+        if (changed) n++;
+      });
+    });
+    return n;
+  };
+
+  // Country-level culture / religion / language flow down to the provinces it
+  // owns: provinces still carrying the previous country value (or none) follow
+  // the change, hand-set ones keep theirs. `force` overwrites every province.
+  Actions.setStateMeta = function (sid, field, value, opts = {}) {
+    if (!STATE_META_FIELDS.includes(field)) return 0;
+    value = normMeta(value);
+    let n = 0;
+    Actions.mut((p) => {
+      const s = p.states[sid];
+      if (!s) return;
+      const old = normMeta(s[field]);
+      s[field] = value;
+      const follow = (rec) => {
+        if (!rec || rec.owner !== sid) return false;
+        const cur = normMeta(rec[field]);
+        if (!opts.force && cur && cur !== old) return false;
+        if (cur === value) return false;
+        rec[field] = value;
+        return true;
+      };
+      Object.keys(p.regions).forEach((rid) => {
+        const r = p.regions[rid];
+        if (r.group) return;
+        if (follow(r)) { n++; cleanupRegion(p, rid); }
+      });
+      Object.keys(p.groups || {}).forEach((gid) => { if (follow(p.groups[gid])) n++; });
+    });
+    return n;
   };
 
   // ---------- reference image backdrop (for tracing) ----------
@@ -857,7 +1009,8 @@
   Actions.loadSaved = function () {
     try {
       const ui = JSON.parse(localStorage.getItem(LS_UI) || "null");
-      if (ui) Object.assign(App.ui, { lang: ui.lang || "ru", theme: ui.theme || "dark" });
+      if (ui) Object.assign(App.ui, { lang: ui.lang || "ru", theme: ui.theme || "dark",
+        propsWidth: Math.max(240, Math.min(600, +ui.propsWidth || 320)) });
     } catch (e) {}
     let p = null;
     try { p = JSON.parse(localStorage.getItem(LS_KEY) || "null"); } catch (e) {}
@@ -874,6 +1027,10 @@
 
   Actions.setLang = function (lang) { App.ui.lang = lang; saveUiPrefs(); App.emit(); };
   Actions.setTheme = function (theme) { App.ui.theme = theme; saveUiPrefs(); App.emit(); };
+  Actions.setPropsWidth = function (w) {
+    App.ui.propsWidth = Math.max(240, Math.min(600, Math.round(+w || 320)));
+    saveUiPrefs(); App.emit();
+  };
 
   // ---------- derived stats ----------
   window.stateStats = function () {

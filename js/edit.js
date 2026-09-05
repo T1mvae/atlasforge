@@ -148,48 +148,17 @@
     return out;
   }
   GeomEdit.rdp = rdp; GeomEdit.chaikin = chaikin; GeomEdit.chaikinOpen = chaikinOpen;
-  // Smooth a drawn split / outline (screen coords). Only freehand-sampled
-  // points (pt.hand) are smoothed; clicked vertices are anchors and stay put,
-  // so an angular clicked shape is never rounded. `closed` for the draw tool.
+  // Smooth a hand-drawn split / outline (screen coords): drop jitter, then round
+  // the corners twice. `closed` for the draw tool, open for the split line.
   GeomEdit.smoothLine = function (pts, k, closed) {
     if (!pts || pts.length < 3) return pts;
     const eps = 1.2 / Math.max(0.2, k || 1);
-    const n = pts.length;
-    const isHand = (p) => !!(p && p.hand);
-    if (!pts.some(isHand)) return pts;
-    const smoothRun = (run) => { // endpoints kept, interior rounded
-      if (run.length < 3) return run;
-      let out = rdp(run, eps);
-      for (let i = 0; i < 2; i++) out = chaikinOpen(out);
-      return out;
-    };
-    if (pts.every(isHand)) {
-      let out;
-      if (closed) { out = rdp(pts.concat([pts[0]]), eps); out.pop(); }
-      else out = rdp(pts, eps);
-      if (out.length < 3) return pts;
-      for (let i = 0; i < 2; i++) out = closed ? chaikin(out) : chaikinOpen(out);
-      return out;
-    }
-    let seq = pts, anchors = [];
-    if (closed) {
-      const first = pts.findIndex((p) => !isHand(p));
-      seq = pts.slice(first).concat(pts.slice(0, first));
-      seq.forEach((p, i) => { if (!isHand(p)) anchors.push(i); });
-      anchors.push(n); // wrap back to the first anchor
-    } else {
-      seq.forEach((p, i) => { if (!isHand(p) || i === 0 || i === n - 1) anchors.push(i); });
-    }
-    const out = [];
-    for (let t = 0; t + 1 < anchors.length; t++) {
-      const a = anchors[t], b = anchors[t + 1];
-      const run = seq.slice(a, b + 1);
-      if (b === n) run[run.length - 1] = seq[0];
-      const sm = run.length >= 3 ? smoothRun(run) : run;
-      for (let i = 0; i + 1 < sm.length; i++) out.push(sm[i]);
-    }
-    if (!closed) out.push(seq[n - 1]);
-    return out.length >= 3 ? out : pts;
+    let out;
+    if (closed) { out = rdp(pts.concat([pts[0]]), eps); out.pop(); }
+    else out = rdp(pts, eps);
+    if (out.length < 3) return pts;
+    for (let i = 0; i < 2; i++) out = closed ? chaikin(out) : chaikinOpen(out);
+    return out;
   };
 
   // ---------------- effective collection (base + edits) ----------------
@@ -299,63 +268,26 @@
     return newId;
   };
 
-  // "Left side" polygon of a polyline. Both ends are extended straight out to
-  // the boundary of a rectangle enclosing the region and the line, and the
-  // ring is closed along that rectangle — so the closing edges can never run
-  // through the region. The end direction is averaged over the last ~15% of
-  // the line, so a wiggle at the end of a freehand stroke does not aim the
-  // extension back across the region. Both halves of the region are computed
-  // against this very polygon, so their shared boundary coincides exactly.
+  // Half-plane polygon along a polyline: the line is extended far past both
+  // ends and closed off on its left side. Both halves of the region are then
+  // computed against this very polygon, so their shared boundary coincides
+  // vertex for vertex — no sliver is subtracted, no gap is left behind.
   function halfPlaneAlong(line, bbox) {
-    let x0 = bbox[0], y0 = bbox[1], x1 = bbox[2], y1 = bbox[3];
-    line.forEach((c) => { x0 = Math.min(x0, c[0]); y0 = Math.min(y0, c[1]); x1 = Math.max(x1, c[0]); y1 = Math.max(y1, c[1]); });
-    const pad = Math.hypot(x1 - x0, y1 - y0) * 0.1 || 1;
-    x0 -= pad; y0 -= pad; x1 += pad; y1 += pad;
-    const w = x1 - x0, h = y1 - y0, perim = 2 * (w + h);
-    const dist = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1]);
-    let total = 0;
-    for (let i = 1; i < line.length; i++) total += dist(line[i - 1], line[i]);
-    const dirAt = (fromEnd) => {
-      const pts = fromEnd ? line.slice().reverse() : line; // pts[0] is the endpoint
-      const back = Math.max(total * 0.15, 1e-9);
-      let acc = 0, q = pts[pts.length - 1];
-      for (let i = 1; i < pts.length; i++) { acc += dist(pts[i - 1], pts[i]); if (acc >= back) { q = pts[i]; break; } }
-      const dx = pts[0][0] - q[0], dy = pts[0][1] - q[1];
-      const l = Math.hypot(dx, dy) || 1;
-      return [dx / l, dy / l];
+    const diag = Math.hypot(bbox[2] - bbox[0], bbox[3] - bbox[1]) || 1;
+    const D = diag * 4;
+    const ext = (a, b) => {
+      const dx = a[0] - b[0], dy = a[1] - b[1];
+      const len = Math.hypot(dx, dy) || 1;
+      return [a[0] + dx / len * D, a[1] + dy / len * D];
     };
-    const toRect = (P, v) => { // extend P along v until it meets the rectangle boundary
-      let t = Infinity;
-      if (v[0] > 1e-12) t = Math.min(t, (x1 - P[0]) / v[0]); else if (v[0] < -1e-12) t = Math.min(t, (x0 - P[0]) / v[0]);
-      if (v[1] > 1e-12) t = Math.min(t, (y1 - P[1]) / v[1]); else if (v[1] < -1e-12) t = Math.min(t, (y0 - P[1]) / v[1]);
-      if (!isFinite(t) || t < 0) t = 0;
-      return [P[0] + v[0] * t, P[1] + v[1] * t];
-    };
-    const pStart = toRect(line[0], dirAt(false));
-    const pEnd = toRect(line[line.length - 1], dirAt(true));
-    if (dist(pStart, pEnd) < 1e-9) return null;
-    // walk the rectangle boundary from pEnd back to pStart, inserting the corners passed
-    const corners = [[x0, y0], [x1, y0], [x1, y1], [x0, y1]];
-    const cornerParam = [0, w, w + h, 2 * w + h];
-    const param = (P) => {
-      if (Math.abs(P[1] - y0) < 1e-7) return P[0] - x0;
-      if (Math.abs(P[0] - x1) < 1e-7) return w + (P[1] - y0);
-      if (Math.abs(P[1] - y1) < 1e-7) return w + h + (x1 - P[0]);
-      return 2 * w + h + (y1 - P[1]);
-    };
-    const sideIdx = (t) => (t < w ? 0 : t < w + h ? 1 : t < 2 * w + h ? 2 : 3);
-    const a = param(pEnd), b = param(pStart);
-    const ahead = (from, to) => (to - from + perim) % perim;
-    const ring = [pStart].concat(line.slice(1, -1), [pEnd]);
-    let side = sideIdx(a);
-    for (let k = 0; k < 4; k++) {
-      const nc = (side + 1) % 4;
-      if (ahead(a, cornerParam[nc]) >= ahead(a, b)) break;
-      ring.push(corners[nc]);
-      side = nc;
-    }
-    ring.push(pStart);
-    try { return polygonClipping.union([[ring]]); } // normalizes any self-intersection
+    const p0 = ext(line[0], line[1]);
+    const pn = ext(line[line.length - 1], line[line.length - 2]);
+    let nx = -(pn[1] - p0[1]), ny = pn[0] - p0[0];
+    const nl = Math.hypot(nx, ny);
+    if (!nl) return null;
+    nx = nx / nl * D; ny = ny / nl * D;
+    const ring = [p0].concat(line.slice(1, -1), [pn, [pn[0] + nx, pn[1] + ny], [p0[0] + nx, p0[1] + ny], p0]);
+    try { return polygonClipping.union([[ring]]); } // normalizes self-intersections
     catch (e) { console.warn("half-plane failed", e); return null; }
   }
 

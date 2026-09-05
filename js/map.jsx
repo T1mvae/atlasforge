@@ -483,16 +483,8 @@ function MapView() {
     if (gd.tool === "split") {
       if (pts.length < 2) { Actions.toast(t("edit.tooFewPoints")); return; }
       if (smooth && pts.length >= 3) pts = GeomEdit.smoothLine(pts, k, false);
-      // cut the region the line actually runs through (most samples along it);
-      // a stale selection elsewhere must not redirect the cut
-      const hits = {};
-      for (let i = 0; i < 9; i++) {
-        const q = pts[Math.min(pts.length - 1, Math.round((pts.length - 1) * (i + 0.5) / 9))];
-        const hid = window.GeomEdit && GeomEdit.regionAt(q[0], q[1]);
-        if (hid) hits[hid] = (hits[hid] || 0) + 1;
-      }
-      const best = Object.keys(hits).sort((x, y) => hits[y] - hits[x])[0];
-      const target = best || App.ui.selection[0];
+      const mid = pts[Math.floor(pts.length / 2)];
+      const target = App.ui.selection[0] || (window.GeomEdit && GeomEdit.regionAt(mid[0], mid[1]));
       if (!target) { Actions.toast(t("edit.noTarget")); App.ui.geomDraw = null; App.emit(); return; }
       Actions.splitRegionGeometry(target, pts);
     } else {
@@ -641,9 +633,7 @@ function MapView() {
       if (g && g.mode === "freehand") {
         const k = view.current.k;
         if (Math.hypot(last[0] - mx, last[1] - my) > 2 / k) {
-          const hp = [mx, my];
-          hp.hand = true; // freehand sample: smoothing may move it; clicked vertices are anchors
-          gd.pts.push(hp);
+          gd.pts.push([mx, my]);
           g.moved = true;
           if (!g.raf) { g.raf = true; requestAnimationFrame(() => { g.raf = false; App.emit(); }); }
         }
@@ -741,15 +731,7 @@ function MapView() {
     if (g.mode === "freehand") {
       const gd = App.ui.geomDraw;
       if (g.moved && gd && gd.pts.length && window.GeomEdit) {
-        const k = view.current.k;
-        const snapped = GeomEdit.snap(gd.pts[gd.pts.length - 1], k);
-        const last = [snapped[0], snapped[1]]; last.hand = true;
-        gd.pts[gd.pts.length - 1] = last;
-        if (gd.tool === "split" && gd.pts.length >= 2) { finishGeomDraw(); return; } // one stroke across = cut
-        if (gd.tool === "draw" && gd.pts.length >= 4 && Math.hypot(last[0] - gd.pts[0][0], last[1] - gd.pts[0][1]) < 10 / k) {
-          gd.pts.pop(); // came back to the start: close the outline
-          finishGeomDraw(); return;
-        }
+        gd.pts[gd.pts.length - 1] = GeomEdit.snap(gd.pts[gd.pts.length - 1], view.current.k);
         App.emit();
       }
       return;
@@ -811,7 +793,7 @@ function MapView() {
         }
       }
     }
-  }, [clientToMap, fillByOwner, finishGeomDraw]);
+  }, [clientToMap, fillByOwner]);
 
   // ---------- borders (topo meshes) ----------
   const meshes = useMemo(() => {

@@ -472,6 +472,17 @@ function MapView() {
   }, [bm, effOf]);
 
   // ---------- pointer gestures ----------
+  // the region a polyline mostly runs through (9 samples along it)
+  const lineTarget = (pts) => {
+    if (!window.GeomEdit || !pts || !pts.length) return null;
+    const hits = {};
+    for (let i = 0; i < 9; i++) {
+      const q = pts[Math.min(pts.length - 1, Math.round((pts.length - 1) * (i + 0.5) / 9))];
+      const hid = GeomEdit.regionAt(q[0], q[1]);
+      if (hid) hits[hid] = (hits[hid] || 0) + 1;
+    }
+    return Object.keys(hits).sort((x, y) => hits[y] - hits[x])[0] || null;
+  };
   // finish an in-progress split/draw polyline (double-click, Enter or button)
   const finishGeomDraw = useCallback(() => {
     const gd = App.ui.geomDraw;
@@ -483,8 +494,9 @@ function MapView() {
     if (gd.tool === "split") {
       if (pts.length < 2) { Actions.toast(t("edit.tooFewPoints")); return; }
       if (smooth && pts.length >= 3) pts = GeomEdit.smoothLine(pts, k, false);
-      const mid = pts[Math.floor(pts.length / 2)];
-      const target = App.ui.selection[0] || (window.GeomEdit && GeomEdit.regionAt(mid[0], mid[1]));
+      // cut the region the line actually runs through (most samples along it);
+      // a stale selection elsewhere must not redirect the cut
+      const target = lineTarget(pts) || App.ui.selection[0];
       if (!target) { Actions.toast(t("edit.noTarget")); App.ui.geomDraw = null; App.emit(); return; }
       Actions.splitRegionGeometry(target, pts);
     } else {
@@ -555,8 +567,10 @@ function MapView() {
       const last = gd.pts[gd.pts.length - 1];
       if (!last || Math.hypot(last[0] - pt[0], last[1] - pt[1]) > 1.5 / k) gd.pts.push(pt);
       if (e.detail >= 2 && gd.pts.length >= (tool === "split" ? 2 : 3)) { finishGeomDraw(); return; }
-      // hold and drag = freehand line; a plain click just adds one vertex
-      gesture.current = { mode: "freehand", tool, moved: false };
+      // hold and drag = freehand stroke; a plain click (even with a little
+      // hand jitter) just adds one vertex — see the pointer-up handler
+      gesture.current = { mode: "freehand", tool, moved: false, len: 0, base: gd.pts.length };
+      try { svgRef.current.setPointerCapture(e.pointerId); } catch (err) {} // keep the stroke over overlays
       App.emit();
       return;
     }
@@ -632,9 +646,13 @@ function MapView() {
       const last = gd.pts[gd.pts.length - 1];
       if (g && g.mode === "freehand") {
         const k = view.current.k;
-        if (Math.hypot(last[0] - mx, last[1] - my) > 2 / k) {
-          gd.pts.push([mx, my]);
+        const step = Math.hypot(last[0] - mx, last[1] - my);
+        if (step > 2 / k) {
+          const hp = [mx, my];
+          hp.hand = true; // freehand sample: smoothing may move it; clicked vertices are anchors
+          gd.pts.push(hp);
           g.moved = true;
+          g.len += step * k; // stroke length in screen px
           if (!g.raf) { g.raf = true; requestAnimationFrame(() => { g.raf = false; App.emit(); }); }
         }
         rubberRef.current.style.display = "none";
@@ -729,11 +747,41 @@ function MapView() {
     if (g.mode === "bdmove" || g.mode === "bdresize") { Actions.endStroke(); return; }
     if (g.mode === "vertex") { App.emit(); return; }
     if (g.mode === "freehand") {
-      const gd = App.ui.geomDraw;
-      if (g.moved && gd && gd.pts.length && window.GeomEdit) {
-        gd.pts[gd.pts.length - 1] = GeomEdit.snap(gd.pts[gd.pts.length - 1], view.current.k);
-        App.emit();
+      if (e.type === "pointerleave" && svgRef.current && svgRef.current.hasPointerCapture && svgRef.current.hasPointerCapture(e.pointerId)) {
+        gesture.current = g; // captured: the pointer only left an overlay, the stroke goes on
+        return;
       }
+      try { svgRef.current.releasePointerCapture(e.pointerId); } catch (err) {}
+      const gd = App.ui.geomDraw;
+      if (!g.moved || !gd || !gd.pts.length) return;
+      const k = view.current.k;
+      if (e.type !== "pointerleave") { // the release point ends the stroke
+        const [mx, my] = clientToMap(e);
+        const prev = gd.pts[gd.pts.length - 1];
+        const step = Math.hypot(prev[0] - mx, prev[1] - my);
+        if (step > 0.5 / k) { const hp = [mx, my]; hp.hand = true; gd.pts.push(hp); g.len += step * k; }
+      }
+      if (g.len < 6) { // hand jitter during a click: keep just the clicked vertex
+        gd.pts.length = g.base;
+        App.emit();
+        return;
+      }
+      const first = gd.pts[0], last = gd.pts[gd.pts.length - 1];
+      if (gd.tool === "split" && g.len >= 40 && window.GeomEdit) {
+        // a stroke that clearly crosses one region (both ends outside it) cuts it right away
+        const target = lineTarget(gd.pts);
+        const strokeStart = gd.pts[Math.max(0, g.base - 1)];
+        if (target && GeomEdit.regionAt(strokeStart[0], strokeStart[1]) !== target && GeomEdit.regionAt(last[0], last[1]) !== target) {
+          finishGeomDraw();
+          return;
+        }
+      }
+      if (gd.tool === "draw" && g.len >= 40 && gd.pts.length >= 6 && Math.hypot(last[0] - first[0], last[1] - first[1]) < 10 / k) {
+        gd.pts.pop(); // came back to the start: close the outline
+        finishGeomDraw();
+        return;
+      }
+      App.emit();
       return;
     }
     if (g.mode === "label") {
@@ -793,7 +841,7 @@ function MapView() {
         }
       }
     }
-  }, [clientToMap, fillByOwner]);
+  }, [clientToMap, fillByOwner, finishGeomDraw]);
 
   // ---------- borders (topo meshes) ----------
   const meshes = useMemo(() => {
@@ -1324,7 +1372,7 @@ function MapView() {
               <g data-export-skip="1" pointerEvents="none">
                 <path d={dstr} fill={App.ui.geomDraw.tool === "draw" ? "rgba(255,159,46,0.14)" : "none"}
                   stroke="#ff9f2e" strokeWidth={1.6 / k} strokeDasharray={`${4 / k} ${3 / k}`}></path>
-                {pts.map((p, i) => <circle key={i} cx={p[0]} cy={p[1]} r={3 / k} fill="#ff9f2e" stroke="#fff" strokeWidth={0.8 / k}></circle>)}
+                {pts.map((p, i) => (p.hand && i !== pts.length - 1) ? null : <circle key={i} cx={p[0]} cy={p[1]} r={3 / k} fill="#ff9f2e" stroke="#fff" strokeWidth={0.8 / k}></circle>)}
               </g>
             );
           })()}

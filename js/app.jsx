@@ -43,6 +43,10 @@ function AppRoot() {
       }
       const tools = { v: "select", b: "paint", g: "fill", e: "erase", t: "label", h: "pan" };
       if (tools[k]) { App.ui.geomDraw = null; Actions.ui({ tool: tools[k] }); return; }
+      if (k === "w" && window.World && World.active()) { App.ui.geomDraw = null; Actions.ui({ tool: "world" }); return; }
+      if (App.ui.tool === "world" && window.World && World.active() && (k === "[" || k === "]")) {
+        Actions.ui({ worldSize: Math.max(1, Math.min(60, (App.ui.worldSize || 12) + (k === "]" ? 2 : -2))) }); return;
+      }
       const geomOk = window.GeomEdit && GeomEdit.enabled();
       if (geomOk && (k === "s" || k === "d")) { App.ui.geomDraw = null; Actions.ui({ tool: k === "s" ? "split" : "draw" }); return; }
       if (geomOk && k === "q") { Actions.healGaps(App.ui.selection.length ? App.ui.selection : null); return; }
@@ -78,6 +82,7 @@ function AppRoot() {
       </div>
       <Timeline></Timeline>
       {App.ui.modal === "templates" && <TemplatesModal></TemplatesModal>}
+      {App.ui.modal === "atlas" && window.AtlasModal && <AtlasModal></AtlasModal>}
       <Toast></Toast>
     </div>
   );

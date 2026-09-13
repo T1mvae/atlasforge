@@ -7,6 +7,7 @@ const Icons = {
   label: <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6"><path d="M3.5 4.5 V3 H12.5 V4.5 M8 3 V13 M6 13 H10"></path></svg>,
   pan: <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4"><path d="M8 2 V14 M2 8 H14 M8 2 L6 4 M8 2 L10 4 M8 14 L6 12 M8 14 L10 12 M2 8 L4 6 M2 8 L4 10 M14 8 L12 6 M14 8 L12 10"></path></svg>,
   split: <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4"><path d="M3 13 L13 3"></path><circle cx="3" cy="13" r="1.4" fill="currentColor" stroke="none"></circle><circle cx="13" cy="3" r="1.4" fill="currentColor" stroke="none"></circle><path d="M5 5 L7.5 7.5 M11 11 L8.5 8.5" strokeDasharray="1.5 1.5"></path></svg>,
+  world: <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4"><path d="M2 12.5 L5.5 6 L8 9.5 L10 7 L14 12.5 Z" fill="currentColor" fillOpacity="0.25"></path><path d="M11.5 2 L14 4.5 L9.5 9 L7.5 9.5 L8 7.5 Z"></path></svg>,
   draw: <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4"><path d="M8 2.5 L13.5 6.5 L11.5 13 L4.5 13 L2.5 6.5 Z"></path><circle cx="8" cy="2.5" r="1.3" fill="currentColor" stroke="none"></circle><circle cx="13.5" cy="6.5" r="1.3" fill="currentColor" stroke="none"></circle></svg>
 };
 
@@ -20,8 +21,15 @@ function Toolbar() {
     if (App.ui.tool !== tl) App.ui.geomDraw = null;
     Actions.ui({ tool: tl });
   };
+  const worldOk = window.World && World.active();
   return (
     <div className="toolbar" data-screen-label="Toolbar">
+      {worldOk && (
+        <button className={"tool-btn" + (App.ui.tool === "world" ? " active" : "")} title={t("tools.world")} onClick={() => pick("world")}>
+          {Icons.world}
+        </button>
+      )}
+      {worldOk && <div className="toolbar-sep"></div>}
       {TOOLS.map((tl) => (
         <button
           key={tl}

@@ -426,3 +426,45 @@ body.resizing .map-stage { pointer-events: none; }
 ::-webkit-scrollbar { width: 9px; height: 9px; }
 ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 5px; border: 2px solid var(--panel); }
 ::-webkit-scrollbar-track { background: transparent; }
+
+/* ---------- custom world (painted terrain) ---------- */
+.world-layer { position: absolute; inset: 0; overflow: hidden; pointer-events: none; }
+.world-canvas { position: absolute; left: 0; top: 0; transform-origin: 0 0; }
+.map-stage.world-mode svg.mapsvg { position: relative; touch-action: none; }
+.map-stage { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+.map-stage svg.mapsvg { touch-action: none; }
+.map-stage.tool-world svg.mapsvg { cursor: crosshair; }
+.world-palette {
+  position: absolute; left: 12px; top: 12px; z-index: 20; width: 236px; max-height: calc(100% - 130px);
+  overflow-y: auto; display: flex; flex-direction: column; gap: 8px;
+  background: var(--panel); border: 1px solid var(--border); border-radius: 10px;
+  padding: 10px; box-shadow: var(--shadow); font-size: 12px;
+}
+.world-palette.collapsed { width: auto; padding: 4px; }
+.wp-head { display: flex; align-items: center; justify-content: space-between; }
+.wp-title, .wp-section { font-weight: 700; }
+.wp-brushes { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }
+.wp-brush {
+  display: flex; align-items: center; gap: 6px; padding: 7px 6px; min-height: 34px;
+  border: 1px solid var(--border); border-radius: 7px; background: var(--panel-2);
+  color: var(--text); font: inherit; cursor: pointer; text-align: left;
+}
+.wp-brush.on { border-color: var(--accent); background: var(--accent-soft); box-shadow: inset 0 0 0 1px var(--accent); }
+.wp-swatch { width: 14px; height: 14px; border-radius: 4px; flex: 0 0 14px; border: 1px solid rgba(0,0,0,0.25); display: inline-block; vertical-align: middle; }
+.wp-field { display: flex; flex-direction: column; gap: 4px; }
+.wp-inline { display: flex; align-items: center; gap: 6px; }
+.wp-check { font-size: 12px; }
+.wp-sep { height: 1px; background: var(--border); margin: 2px 0; }
+.wp-note { color: var(--text-dim); font-size: 11px; line-height: 1.35; }
+.wp-row { display: flex; gap: 6px; }
+.wp-row .btn { flex: 1; }
+.wp-toggle { align-self: flex-start; font-size: 12px; }
+.wp-rivers { display: flex; flex-direction: column; gap: 4px; }
+.wp-river { display: flex; gap: 4px; }
+.wp-river .input { flex: 1; min-width: 0; }
+.atlas-modal { width: min(900px, 94vw); }
+.atlas-text {
+  width: 100%; min-height: 46vh; resize: vertical; box-sizing: border-box;
+  font: 12px/1.45 ui-monospace, SFMono-Regular, Menlo, monospace;
+  background: var(--panel-2); color: var(--text); border: 1px solid var(--border); border-radius: 8px; padding: 10px;
+}

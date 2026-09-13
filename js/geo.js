@@ -127,6 +127,14 @@
       type: "region-grid",
       supportsCountries: true, supportsProvinceGroups: true, supportsCustomOwnership: true
     },
+    // Custom world: paint terrain with brushes (js/world.js), then cut it into
+    // provinces. The generated cells live in project.customGeo, in grid units.
+    "world": {
+      kind: "world", approx: "0",
+      name: "Custom world",
+      type: "region-grid",
+      supportsCountries: true, supportsProvinceGroups: true, supportsCustomOwnership: true
+    },
     "hybrid": { kind: "hybrid", approx: "~1100", urls: [] },
     "strategic": { kind: "strategic", approx: "~1300", urls: [] },
     "provinces": {
@@ -1007,6 +1015,14 @@
         const frame = identityFrame();
         const built = buildEditableResult({ type: "FeatureCollection", features: [] },
           project, def, frame, null);
+        result = built.result; topo = built.topo; topoObj = built.topoObj;
+        result.blankFrame = frame.frame;
+      } else if (def.kind === "world") {
+        // painted world: a fixed grid frame (so the terrain canvas never shifts)
+        // with the generated provinces, if any, as the editable base
+        const frame = identityFrame();
+        const base = project.customGeo || { type: "FeatureCollection", features: [] };
+        const built = buildEditableResult(base, project, def, frame, null);
         result = built.result; topo = built.topo; topoObj = built.topoObj;
         result.blankFrame = frame.frame;
       } else if (def.kind === "provgrid") {

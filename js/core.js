@@ -117,6 +117,8 @@
       provinceDataset: def.provinceDataset || null,
       regionDataset: def.regionDataset || null,
       customGeo: null,
+      // ---- custom world (js/world.js): painted terrain rasters + rivers ----
+      world: def.kind === "world" && window.World ? window.World.newWorldData() : null,
       settings: Object.assign(
         {
           style: "standard",
@@ -213,7 +215,8 @@
       displayMode: p.displayMode, activeSelectionMode: p.activeSelectionMode, activeRegionLayerId: p.activeRegionLayerId,
       regionLayers: p.regionLayers || [], customRegions: p.customRegions || {}, regionEdits: p.regionEdits || {},
       regionGeomEdits: p.regionGeomEdits || { removed: {}, features: {} }, backdrop: p.backdrop || null,
-      autonomies: p.autonomies || {}, valueLists: p.valueLists || {}, catalogs: p.catalogs || {}
+      autonomies: p.autonomies || {}, valueLists: p.valueLists || {}, catalogs: p.catalogs || {},
+      world: p.world || null
     });
   }
   function applySlice(p, json) {
@@ -251,6 +254,7 @@
     App.terrVersion++; App.regionVersion++;
     scheduleSave(); App.emit();
     if (geomKey(App.project) !== before) { App.ui.selection = []; App.ui.geomEdit = null; window.Geo.load(App.project); }
+    if (window.World) window.World.sync();
   };
   Actions.redo = function () {
     if (!App.redoStack.length || !App.project) return;
@@ -260,6 +264,7 @@
     App.terrVersion++; App.regionVersion++;
     scheduleSave(); App.emit();
     if (geomKey(App.project) !== before) { App.ui.selection = []; App.ui.geomEdit = null; window.Geo.load(App.project); }
+    if (window.World) window.World.sync();
   };
 
   // ---------- persistence ----------

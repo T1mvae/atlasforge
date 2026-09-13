@@ -105,6 +105,7 @@ function TopBar() {
         <MenuItem label={t("menu.exportPngHi")} onClick={() => Exports.png(4, true)}></MenuItem>
         <MenuItem label={t("menu.exportSvg")} onClick={() => Exports.svg()}></MenuItem>
         <MenuItem label={t("menu.exportJson")} onClick={() => Exports.json()}></MenuItem>
+        {window.World && World.active() && <MenuItem label={t("world.atlas")} disabled={!App.basemap.count} onClick={() => Actions.ui({ modal: "atlas" })}></MenuItem>}
         {window.GeomEdit && GeomEdit.enabled() && <div className="menu-sep"></div>}
         {window.GeomEdit && GeomEdit.enabled() && <MenuItem label={t("menu.exportRegions")} onClick={() => Exports.regionsGeoJSON(false)}></MenuItem>}
         {window.GeomEdit && GeomEdit.enabled() && <MenuItem label={t("menu.exportRegionsSimplified")} onClick={() => Exports.regionsGeoJSON(true)}></MenuItem>}
@@ -242,6 +243,7 @@ function TemplatesModal() {
     { id: "world_hoi4", name: t("tmpl.worldhoi4.name"), desc: t("tmpl.worldhoi4.desc"), count: "~1770", feats: ["region-grid", "physical", "countries"] },
     { id: "owb", name: t("tmpl.owb.name"), desc: t("tmpl.owb.desc"), count: "~1984", feats: ["region-grid", "physical", "countries"] },
     { id: "agot", name: t("tmpl.agot.name"), desc: t("tmpl.agot.desc"), count: "~4130", feats: ["region-grid", "physical", "countries"] },
+    { id: "world", name: t("tmpl.world.name"), desc: t("tmpl.world.desc"), count: "0", feats: ["paintTerrain", "aiAtlas"] },
     { id: "blank", name: t("tmpl.blank.name"), desc: t("tmpl.blank.desc"), count: "0", feats: ["draw", "physical"] }
   ];
   // Other base maps kept available but out of the main gallery.
@@ -262,6 +264,7 @@ function TemplatesModal() {
   const create = () => {
     if (choice === "custom") { Exports.importGeoJSON(); return; }
     Actions.newProject(choice, { groupByCountry: false });
+    if (choice === "world") Actions.ui({ tool: "world", worldBrush: "land" });
   };
   const Card = (c, big) => (
     <button key={c.id} className={"tmpl-card" + (choice === c.id ? " selected" : "")} style={big ? { gridColumn: "1 / -1" } : null} onClick={() => setChoice(c.id)}>

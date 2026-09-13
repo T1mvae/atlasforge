@@ -316,6 +316,10 @@ function MapView() {
   const gesture = useRef(null);
   const dragLabel = useRef(null);
   const unionCacheRef = useRef({});
+  const worldLayerRef = useRef(null);   // custom world: host of the terrain canvas (under the SVG)
+  const brushRef = useRef(null);        // custom world: brush outline following the pen
+  const riverPrevRef = useRef(null);    // custom world: river stroke preview
+  const touches = useRef(new Map());    // active touch pointers (pinch zoom / two-finger pan)
   const autonomyCacheRef = useRef({});
 
   const project = App.project;
@@ -366,6 +370,7 @@ function MapView() {
     const v = view.current;
     if (zoomRef.current) zoomRef.current.setAttribute("transform", `translate(${v.x},${v.y}) scale(${v.k})`);
     if (zoomTextRef.current) zoomTextRef.current.textContent = Math.round(v.k * 100) + "%";
+    if (window.World && World.active()) World.place(svgRef.current, v);
     if (minimapVpRef.current) {
       const mw = 168, mh = 88, sx = mw / MAP_W, sy = mh / MAP_H;
       const w = (MAP_W / v.k) * sx, h = (MAP_H / v.k) * sy;
@@ -436,6 +441,23 @@ function MapView() {
     svg.addEventListener("wheel", onWheel, { passive: false });
     return () => svg.removeEventListener("wheel", onWheel);
   }, [clientToViewbox, setView]);
+
+  // ---------- custom world: mount the terrain canvas & keep it aligned ----------
+  const worldOn = !!(window.World && World.active());
+  useEffect(() => {
+    if (!worldOn) return;
+    World.sync();
+    const host = worldLayerRef.current;
+    if (host && World.canvas && World.canvas.parentNode !== host) host.appendChild(World.canvas);
+    applyView();
+  });
+  useEffect(() => {
+    const stage = svgRef.current && svgRef.current.parentNode;
+    if (!stage || typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(() => applyView());
+    ro.observe(stage);
+    return () => ro.disconnect();
+  }, [applyView]);
 
   // ---------- painting ----------
   const paintRegion = useCallback((rid, erase) => {
@@ -514,6 +536,26 @@ function MapView() {
   const onPointerDown = useCallback((e) => {
     if (e.button === 2) return;
     const tool = App.ui.tool;
+    // ---- touch: two fingers pinch-zoom / pan on every map ----
+    if (e.pointerType === "touch") {
+      touches.current.set(e.pointerId, [e.clientX, e.clientY]);
+      if (touches.current.size >= 2) {
+        if (window.World && World.strokeActive()) World.strokeEnd();
+        const [a, b] = [...touches.current.values()];
+        gesture.current = { mode: "pinch", dist: Math.hypot(a[0] - b[0], a[1] - b[1]), mid: clientToViewbox({ clientX: (a[0] + b[0]) / 2, clientY: (a[1] + b[1]) / 2 }) };
+        return;
+      }
+    }
+    if (e.pointerType === "pen" && window.World) World.penSeen = true;
+    // ---- custom world terrain brushes (a finger pans once a pen has been used) ----
+    if (tool === "world" && window.World && World.active() && e.button === 0 &&
+        !(e.pointerType === "touch" && World.penSeen)) {
+      const g = World.mapToGrid(clientToMap(e));
+      World.strokeStart(g, e.pressure, e.pointerType);
+      gesture.current = { mode: "world" };
+      try { svgRef.current.setPointerCapture(e.pointerId); } catch (err) {}
+      return;
+    }
     const rid = e.target.dataset ? e.target.dataset.id : null;
     const regId = e.target.dataset ? e.target.dataset.regionId : null;
     const lbl = e.target.dataset ? e.target.dataset.label : null;
@@ -610,12 +652,49 @@ function MapView() {
     }
     gesture.current = {
       mode: "down", vx, vy, rid, regId, shift: e.shiftKey, tool,
-      panOk: tool === "pan" || tool === "select" || tool === "fill" || tool === "label" || e.button === 1
+      panOk: tool === "pan" || tool === "select" || tool === "fill" || tool === "label" || tool === "world" || e.button === 1
     };
   }, [clientToViewbox, clientToMap, paintRegion]);
 
   const onPointerMove = useCallback((e) => {
     const g = gesture.current;
+    if (e.pointerType === "touch" && touches.current.has(e.pointerId)) {
+      touches.current.set(e.pointerId, [e.clientX, e.clientY]);
+      if (g && g.mode === "pinch" && touches.current.size >= 2) {
+        const [a, b] = [...touches.current.values()];
+        const dist = Math.hypot(a[0] - b[0], a[1] - b[1]);
+        const mid = clientToViewbox({ clientX: (a[0] + b[0]) / 2, clientY: (a[1] + b[1]) / 2 });
+        const v = view.current;
+        const nk = Math.max(0.6, Math.min(90, v.k * (dist / (g.dist || dist))));
+        const f = nk / v.k;
+        setView(mid[0] - (g.mid[0] - v.x) * f, mid[1] - (g.mid[1] - v.y) * f, nk);
+        g.dist = dist; g.mid = mid;
+        return;
+      }
+    }
+    // custom world: brush outline + live stroke
+    if (window.World && App.ui.tool === "world" && World.active()) {
+      const [mx, my] = clientToMap(e);
+      if (brushRef.current) {
+        const hideBrush = e.pointerType === "touch" || App.ui.worldBrush === "river";
+        const r = World.brushRadius(e.pressure || 0.5, e.pointerType) * World.mapUnitsPerCell();
+        brushRef.current.setAttribute("cx", mx); brushRef.current.setAttribute("cy", my);
+        brushRef.current.setAttribute("r", r);
+        brushRef.current.style.display = hideBrush ? "none" : "block";
+      }
+      if (g && g.mode === "world") {
+        const evs = e.nativeEvent && e.nativeEvent.getCoalescedEvents ? e.nativeEvent.getCoalescedEvents() : null;
+        const list = evs && evs.length ? evs : [e];
+        World.strokeMove(list.map((ev) => ({ g: World.mapToGrid(clientToMap(ev)), pressure: ev.pressure })));
+        const prev = World.strokePreview();
+        const proj = App.basemap.proj;
+        if (prev && riverPrevRef.current && proj) {
+          riverPrevRef.current.setAttribute("d", "M" + prev.map((q) => { const m = proj(q); return m[0].toFixed(2) + "," + m[1].toFixed(2); }).join("L"));
+          riverPrevRef.current.style.display = "block";
+        }
+        return;
+      }
+    }
     // hover readout
     if (hoverRef.current) {
       const rid = e.target.dataset ? e.target.dataset.id : null;
@@ -740,7 +819,22 @@ function MapView() {
   }, [clientToViewbox, clientToMap, paintRegion, setView]);
 
   const onPointerUp = useCallback((e) => {
+    if (e.pointerType === "touch") touches.current.delete(e.pointerId);
+    if (e.type === "pointerleave" && brushRef.current) brushRef.current.style.display = "none";
     const g = gesture.current;
+    if (g && g.mode === "pinch") {
+      if (touches.current.size < 2) gesture.current = null;
+      return;
+    }
+    if (g && g.mode === "world") {
+      if (e.type === "pointerleave" && svgRef.current && svgRef.current.hasPointerCapture && svgRef.current.hasPointerCapture(e.pointerId)) return;
+      gesture.current = null;
+      try { svgRef.current.releasePointerCapture(e.pointerId); } catch (err) {}
+      if (riverPrevRef.current) riverPrevRef.current.style.display = "none";
+      if (e.type === "pointerup") World.strokeMove([{ g: World.mapToGrid(clientToMap(e)), pressure: e.pressure }]);
+      World.strokeEnd();
+      return;
+    }
     gesture.current = null;
     svgRef.current && svgRef.current.closest(".map-stage").classList.remove("panning");
     if (!g) return;
@@ -987,13 +1081,20 @@ function MapView() {
     ctx.clearRect(0, 0, cv.width, cv.height);
     ctx.fillStyle = settings.sea;
     ctx.fillRect(0, 0, cv.width, cv.height);
+    if (window.World && World.active() && World.canvas && bm.proj) {
+      const p0 = bm.proj([0, 0]), p1 = bm.proj([World.GW, World.GH]);
+      const sx = cv.width / MAP_W, sy = cv.height / MAP_H;
+      ctx.drawImage(World.canvas, p0[0] * sx, p0[1] * sy, (p1[0] - p0[0]) * sx, (p1[1] - p0[1]) * sy);
+      applyView();
+      return;
+    }
     ctx.save();
     ctx.scale(cv.width / MAP_W, cv.height / MAP_H);
     ctx.fillStyle = ColorUtil.mixHex(settings.land, "#888888", 0.25);
     bm.features.forEach((f) => { try { ctx.fill(new Path2D(f.d)); } catch (e) {} });
     ctx.restore();
     applyView();
-  }, [ready, bm.count, settings.sea, settings.land, applyView]);
+  }, [ready, bm.count, settings.sea, settings.land, applyView, worldOn && project.world.rev]);
 
   const onMinimapClick = useCallback((e) => {
     const r = e.currentTarget.getBoundingClientRect();
@@ -1055,7 +1156,8 @@ function MapView() {
   };
 
   return (
-    <div className={"map-stage tool-" + App.ui.tool} data-screen-label="Map canvas" style={{ background: settings.sea }}>
+    <div className={"map-stage tool-" + App.ui.tool + (worldOn ? " world-mode" : "")} data-screen-label="Map canvas" style={{ background: settings.sea }}>
+      {worldOn && <div className="world-layer" ref={worldLayerRef}></div>}
       {bm.status === "loading" && (
         <div className="map-loading">
           <div style={{ textAlign: "center" }}>
@@ -1082,6 +1184,7 @@ function MapView() {
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
         onPointerLeave={onPointerUp}
+        onPointerCancel={onPointerUp}
         onContextMenu={(e) => e.preventDefault()}
       >
         <defs>
@@ -1116,15 +1219,19 @@ function MapView() {
             <clipPath key={sc.id} id={sc.id}><path d={sc.d}></path></clipPath>
           ))}
         </defs>
-        <rect width={MAP_W} height={MAP_H} fill={settings.sea}></rect>
+        {!worldOn && <rect width={MAP_W} height={MAP_H} fill={settings.sea}></rect>}
         <g id="zoom-root" ref={zoomRef}>
           {ready && bm.graticule && <path d={bm.graticule} fill="none" stroke={settings.borders} strokeOpacity="0.14" strokeWidth="0.5" vectorEffect="non-scaling-stroke"></path>}
           {ready && bm.sphere && <path d={bm.sphere} fill="none" stroke={settings.borders} strokeOpacity="0.4" strokeWidth="1" vectorEffect="non-scaling-stroke"></path>}
-          {ready && bm.landPath && <path d={bm.landPath} fill={settings.land} stroke={settings.land} strokeWidth="1.1" vectorEffect="non-scaling-stroke" pointerEvents="none"></path>}
+          {ready && !worldOn && bm.landPath && <path d={bm.landPath} fill={settings.land} stroke={settings.land} strokeWidth="1.1" vectorEffect="non-scaling-stroke" pointerEvents="none"></path>}
           <g id="regions" clipPath={ready && bm.clipLand && bm.landPath ? "url(#land-clip)" : undefined}
-             pointerEvents={regionInteractive ? "none" : "auto"}>
+             pointerEvents={regionInteractive ? "none" : "auto"}
+             opacity={worldOn ? (settings.worldFillOpacity != null ? settings.worldFillOpacity : 0.62) : undefined}>
             {ready && bm.features.map((f) => {
-              const fillV = provinceFill(displayMode, effOf(f.id), states, settings, f, project);
+              const effR = effOf(f.id);
+              // painted worlds: unowned land stays see-through so the terrain shows
+              const fillV = worldOn && displayMode === "country" && !(effR && (effR.owner || effR.color))
+                ? "rgba(0,0,0,0)" : provinceFill(displayMode, effR, states, settings, f, project);
               // with topo meshes the borders are drawn separately; stroke each
               // fill with ITS OWN colour (screen-constant ~1px) so anti-aliasing
               // seams and hairline gaps between neighbours never show the sea
@@ -1196,6 +1303,15 @@ function MapView() {
                   stroke={ColorUtil.darken(a.color, 0.35)} strokeWidth={cbw * 0.9}
                   strokeDasharray={`${(cbw * 2.2).toFixed(1)} ${(cbw * 1.5).toFixed(1)}`}
                   strokeOpacity="0.95" strokeLinejoin="round"></path>
+              ))}
+            </g>
+          )}
+          {/* ---- custom world: painted rivers (tapered ribbons) ---- */}
+          {ready && worldOn && settings.showRivers !== false && (project.world.rivers || []).length > 0 && (
+            <g id="world-rivers" pointerEvents="none">
+              {project.world.rivers.map((rv) => (
+                <path key={"wr" + rv.id} d={World.riverPath(rv, bm.proj)} fill="#3f74a8" stroke="#3f74a8"
+                  strokeWidth="0.9" strokeLinejoin="round" vectorEffect="non-scaling-stroke"></path>
               ))}
             </g>
           )}
@@ -1408,6 +1524,12 @@ function MapView() {
               </g>
             );
           })()}
+          {worldOn && (
+            <g data-export-skip="1" pointerEvents="none">
+              <circle ref={brushRef} style={{ display: "none" }} fill="none" stroke="#ffffff" strokeOpacity="0.9" strokeWidth="1.2" vectorEffect="non-scaling-stroke"></circle>
+              <path ref={riverPrevRef} style={{ display: "none" }} fill="none" stroke="#2f6fb0" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" vectorEffect="non-scaling-stroke"></path>
+            </g>
+          )}
           <rect ref={marqueeRef} data-export-skip="1" style={{ display: "none" }} fill="rgba(61,123,196,0.15)" stroke="#3d7bc4" strokeWidth="1" vectorEffect="non-scaling-stroke"></rect>
           <path ref={rubberRef} data-export-skip="1" style={{ display: "none" }} fill="none" stroke="#ff9f2e" strokeOpacity="0.7" strokeWidth="1.2" strokeDasharray="4 3" vectorEffect="non-scaling-stroke" pointerEvents="none"></path>
         </g>
@@ -1448,6 +1570,8 @@ function MapView() {
           <button className="btn outline" onClick={() => { App.ui.geomDraw = null; Actions.ui({ tool: "select" }); }}>{t("edit.cancel")}</button>
         </div>
       )}
+
+      {worldOn && App.ui.tool === "world" && window.WorldPalette && <WorldPalette></WorldPalette>}
 
       <div className="minimap" onPointerDown={onMinimapClick}>
         <canvas ref={minimapRef}></canvas>

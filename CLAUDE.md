@@ -22,7 +22,7 @@ AtlasForge is a browser-based editor for political / historical / alternate-hist
 
 No-build, in-browser app. Everything hangs off `window` globals; there are no modules/imports.
 
-**Load order** (from `index.html` / `Map Editor.html`): CDN libs → `js/i18n.js` → `core.js` → `geo.js` → `regions.js` → `export.js` → `edit.js` → *(Babel)* `map.jsx` → `panels.jsx` → `chrome.jsx` → `app.jsx`. `.js` files are plain `<script src>`; `.jsx` files are `type="text/babel"` and transpiled in the browser at load.
+**Load order** (from `index.html` / `Map Editor.html`): CDN libs → `js/i18n.js` → `core.js` → `geo.js` → `regions.js` → `export.js` → `edit.js` → `world.js` → *(Babel)* `map.jsx` → `world.jsx` → `panels.jsx` → `chrome.jsx` → `app.jsx`. `.js` files are plain `<script src>`; `.jsx` files are `type="text/babel"` and transpiled in the browser at load.
 
 **Global singletons:** `App` (state, `App.version`, `emit`/`subscribe`), `Actions` (every mutation + undo/redo), `Geo`, `RegionModel`, `GeomEdit`, `Exports`, `ColorUtil`, `BASEMAPS`, `MAP_STYLES`, `t()`. React components read `App.version` via `useSyncExternalStore`; **all state changes go through `Actions.mut(fn, opts)`** (the single write + undo entry point) — never mutate `App.project` directly.
 
@@ -33,8 +33,9 @@ No-build, in-browser app. Everything hangs off `window` globals; there are no mo
 - `edit.js` — `GeomEdit`: geometry editing (merge/split/draw/vertex-edit) + `politicalClone` (carries owner/status/etc. across geometry edits).
 - `export.js` — `Exports`: SVG/PNG/JSON export and import (`buildSVGString` serializes the live `#map-svg`).
 - `map.jsx` — the SVG map canvas: rendering, zoom/pan, tools, fill resolution (`regionFill`), status stripe `<pattern>`s, `ownerUnionPath` borders, labels/markers.
-- `panels.jsx` — right-side property panels (Map / State / Region tabs) + reusable form primitives (`Field`, `TextField`, `SelectField`, `ComboField`, `Check`).
-- `chrome.jsx` — top bar, toolbar, states list, legend, modals. `i18n.js` — EN + RU dictionaries (UI defaults to RU). `css/editor.css` — the only stylesheet.
+- `panels.jsx` — the left toolbar (`Icons`, `TOOLS`, `GEOM_TOOLS`), right-side property panels (Map / State / Region tabs) + reusable form primitives (`Field`, `TextField`, `SelectField`, `ComboField`, `Check`).
+- `world.js` — `World`: the **custom world** basemap (`kind: "world"`). Terrain brushes write two categorical rasters (`elev`, `cover`, 1000 × 510 grid = the basemap's data units), rendered to an HTML `<canvas>` placed *under* the SVG by `World.place` (called from `applyView`). `World.generate` cuts the land into Voronoi provinces clipped to the coastline → `project.customGeo`, carrying owners over by pixel-overlap vote. `World.buildAtlas` writes the Markdown "text atlas for AI". `world.jsx` holds the brush palette and the atlas modal.
+- `chrome.jsx` — top bar, menus, legend, timeline, template/new-project modal. `i18n.js` — EN + RU dictionaries (UI defaults to RU). `css/editor.css` — the only stylesheet.
 
 ## Data model — "region" is overloaded (read carefully)
 
@@ -43,7 +44,7 @@ No-build, in-browser app. Everything hangs off `window` globals; there are no mo
 - `project.groups` = legacy merged-cell groups (one shared political record for many cells).
 - `project.catalogs` = reusable dictionaries for cultures, religions, languages and forms of government. Records keep `{name, color, parent, description}`; actual state/region fields deliberately store the display name, so `Actions.saveCatalogEntry` can rename every current and timeline use safely.
 - `window.RegionModel` (`regions.js`) = a **separate** mid-level region layer — do not confuse it with `project.regions`.
-- Imported geometry is re-derived from `data/*.geojson` on every load and is never stored in the project JSON; only diffs/edits/political data persist.
+- Imported geometry is re-derived from `data/*.geojson` on every load and is never stored in the project JSON; only diffs/edits/political data persist. Exceptions: `customGeo` (GeoJSON import / generated world provinces) and `project.world` (`{elev, cover}` as RLE+base64 strings, `rivers` polylines in grid units, `scaleKm`, `cellSize`, `rev`/`genRev`). `world` is in the undo slice; after undo/redo `World.sync()` re-decodes the rasters when the strings changed. Regenerating provinces resets `regionGeomEdits`, groups and the undo stacks because every province id changes.
 
 ## Invariants & gotchas (each spans multiple files)
 

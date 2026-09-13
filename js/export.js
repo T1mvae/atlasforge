@@ -42,6 +42,17 @@
     // reset zoom transform so the full map exports
     const g = clone.querySelector("#zoom-root");
     if (g) g.setAttribute("transform", "translate(0,0) scale(1)");
+    // custom world: the painted terrain is an HTML canvas under the SVG — embed it
+    if (g && window.World && window.World.active() && window.World.canvas && window.App.basemap.proj) {
+      const proj = window.App.basemap.proj;
+      const p0 = proj([0, 0]), p1 = proj([window.World.GW, window.World.GH]);
+      const img = document.createElementNS(SVGNS, "image");
+      img.setAttribute("href", window.World.canvas.toDataURL("image/png"));
+      img.setAttribute("x", p0[0]); img.setAttribute("y", p0[1]);
+      img.setAttribute("width", p1[0] - p0[0]); img.setAttribute("height", p1[1] - p0[1]);
+      img.setAttribute("preserveAspectRatio", "none");
+      g.insertBefore(img, g.firstChild);
+    }
     // sea background so the standalone SVG isn't transparent
     const sea = (window.App && window.App.project && window.App.project.settings.sea) || "#b7cfdf";
     const bg = document.createElementNS(SVGNS, "rect");

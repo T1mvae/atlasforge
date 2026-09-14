@@ -26,6 +26,34 @@
     else location.reload();
   };
 
+  // ---- offline copies of the big basemaps (only on request: they total ~100 MB) ----
+  PWA.templateUrls = function (basemapId) {
+    const def = (window.BASEMAPS || {})[basemapId];
+    if (!def) return [];
+    const paths = [def.dataset, def.physicalDataset, def.provinceDataset, def.regionDataset]
+      .concat(def.physical ? Object.values(def.physical) : []);
+    return [...new Set(paths.filter(Boolean).map((p) => (p[0] === "/" ? p.slice(1) : p)))];
+  };
+  PWA.isTemplateOffline = async function (basemapId) {
+    const urls = PWA.templateUrls(basemapId);
+    if (!urls.length) return true; // nothing to download (blank canvas, custom world, CDN world maps)
+    if (!window.caches) return false;
+    try {
+      const cache = await caches.open("af-data-v1");
+      for (const u of urls) if (!(await cache.match(new URL(u, location.href).href))) return false;
+      return true;
+    } catch (e) { return false; }
+  };
+  PWA.downloadTemplate = async function (basemapId) {
+    // plain fetches: the service worker stores data/*.geojson responses as they pass
+    const urls = PWA.templateUrls(basemapId);
+    for (const u of urls) {
+      const res = await fetch(u);
+      if (!res.ok) throw new Error("HTTP " + res.status + " " + u);
+      await res.arrayBuffer();
+    }
+  };
+
   if (!("serviceWorker" in navigator)) return;
   const secure = location.protocol === "https:" || location.hostname === "localhost" || location.hostname === "127.0.0.1";
   if (!secure) return;

@@ -85,6 +85,7 @@
       propsWidth: 320            // right properties panel width (px), persisted
     },
     project: null,
+    projectId: null,              // key of the open project in the IndexedDB library (js/storage.js)
     basemap: { status: "idle", features: [], byId: {}, sphere: "", count: 0, error: null, topo: null, topoObj: null },
     regionData: { status: "idle", regions: [], byId: {}, provinceToRegion: {} },
     physical: { status: "idle", rivers: [], lakes: [], relief: [], seas: [] },
@@ -268,19 +269,37 @@
   };
 
   // ---------- persistence ----------
+  // Projects live in the IndexedDB library (js/storage.js); localStorage is only the
+  // fallback when IndexedDB is unavailable (e.g. some private-browsing modes).
   let saveTimer = null;
+  function saveNow() {
+    clearTimeout(saveTimer);
+    saveTimer = null;
+    if (!App.project) return Promise.resolve();
+    const store = window.ProjectStore;
+    if (store && store.available) {
+      if (!App.projectId) App.projectId = uid();
+      return store.save(App.projectId, App.project).catch((e) => {
+        console.warn("IndexedDB save failed", e);
+        Actions.toast(t("toast.storage"));
+      });
+    }
+    try {
+      localStorage.setItem(LS_KEY, JSON.stringify(App.project));
+    } catch (e) {
+      Actions.toast(t("toast.storage"));
+    }
+    return Promise.resolve();
+  }
   function scheduleSave() {
     clearTimeout(saveTimer);
-    saveTimer = setTimeout(() => {
-      if (!App.project) return;
-      try {
-        localStorage.setItem(LS_KEY, JSON.stringify(App.project));
-      } catch (e) {
-        Actions.toast(t("toast.storage"));
-      }
-    }, 700);
+    saveTimer = setTimeout(saveNow, 700);
   }
   window.scheduleSave = scheduleSave;
+  Actions.saveNow = saveNow;
+  // an installed iPad app can be killed right after it goes to the background
+  document.addEventListener("visibilitychange", () => { if (document.visibilityState === "hidden" && saveTimer) saveNow(); });
+  window.addEventListener("pagehide", () => { if (saveTimer) saveNow(); });
 
   function saveUiPrefs() {
     try {
@@ -958,7 +977,10 @@
 
   // ---------- bootstrap ----------
   Actions.newProject = function (basemapId, opts = {}) {
+    if (App.project && saveTimer) saveNow(); // flush the project we are leaving
+    if (App.project && window.Exports && Exports.saveThumbnail) Exports.saveThumbnail();
     App.project = newProjectData(basemapId);
+    App.projectId = uid();
     if (opts.customGeo) {
       // give every imported feature a stable id so geometry edits key off it
       try {
@@ -1011,19 +1033,80 @@
     App.undoStack.length = 0;
   };
 
-  Actions.loadSaved = function () {
+  // show a project object (from the library, a file or the old autosave)
+  function openProjectData(p, id) {
+    App.project = Object.assign(newProjectData(p.basemapId), p);
+    App.projectId = id || uid();
+    normalizeStatuses(App.project);
+    App.undoStack.length = 0;
+    App.redoStack.length = 0;
+    App.ui.selection = [];
+    App.ui.regionSelection = [];
+    App.ui.activeState = null;
+    App.ui.geomDraw = null;
+    App.ui.geomEdit = null;
+    App.ui.modal = null;
+    App.regionData = { status: "idle", regions: [], byId: {}, provinceToRegion: {} };
+    App.physical = { status: "idle", rivers: [], lakes: [], relief: [], seas: [] };
+    App.emit();
+    return window.Geo.load(App.project).then(() => { if (window.MapAPI) window.MapAPI.fit(); });
+  }
+  Actions.openProjectData = function (p, id) {
+    const done = openProjectData(p, id);
+    scheduleSave();
+    return done;
+  };
+
+  Actions.openProject = async function (id) {
+    const store = window.ProjectStore;
+    if (!store || !id) return;
+    if (App.project && App.projectId === id) { Actions.ui({ modal: null }); return; }
+    if (App.project) { if (window.Exports && Exports.saveThumbnail) Exports.saveThumbnail(); await saveNow(); }
+    const p = await store.load(id);
+    if (!p || !p.basemapId) { Actions.toast(t("toast.importError")); return; }
+    store.setCurrent(id);
+    await openProjectData(p, id);
+  };
+
+  // close the open project (e.g. it was moved to the trash) and show the library
+  Actions.closeProject = function () {
+    clearTimeout(saveTimer);
+    saveTimer = null;
+    App.project = null;
+    App.projectId = null;
+    App.basemap = { status: "idle", features: [], byId: {}, sphere: "", count: 0, error: null, topo: null, topoObj: null };
+    App.undoStack.length = 0;
+    App.redoStack.length = 0;
+    if (window.ProjectStore && ProjectStore.available) ProjectStore.setCurrent(null);
+    Actions.ui({ modal: "library" });
+  };
+
+  Actions.loadSaved = async function () {
     try {
       const ui = JSON.parse(localStorage.getItem(LS_UI) || "null");
       if (ui) Object.assign(App.ui, { lang: ui.lang || "ru", theme: ui.theme || "dark",
         propsWidth: Math.max(240, Math.min(600, +ui.propsWidth || 320)) });
     } catch (e) {}
+    const store = window.ProjectStore;
+    if (store && store.available) {
+      try {
+        await store.migrateLocalStorage(LS_KEY, uid());
+        const id = await store.getCurrent();
+        const p = id ? await store.load(id) : null;
+        if (p && p.basemapId) { openProjectData(p, id); return; }
+        const list = await store.list();
+        App.ui.modal = list.some((x) => !x.trashed) ? "library" : "templates";
+        App.emit();
+        return;
+      } catch (e) {
+        console.warn("IndexedDB unavailable, using localStorage", e);
+        store.available = false;
+      }
+    }
     let p = null;
     try { p = JSON.parse(localStorage.getItem(LS_KEY) || "null"); } catch (e) {}
     if (p && p.basemapId) {
-      App.project = Object.assign(newProjectData(p.basemapId), p);
-      normalizeStatuses(App.project);
-      App.emit();
-      window.Geo.load(App.project);
+      openProjectData(p, null);
     } else {
       App.ui.modal = "templates";
       App.emit();

@@ -188,7 +188,7 @@ function AppRoot() {
         present: false
       });
     }
-  }, t("present.exit"))), /*#__PURE__*/React.createElement(Timeline, null), App.ui.modal === "templates" && /*#__PURE__*/React.createElement(TemplatesModal, null), App.ui.modal === "atlas" && window.AtlasModal && /*#__PURE__*/React.createElement(AtlasModal, null), /*#__PURE__*/React.createElement(PwaBanner, null), /*#__PURE__*/React.createElement(Toast, null));
+  }, t("present.exit"))), /*#__PURE__*/React.createElement(Timeline, null), App.ui.modal === "templates" && /*#__PURE__*/React.createElement(TemplatesModal, null), App.ui.modal === "library" && /*#__PURE__*/React.createElement(LibraryModal, null), App.ui.modal === "atlas" && window.AtlasModal && /*#__PURE__*/React.createElement(AtlasModal, null), /*#__PURE__*/React.createElement(PwaBanner, null), /*#__PURE__*/React.createElement(Toast, null));
 }
 ReactDOM.createRoot(document.getElementById("root")).render(/*#__PURE__*/React.createElement(AppRoot, null));
 //# sourceMappingURL=app.js.map

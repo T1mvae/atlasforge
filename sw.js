@@ -7,30 +7,31 @@
 //          template is opened (or via "download for offline"), then served cache-first.
 // A new version installs in the background and waits; the page asks the user to reload
 // (message "skipWaiting") so an edit in progress is never interrupted.
-const VERSION = "a720ffcbcf";
+const VERSION = "9cf87b504d";
 const SHELL = "af-shell-" + VERSION;
 const DATA = "af-data-v1";
 const PRECACHE = [
   "./",
-  "build/app.js?v=34dcfb5dad",
-  "build/chrome.js?v=a13588c118",
+  "build/app.js?v=6ce50d935d",
+  "build/chrome.js?v=85f9c9f420",
   "build/map.js?v=9c602926a1",
   "build/panels.js?v=c264b97e67",
   "build/world.js?v=682175a27f",
-  "css/editor.css?v=dc853b29a5",
+  "css/editor.css?v=38b700a9bc",
   "icons/apple-touch-icon.png",
   "icons/apple-touch-icon.png?v=953bc6d2b1",
   "icons/icon-192.png",
   "icons/icon-192.png?v=3be2bf771a",
   "icons/icon-512.png",
   "icons/icon-maskable-512.png",
-  "js/core.js?v=d3991c3672",
+  "js/core.js?v=5b12d7ae63",
   "js/edit.js?v=bfb1feadc3",
-  "js/export.js?v=5e7c633ab4",
+  "js/export.js?v=d2c6555e13",
   "js/geo.js?v=a68a71e50b",
-  "js/i18n.js?v=c8ac784ce7",
-  "js/pwa.js?v=0e8b112713",
+  "js/i18n.js?v=865db94528",
+  "js/pwa.js?v=9f35de276b",
   "js/regions.js?v=e79649b7ce",
+  "js/storage.js?v=48856ba07c",
   "js/world.js?v=a9349ea8cb",
   "manifest.webmanifest?v=10553cf767",
   "vendor/d3.min.js?v=69faba9d2f",

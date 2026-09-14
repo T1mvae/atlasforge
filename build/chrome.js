@@ -1,5 +1,9 @@
 "use strict";
 
+function _regenerator() { /*! regenerator-runtime -- Copyright (c) 2014-present, Facebook, Inc. -- license (MIT): https://github.com/babel/babel/blob/main/packages/babel-helpers/LICENSE */ var e, t, r = "function" == typeof Symbol ? Symbol : {}, n = r.iterator || "@@iterator", o = r.toStringTag || "@@toStringTag"; function i(r, n, o, i) { var c = n && n.prototype instanceof Generator ? n : Generator, u = Object.create(c.prototype); return _regeneratorDefine2(u, "_invoke", function (r, n, o) { var i, c, u, f = 0, p = o || [], y = !1, G = { p: 0, n: 0, v: e, a: d, f: d.bind(e, 4), d: function d(t, r) { return i = t, c = 0, u = e, G.n = r, a; } }; function d(r, n) { for (c = r, u = n, t = 0; !y && f && !o && t < p.length; t++) { var o, i = p[t], d = G.p, l = i[2]; r > 3 ? (o = l === n) && (u = i[(c = i[4]) ? 5 : (c = 3, 3)], i[4] = i[5] = e) : i[0] <= d && ((o = r < 2 && d < i[1]) ? (c = 0, G.v = n, G.n = i[1]) : d < l && (o = r < 3 || i[0] > n || n > l) && (i[4] = r, i[5] = n, G.n = l, c = 0)); } if (o || r > 1) return a; throw y = !0, n; } return function (o, p, l) { if (f > 1) throw TypeError("Generator is already running"); for (y && 1 === p && d(p, l), c = p, u = l; (t = c < 2 ? e : u) || !y;) { i || (c ? c < 3 ? (c > 1 && (G.n = -1), d(c, u)) : G.n = u : G.v = u); try { if (f = 2, i) { if (c || (o = "next"), t = i[o]) { if (!(t = t.call(i, u))) throw TypeError("iterator result is not an object"); if (!t.done) return t; u = t.value, c < 2 && (c = 0); } else 1 === c && (t = i["return"]) && t.call(i), c < 2 && (u = TypeError("The iterator does not provide a '" + o + "' method"), c = 1); i = e; } else if ((t = (y = G.n < 0) ? u : r.call(n, G)) !== a) break; } catch (t) { i = e, c = 1, u = t; } finally { f = 1; } } return { value: t, done: y }; }; }(r, o, i), !0), u; } var a = {}; function Generator() {} function GeneratorFunction() {} function GeneratorFunctionPrototype() {} t = Object.getPrototypeOf; var c = [][n] ? t(t([][n]())) : (_regeneratorDefine2(t = {}, n, function () { return this; }), t), u = GeneratorFunctionPrototype.prototype = Generator.prototype = Object.create(c); function f(e) { return Object.setPrototypeOf ? Object.setPrototypeOf(e, GeneratorFunctionPrototype) : (e.__proto__ = GeneratorFunctionPrototype, _regeneratorDefine2(e, o, "GeneratorFunction")), e.prototype = Object.create(u), e; } return GeneratorFunction.prototype = GeneratorFunctionPrototype, _regeneratorDefine2(u, "constructor", GeneratorFunctionPrototype), _regeneratorDefine2(GeneratorFunctionPrototype, "constructor", GeneratorFunction), GeneratorFunction.displayName = "GeneratorFunction", _regeneratorDefine2(GeneratorFunctionPrototype, o, "GeneratorFunction"), _regeneratorDefine2(u), _regeneratorDefine2(u, o, "Generator"), _regeneratorDefine2(u, n, function () { return this; }), _regeneratorDefine2(u, "toString", function () { return "[object Generator]"; }), (_regenerator = function _regenerator() { return { w: i, m: f }; })(); }
+function _regeneratorDefine2(e, r, n, t) { var i = Object.defineProperty; try { i({}, "", {}); } catch (e) { i = 0; } _regeneratorDefine2 = function _regeneratorDefine(e, r, n, t) { function o(r, n) { _regeneratorDefine2(e, r, function (e) { return this._invoke(r, n, e); }); } r ? i ? i(e, r, { value: n, enumerable: !t, configurable: !t, writable: !t }) : e[r] = n : (o("next", 0), o("throw", 1), o("return", 2)); }, _regeneratorDefine2(e, r, n, t); }
+function asyncGeneratorStep(n, t, e, r, o, a, c) { try { var i = n[a](c), u = i.value; } catch (n) { return void e(n); } i.done ? t(u) : Promise.resolve(u).then(r, o); }
+function _asyncToGenerator(n) { return function () { var t = this, e = arguments; return new Promise(function (r, o) { var a = n.apply(t, e); function _next(n) { asyncGeneratorStep(a, r, o, _next, _throw, "next", n); } function _throw(n) { asyncGeneratorStep(a, r, o, _next, _throw, "throw", n); } _next(void 0); }); }; }
 function _createForOfIteratorHelper(r, e) { var t = "undefined" != typeof Symbol && r[Symbol.iterator] || r["@@iterator"]; if (!t) { if (Array.isArray(r) || (t = _unsupportedIterableToArray(r)) || e && r && "number" == typeof r.length) { t && (r = t); var _n = 0, F = function F() {}; return { s: F, n: function n() { return _n >= r.length ? { done: !0 } : { done: !1, value: r[_n++] }; }, e: function e(r) { throw r; }, f: F }; } throw new TypeError("Invalid attempt to iterate non-iterable instance.\nIn order to be iterable, non-array objects must have a [Symbol.iterator]() method."); } var o, a = !0, u = !1; return { s: function s() { t = t.call(r); }, n: function n() { var r = t.next(); return a = r.done, r; }, e: function e(r) { u = !0, o = r; }, f: function f() { try { a || null == t["return"] || t["return"](); } finally { if (u) throw o; } } }; }
 function _slicedToArray(r, e) { return _arrayWithHoles(r) || _iterableToArrayLimit(r, e) || _unsupportedIterableToArray(r, e) || _nonIterableRest(); }
 function _nonIterableRest() { throw new TypeError("Invalid attempt to destructure non-iterable instance.\nIn order to be iterable, non-array objects must have a [Symbol.iterator]() method."); }
@@ -202,7 +206,14 @@ function TopBar() {
   }), /*#__PURE__*/React.createElement(MenuButton, {
     id: "file",
     label: t("menu.file")
-  }, /*#__PURE__*/React.createElement(MenuItem, {
+  }, window.ProjectStore && ProjectStore.available && /*#__PURE__*/React.createElement(MenuItem, {
+    label: t("lib.menu"),
+    onClick: function onClick() {
+      return Actions.ui({
+        modal: "library"
+      });
+    }
+  }), /*#__PURE__*/React.createElement(MenuItem, {
     label: t("menu.newProject"),
     onClick: function onClick() {
       return Actions.ui({
@@ -524,16 +535,501 @@ function Timeline() {
     onClick: play
   }, App.ui.playing ? t("timeline.stop") : t("timeline.play")));
 }
+
+// template id -> i18n key prefix of its name (library cards show which map a project uses)
+var TEMPLATE_KEYS = {
+  admin1: "tmpl.admin1",
+  world_hoi4: "tmpl.worldhoi4",
+  owb: "tmpl.owb",
+  agot: "tmpl.agot",
+  blank: "tmpl.blank",
+  world: "tmpl.world",
+  agot_duchies: "tmpl.agotd",
+  agot_kingdoms: "tmpl.agotk",
+  agot_baronies: "tmpl.agotb",
+  best_regions_world: "tmpl.best",
+  atlas_world: "tmpl.atlas",
+  world_states: "tmpl.worldstates",
+  detailed_province_world: "tmpl.dpw",
+  provinces: "tmpl.provinces",
+  strategic: "tmpl.strategic",
+  "world-50": "tmpl.world50",
+  custom: "tmpl.custom"
+};
+var templateName = function templateName(id) {
+  return TEMPLATE_KEYS[id] ? t(TEMPLATE_KEYS[id] + ".name") : id;
+};
+
+// ---------- project library ("My maps") ----------
+function LibraryModal() {
+  useStore();
+  var _React$useState3 = React.useState(null),
+    _React$useState4 = _slicedToArray(_React$useState3, 2),
+    items = _React$useState4[0],
+    setItems = _React$useState4[1];
+  var _React$useState5 = React.useState("maps"),
+    _React$useState6 = _slicedToArray(_React$useState5, 2),
+    tab = _React$useState6[0],
+    setTab = _React$useState6[1];
+  var _React$useState7 = React.useState({}),
+    _React$useState8 = _slicedToArray(_React$useState7, 2),
+    thumbs = _React$useState8[0],
+    setThumbs = _React$useState8[1];
+  var _React$useState9 = React.useState(false),
+    _React$useState0 = _slicedToArray(_React$useState9, 2),
+    busy = _React$useState0[0],
+    setBusy = _React$useState0[1];
+  var store = window.ProjectStore;
+  var canClose = !!App.project;
+  var reload = React.useCallback(/*#__PURE__*/_asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee() {
+    var list, urls, _iterator3, _step3, it, b, _t, _t2;
+    return _regenerator().w(function (_context) {
+      while (1) switch (_context.p = _context.n) {
+        case 0:
+          if (!(!store || !store.available)) {
+            _context.n = 1;
+            break;
+          }
+          setItems([]);
+          return _context.a(2);
+        case 1:
+          _context.n = 2;
+          return store.list();
+        case 2:
+          list = _context.v;
+          setItems(list);
+          urls = {};
+          _iterator3 = _createForOfIteratorHelper(list);
+          _context.p = 3;
+          _iterator3.s();
+        case 4:
+          if ((_step3 = _iterator3.n()).done) {
+            _context.n = 9;
+            break;
+          }
+          it = _step3.value;
+          _context.p = 5;
+          _context.n = 6;
+          return store.thumb(it.id);
+        case 6:
+          b = _context.v;
+          if (b) urls[it.id] = URL.createObjectURL(b);
+          _context.n = 8;
+          break;
+        case 7:
+          _context.p = 7;
+          _t = _context.v;
+        case 8:
+          _context.n = 4;
+          break;
+        case 9:
+          _context.n = 11;
+          break;
+        case 10:
+          _context.p = 10;
+          _t2 = _context.v;
+          _iterator3.e(_t2);
+        case 11:
+          _context.p = 11;
+          _iterator3.f();
+          return _context.f(11);
+        case 12:
+          setThumbs(function (prev) {
+            Object.values(prev).forEach(function (u) {
+              return URL.revokeObjectURL(u);
+            });
+            return urls;
+          });
+        case 13:
+          return _context.a(2);
+      }
+    }, _callee, null, [[5, 7], [3, 10, 11, 12]]);
+  })), []);
+  React.useEffect(function () {
+    _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee2() {
+      return _regenerator().w(function (_context2) {
+        while (1) switch (_context2.n) {
+          case 0:
+            if (!App.project) {
+              _context2.n = 2;
+              break;
+            }
+            _context2.n = 1;
+            return Exports.saveThumbnail();
+          case 1:
+            _context2.n = 2;
+            return Actions.saveNow();
+          case 2:
+            reload();
+          case 3:
+            return _context2.a(2);
+        }
+      }, _callee2);
+    }))();
+    return function () {
+      return setThumbs(function (prev) {
+        Object.values(prev).forEach(function (u) {
+          return URL.revokeObjectURL(u);
+        });
+        return {};
+      });
+    };
+  }, []);
+  var act = /*#__PURE__*/function () {
+    var _ref5 = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee3(fn) {
+      return _regenerator().w(function (_context3) {
+        while (1) switch (_context3.p = _context3.n) {
+          case 0:
+            setBusy(true);
+            _context3.p = 1;
+            _context3.n = 2;
+            return fn();
+          case 2:
+            _context3.p = 2;
+            setBusy(false);
+            reload();
+            return _context3.f(2);
+          case 3:
+            return _context3.a(2);
+        }
+      }, _callee3, null, [[1,, 2, 3]]);
+    }));
+    return function act(_x) {
+      return _ref5.apply(this, arguments);
+    };
+  }();
+  var open = function open(it) {
+    return act(function () {
+      return Actions.openProject(it.id);
+    });
+  };
+  var rename = function rename(it) {
+    var name = prompt(t("lib.renameAsk"), it.name);
+    if (name == null) return;
+    act(/*#__PURE__*/_asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee4() {
+      return _regenerator().w(function (_context4) {
+        while (1) switch (_context4.n) {
+          case 0:
+            _context4.n = 1;
+            return store.rename(it.id, name);
+          case 1:
+            if (App.projectId === it.id && App.project) Actions.mut(function (p) {
+              p.name = name;
+            }, {
+              undo: false
+            });
+          case 2:
+            return _context4.a(2);
+        }
+      }, _callee4);
+    })));
+  };
+  var duplicate = function duplicate(it) {
+    return act(function () {
+      return store.duplicate(it.id, uid(), " " + t("lib.copySuffix"));
+    });
+  };
+  var exportFile = function exportFile(it) {
+    return act(/*#__PURE__*/_asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee5() {
+      var p, name, _t3;
+      return _regenerator().w(function (_context5) {
+        while (1) switch (_context5.n) {
+          case 0:
+            if (!(App.projectId === it.id && App.project)) {
+              _context5.n = 1;
+              break;
+            }
+            _t3 = App.project;
+            _context5.n = 3;
+            break;
+          case 1:
+            _context5.n = 2;
+            return store.load(it.id);
+          case 2:
+            _t3 = _context5.v;
+          case 3:
+            p = _t3;
+            if (p) {
+              _context5.n = 4;
+              break;
+            }
+            return _context5.a(2);
+          case 4:
+            name = (p.name || "map").replace(/[^\w\u0400-\u04FF -]+/g, "").trim() || "map";
+            window.downloadBlob(new Blob([JSON.stringify(p, null, 1)], {
+              type: "application/json"
+            }), name + ".atlasforge.json");
+          case 5:
+            return _context5.a(2);
+        }
+      }, _callee5);
+    })));
+  };
+  var trash = function trash(it) {
+    if (!confirm(t("lib.trashAsk").replace("{name}", it.name || t("lib.untitled")))) return;
+    act(/*#__PURE__*/_asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee6() {
+      return _regenerator().w(function (_context6) {
+        while (1) switch (_context6.n) {
+          case 0:
+            _context6.n = 1;
+            return store.trash(it.id);
+          case 1:
+            if (App.projectId === it.id) Actions.closeProject();
+          case 2:
+            return _context6.a(2);
+        }
+      }, _callee6);
+    })));
+  };
+  var restore = function restore(it) {
+    return act(function () {
+      return store.restore(it.id);
+    });
+  };
+  var purge = function purge(it) {
+    if (!confirm(t("lib.purgeAsk").replace("{name}", it.name || t("lib.untitled")))) return;
+    act(function () {
+      return store.purge(it.id);
+    });
+  };
+  var emptyTrash = function emptyTrash() {
+    var tr = (items || []).filter(function (x) {
+      return x.trashed;
+    });
+    if (!tr.length || !confirm(t("lib.emptyTrashAsk").replace("{n}", tr.length))) return;
+    act(/*#__PURE__*/_asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee7() {
+      var _iterator4, _step4, it, _t4;
+      return _regenerator().w(function (_context7) {
+        while (1) switch (_context7.p = _context7.n) {
+          case 0:
+            _iterator4 = _createForOfIteratorHelper(tr);
+            _context7.p = 1;
+            _iterator4.s();
+          case 2:
+            if ((_step4 = _iterator4.n()).done) {
+              _context7.n = 4;
+              break;
+            }
+            it = _step4.value;
+            _context7.n = 3;
+            return store.purge(it.id);
+          case 3:
+            _context7.n = 2;
+            break;
+          case 4:
+            _context7.n = 6;
+            break;
+          case 5:
+            _context7.p = 5;
+            _t4 = _context7.v;
+            _iterator4.e(_t4);
+          case 6:
+            _context7.p = 6;
+            _iterator4.f();
+            return _context7.f(6);
+          case 7:
+            return _context7.a(2);
+        }
+      }, _callee7, null, [[1, 5, 6, 7]]);
+    })));
+  };
+  var fmtDate = function fmtDate(ms) {
+    try {
+      return new Date(ms).toLocaleString(App.ui.lang === "ru" ? "ru-RU" : "en-US", {
+        day: "numeric",
+        month: "short",
+        year: "numeric",
+        hour: "2-digit",
+        minute: "2-digit"
+      });
+    } catch (e) {
+      return "";
+    }
+  };
+  var visible = (items || []).filter(function (x) {
+    return tab === "trash" ? !!x.trashed : !x.trashed;
+  });
+  var trashCount = (items || []).filter(function (x) {
+    return x.trashed;
+  }).length;
+  return /*#__PURE__*/React.createElement("div", {
+    className: "modal-backdrop",
+    onClick: function onClick() {
+      if (canClose) Actions.ui({
+        modal: null
+      });
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "modal library-modal",
+    onClick: function onClick(e) {
+      return e.stopPropagation();
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "modal-head"
+  }, /*#__PURE__*/React.createElement("span", {
+    className: "modal-title"
+  }, t("lib.title")), /*#__PURE__*/React.createElement("div", {
+    className: "library-head-actions"
+  }, /*#__PURE__*/React.createElement("button", {
+    className: "btn outline",
+    onClick: function onClick() {
+      return Exports.importProject();
+    }
+  }, t("lib.import")), /*#__PURE__*/React.createElement("button", {
+    className: "btn primary",
+    onClick: function onClick() {
+      return Actions.ui({
+        modal: "templates"
+      });
+    }
+  }, "\uFF0B ", t("lib.new")), canClose && /*#__PURE__*/React.createElement("button", {
+    className: "btn icon",
+    onClick: function onClick() {
+      return Actions.ui({
+        modal: null
+      });
+    }
+  }, "\u2715"))), /*#__PURE__*/React.createElement("div", {
+    className: "library-tabs"
+  }, /*#__PURE__*/React.createElement("button", {
+    className: "chip" + (tab === "maps" ? " on" : ""),
+    onClick: function onClick() {
+      return setTab("maps");
+    }
+  }, t("lib.maps")), /*#__PURE__*/React.createElement("button", {
+    className: "chip" + (tab === "trash" ? " on" : ""),
+    onClick: function onClick() {
+      return setTab("trash");
+    }
+  }, t("lib.trash"), trashCount ? " (" + trashCount + ")" : ""), tab === "trash" && trashCount > 0 && /*#__PURE__*/React.createElement("button", {
+    className: "btn outline",
+    style: {
+      marginLeft: "auto"
+    },
+    onClick: emptyTrash
+  }, t("lib.emptyTrash"))), /*#__PURE__*/React.createElement("div", {
+    className: "modal-body"
+  }, !store || !store.available ? /*#__PURE__*/React.createElement("div", {
+    className: "muted"
+  }, t("lib.unavailable")) : null, items && visible.length === 0 && /*#__PURE__*/React.createElement("div", {
+    className: "muted library-empty"
+  }, tab === "trash" ? t("lib.trashEmpty") : t("lib.empty")), /*#__PURE__*/React.createElement("div", {
+    className: "library-grid" + (busy ? " busy" : "")
+  }, visible.map(function (it) {
+    return /*#__PURE__*/React.createElement("div", {
+      key: it.id,
+      className: "library-card" + (App.projectId === it.id ? " current" : "")
+    }, /*#__PURE__*/React.createElement("button", {
+      className: "library-thumb",
+      onClick: function onClick() {
+        return tab === "trash" ? restore(it) : open(it);
+      }
+    }, thumbs[it.id] ? /*#__PURE__*/React.createElement("img", {
+      src: thumbs[it.id],
+      alt: ""
+    }) : /*#__PURE__*/React.createElement("span", {
+      className: "library-thumb-empty"
+    }, templateName(it.basemapId)), App.projectId === it.id && /*#__PURE__*/React.createElement("span", {
+      className: "library-badge"
+    }, t("lib.open"))), /*#__PURE__*/React.createElement("div", {
+      className: "library-meta"
+    }, /*#__PURE__*/React.createElement("div", {
+      className: "library-name"
+    }, it.name || t("lib.untitled")), /*#__PURE__*/React.createElement("div", {
+      className: "library-sub"
+    }, templateName(it.basemapId), " \xB7 ", fmtDate(it.updated)), /*#__PURE__*/React.createElement("div", {
+      className: "library-sub"
+    }, t("lib.stats").replace("{s}", it.states || 0).replace("{r}", it.owned || 0))), /*#__PURE__*/React.createElement("div", {
+      className: "library-actions"
+    }, tab === "trash" ? /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("button", {
+      className: "btn outline",
+      onClick: function onClick() {
+        return restore(it);
+      }
+    }, t("lib.restore")), /*#__PURE__*/React.createElement("button", {
+      className: "btn outline danger",
+      onClick: function onClick() {
+        return purge(it);
+      }
+    }, t("lib.purge"))) : /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("button", {
+      className: "btn outline",
+      onClick: function onClick() {
+        return rename(it);
+      },
+      title: t("lib.rename")
+    }, "\u270E"), /*#__PURE__*/React.createElement("button", {
+      className: "btn outline",
+      onClick: function onClick() {
+        return duplicate(it);
+      },
+      title: t("lib.duplicate")
+    }, "\u29C9"), /*#__PURE__*/React.createElement("button", {
+      className: "btn outline",
+      onClick: function onClick() {
+        return exportFile(it);
+      },
+      title: t("lib.export")
+    }, "\u21EA"), /*#__PURE__*/React.createElement("button", {
+      className: "btn outline",
+      onClick: function onClick() {
+        return trash(it);
+      },
+      title: t("lib.toTrash")
+    }, "\uD83D\uDDD1"))));
+  })))));
+}
+
+// "download for offline" chip on a template card
+function OfflineChip(_ref0) {
+  var id = _ref0.id;
+  var _React$useState1 = React.useState("checking"),
+    _React$useState10 = _slicedToArray(_React$useState1, 2),
+    state = _React$useState10[0],
+    setState = _React$useState10[1];
+  React.useEffect(function () {
+    var alive = true;
+    if (!window.PWA || !PWA.templateUrls(id).length) {
+      setState("none");
+      return;
+    }
+    PWA.isTemplateOffline(id).then(function (ok) {
+      if (alive) setState(ok ? "ready" : "idle");
+    });
+    return function () {
+      alive = false;
+    };
+  }, [id]);
+  if (state === "none" || state === "checking") return null;
+  if (state === "ready") return /*#__PURE__*/React.createElement("span", {
+    className: "chip offline-chip ready",
+    title: t("offline.readyHint")
+  }, "\u2713 ", t("offline.ready"));
+  return /*#__PURE__*/React.createElement("span", {
+    className: "chip offline-chip" + (state === "loading" ? " loading" : ""),
+    role: "button",
+    onClick: function onClick(e) {
+      e.stopPropagation();
+      if (state === "loading") return;
+      setState("loading");
+      PWA.downloadTemplate(id).then(function () {
+        return setState("ready");
+      }, function () {
+        setState("idle");
+        Actions.toast(t("offline.failed"));
+      });
+    }
+  }, state === "loading" ? "…" : "⬇", " ", t(state === "loading" ? "offline.loading" : "offline.download"));
+}
 function TemplatesModal() {
   useStore();
-  var _React$useState3 = React.useState("admin1"),
-    _React$useState4 = _slicedToArray(_React$useState3, 2),
-    choice = _React$useState4[0],
-    setChoice = _React$useState4[1];
-  var _React$useState5 = React.useState(false),
-    _React$useState6 = _slicedToArray(_React$useState5, 2),
-    showClassic = _React$useState6[0],
-    setShowClassic = _React$useState6[1];
+  var _React$useState11 = React.useState("admin1"),
+    _React$useState12 = _slicedToArray(_React$useState11, 2),
+    choice = _React$useState12[0],
+    setChoice = _React$useState12[1];
+  var _React$useState13 = React.useState(false),
+    _React$useState14 = _slicedToArray(_React$useState13, 2),
+    showClassic = _React$useState14[0],
+    setShowClassic = _React$useState14[1];
   var firstRun = !App.project;
   // The primary map plus the themed / blank starting points (all fully editable).
   var cards = [{
@@ -673,7 +1169,9 @@ function TemplatesModal() {
       }, t("feat." + f));
     })), /*#__PURE__*/React.createElement("span", {
       className: "tmpl-count"
-    }, c.count, " ", t("stat.regions")));
+    }, c.count, " ", t("stat.regions"), " ", /*#__PURE__*/React.createElement(OfflineChip, {
+      id: c.id
+    })));
   };
   return /*#__PURE__*/React.createElement("div", {
     className: "modal-backdrop",
@@ -691,14 +1189,23 @@ function TemplatesModal() {
     className: "modal-head"
   }, /*#__PURE__*/React.createElement("span", {
     className: "modal-title"
-  }, t("modal.templates.title")), !firstRun && /*#__PURE__*/React.createElement("button", {
+  }, t("modal.templates.title")), /*#__PURE__*/React.createElement("span", {
+    className: "library-head-actions"
+  }, window.ProjectStore && ProjectStore.available && /*#__PURE__*/React.createElement("button", {
+    className: "btn outline",
+    onClick: function onClick() {
+      return Actions.ui({
+        modal: "library"
+      });
+    }
+  }, t("lib.title")), !firstRun && /*#__PURE__*/React.createElement("button", {
     className: "btn icon",
     onClick: function onClick() {
       return Actions.ui({
         modal: null
       });
     }
-  }, "\u2715")), /*#__PURE__*/React.createElement("div", {
+  }, "\u2715"))), /*#__PURE__*/React.createElement("div", {
     className: "modal-body"
   }, /*#__PURE__*/React.createElement("div", {
     className: "muted"
@@ -777,6 +1284,7 @@ Object.assign(window, {
   Legend: Legend,
   Timeline: Timeline,
   TemplatesModal: TemplatesModal,
+  LibraryModal: LibraryModal,
   Toast: Toast,
   PwaBanner: PwaBanner
 });

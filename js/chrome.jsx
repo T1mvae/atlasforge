@@ -95,6 +95,7 @@ function TopBar() {
         <input className="proj-name" value={p.name} onChange={(e) => Actions.mut((pr) => { pr.name = e.target.value; }, { undo: false })}></input>
       )}
       <MenuButton id="file" label={t("menu.file")}>
+        {window.ProjectStore && ProjectStore.available && <MenuItem label={t("lib.menu")} onClick={() => Actions.ui({ modal: "library" })}></MenuItem>}
         <MenuItem label={t("menu.newProject")} onClick={() => Actions.ui({ modal: "templates" })}></MenuItem>
         <div className="menu-sep"></div>
         <MenuItem label={t("menu.importProject")} onClick={() => Exports.importProject()}></MenuItem>
@@ -232,6 +233,167 @@ function Timeline() {
   );
 }
 
+// template id -> i18n key prefix of its name (library cards show which map a project uses)
+const TEMPLATE_KEYS = {
+  admin1: "tmpl.admin1", world_hoi4: "tmpl.worldhoi4", owb: "tmpl.owb", agot: "tmpl.agot", blank: "tmpl.blank",
+  world: "tmpl.world", agot_duchies: "tmpl.agotd", agot_kingdoms: "tmpl.agotk", agot_baronies: "tmpl.agotb",
+  best_regions_world: "tmpl.best", atlas_world: "tmpl.atlas", world_states: "tmpl.worldstates",
+  detailed_province_world: "tmpl.dpw", provinces: "tmpl.provinces", strategic: "tmpl.strategic",
+  "world-50": "tmpl.world50", custom: "tmpl.custom"
+};
+const templateName = (id) => (TEMPLATE_KEYS[id] ? t(TEMPLATE_KEYS[id] + ".name") : id);
+
+// ---------- project library ("My maps") ----------
+function LibraryModal() {
+  useStore();
+  const [items, setItems] = React.useState(null);
+  const [tab, setTab] = React.useState("maps");
+  const [thumbs, setThumbs] = React.useState({});
+  const [busy, setBusy] = React.useState(false);
+  const store = window.ProjectStore;
+  const canClose = !!App.project;
+
+  const reload = React.useCallback(async () => {
+    if (!store || !store.available) { setItems([]); return; }
+    const list = await store.list();
+    setItems(list);
+    const urls = {};
+    for (const it of list) {
+      try { const b = await store.thumb(it.id); if (b) urls[it.id] = URL.createObjectURL(b); } catch (e) {}
+    }
+    setThumbs((prev) => { Object.values(prev).forEach((u) => URL.revokeObjectURL(u)); return urls; });
+  }, []);
+
+  React.useEffect(() => {
+    (async () => {
+      if (App.project) { await Exports.saveThumbnail(); await Actions.saveNow(); }
+      reload();
+    })();
+    return () => setThumbs((prev) => { Object.values(prev).forEach((u) => URL.revokeObjectURL(u)); return {}; });
+  }, []);
+
+  const act = async (fn) => { setBusy(true); try { await fn(); } finally { setBusy(false); reload(); } };
+  const open = (it) => act(() => Actions.openProject(it.id));
+  const rename = (it) => {
+    const name = prompt(t("lib.renameAsk"), it.name);
+    if (name == null) return;
+    act(async () => {
+      await store.rename(it.id, name);
+      if (App.projectId === it.id && App.project) Actions.mut((p) => { p.name = name; }, { undo: false });
+    });
+  };
+  const duplicate = (it) => act(() => store.duplicate(it.id, uid(), " " + t("lib.copySuffix")));
+  const exportFile = (it) => act(async () => {
+    const p = App.projectId === it.id && App.project ? App.project : await store.load(it.id);
+    if (!p) return;
+    const name = (p.name || "map").replace(/[^\w\u0400-\u04FF -]+/g, "").trim() || "map";
+    window.downloadBlob(new Blob([JSON.stringify(p, null, 1)], { type: "application/json" }), name + ".atlasforge.json");
+  });
+  const trash = (it) => {
+    if (!confirm(t("lib.trashAsk").replace("{name}", it.name || t("lib.untitled")))) return;
+    act(async () => {
+      await store.trash(it.id);
+      if (App.projectId === it.id) Actions.closeProject();
+    });
+  };
+  const restore = (it) => act(() => store.restore(it.id));
+  const purge = (it) => {
+    if (!confirm(t("lib.purgeAsk").replace("{name}", it.name || t("lib.untitled")))) return;
+    act(() => store.purge(it.id));
+  };
+  const emptyTrash = () => {
+    const tr = (items || []).filter((x) => x.trashed);
+    if (!tr.length || !confirm(t("lib.emptyTrashAsk").replace("{n}", tr.length))) return;
+    act(async () => { for (const it of tr) await store.purge(it.id); });
+  };
+
+  const fmtDate = (ms) => {
+    try {
+      return new Date(ms).toLocaleString(App.ui.lang === "ru" ? "ru-RU" : "en-US", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" });
+    } catch (e) { return ""; }
+  };
+  const visible = (items || []).filter((x) => (tab === "trash" ? !!x.trashed : !x.trashed));
+  const trashCount = (items || []).filter((x) => x.trashed).length;
+
+  return (
+    <div className="modal-backdrop" onClick={() => { if (canClose) Actions.ui({ modal: null }); }}>
+      <div className="modal library-modal" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-head">
+          <span className="modal-title">{t("lib.title")}</span>
+          <div className="library-head-actions">
+            <button className="btn outline" onClick={() => Exports.importProject()}>{t("lib.import")}</button>
+            <button className="btn primary" onClick={() => Actions.ui({ modal: "templates" })}>＋ {t("lib.new")}</button>
+            {canClose && <button className="btn icon" onClick={() => Actions.ui({ modal: null })}>✕</button>}
+          </div>
+        </div>
+        <div className="library-tabs">
+          <button className={"chip" + (tab === "maps" ? " on" : "")} onClick={() => setTab("maps")}>{t("lib.maps")}</button>
+          <button className={"chip" + (tab === "trash" ? " on" : "")} onClick={() => setTab("trash")}>{t("lib.trash")}{trashCount ? " (" + trashCount + ")" : ""}</button>
+          {tab === "trash" && trashCount > 0 && <button className="btn outline" style={{ marginLeft: "auto" }} onClick={emptyTrash}>{t("lib.emptyTrash")}</button>}
+        </div>
+        <div className="modal-body">
+          {!store || !store.available ? <div className="muted">{t("lib.unavailable")}</div> : null}
+          {items && visible.length === 0 && <div className="muted library-empty">{tab === "trash" ? t("lib.trashEmpty") : t("lib.empty")}</div>}
+          <div className={"library-grid" + (busy ? " busy" : "")}>
+            {visible.map((it) => (
+              <div key={it.id} className={"library-card" + (App.projectId === it.id ? " current" : "")}>
+                <button className="library-thumb" onClick={() => (tab === "trash" ? restore(it) : open(it))}>
+                  {thumbs[it.id] ? <img src={thumbs[it.id]} alt=""></img> : <span className="library-thumb-empty">{templateName(it.basemapId)}</span>}
+                  {App.projectId === it.id && <span className="library-badge">{t("lib.open")}</span>}
+                </button>
+                <div className="library-meta">
+                  <div className="library-name">{it.name || t("lib.untitled")}</div>
+                  <div className="library-sub">{templateName(it.basemapId)} · {fmtDate(it.updated)}</div>
+                  <div className="library-sub">{t("lib.stats").replace("{s}", it.states || 0).replace("{r}", it.owned || 0)}</div>
+                </div>
+                <div className="library-actions">
+                  {tab === "trash" ? (
+                    <React.Fragment>
+                      <button className="btn outline" onClick={() => restore(it)}>{t("lib.restore")}</button>
+                      <button className="btn outline danger" onClick={() => purge(it)}>{t("lib.purge")}</button>
+                    </React.Fragment>
+                  ) : (
+                    <React.Fragment>
+                      <button className="btn outline" onClick={() => rename(it)} title={t("lib.rename")}>✎</button>
+                      <button className="btn outline" onClick={() => duplicate(it)} title={t("lib.duplicate")}>⧉</button>
+                      <button className="btn outline" onClick={() => exportFile(it)} title={t("lib.export")}>⇪</button>
+                      <button className="btn outline" onClick={() => trash(it)} title={t("lib.toTrash")}>🗑</button>
+                    </React.Fragment>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// "download for offline" chip on a template card
+function OfflineChip({ id }) {
+  const [state, setState] = React.useState("checking");
+  React.useEffect(() => {
+    let alive = true;
+    if (!window.PWA || !PWA.templateUrls(id).length) { setState("none"); return; }
+    PWA.isTemplateOffline(id).then((ok) => { if (alive) setState(ok ? "ready" : "idle"); });
+    return () => { alive = false; };
+  }, [id]);
+  if (state === "none" || state === "checking") return null;
+  if (state === "ready") return <span className="chip offline-chip ready" title={t("offline.readyHint")}>✓ {t("offline.ready")}</span>;
+  return (
+    <span className={"chip offline-chip" + (state === "loading" ? " loading" : "")} role="button"
+      onClick={(e) => {
+        e.stopPropagation();
+        if (state === "loading") return;
+        setState("loading");
+        PWA.downloadTemplate(id).then(() => setState("ready"), () => { setState("idle"); Actions.toast(t("offline.failed")); });
+      }}>
+      {state === "loading" ? "…" : "⬇"} {t(state === "loading" ? "offline.loading" : "offline.download")}
+    </span>
+  );
+}
+
 function TemplatesModal() {
   useStore();
   const [choice, setChoice] = React.useState("admin1");
@@ -275,7 +437,7 @@ function TemplatesModal() {
           {c.feats.map((f) => <span key={f} className="chip" style={{ cursor: "default" }}>{t("feat." + f)}</span>)}
         </span>
       )}
-      <span className="tmpl-count">{c.count} {t("stat.regions")}</span>
+      <span className="tmpl-count">{c.count} {t("stat.regions")} <OfflineChip id={c.id}></OfflineChip></span>
     </button>
   );
   return (
@@ -283,7 +445,10 @@ function TemplatesModal() {
       <div className="modal" onClick={(e) => e.stopPropagation()}>
         <div className="modal-head">
           <span className="modal-title">{t("modal.templates.title")}</span>
-          {!firstRun && <button className="btn icon" onClick={() => Actions.ui({ modal: null })}>✕</button>}
+          <span className="library-head-actions">
+            {window.ProjectStore && ProjectStore.available && <button className="btn outline" onClick={() => Actions.ui({ modal: "library" })}>{t("lib.title")}</button>}
+            {!firstRun && <button className="btn icon" onClick={() => Actions.ui({ modal: null })}>✕</button>}
+          </span>
         </div>
         <div className="modal-body">
           <div className="muted">{t("modal.templates.desc")}</div>
@@ -339,4 +504,4 @@ function Toast() {
   return <div className="toast">{App.ui.toast}</div>;
 }
 
-Object.assign(window, { TopBar, Legend, Timeline, TemplatesModal, Toast, PwaBanner });
+Object.assign(window, { TopBar, Legend, Timeline, TemplatesModal, LibraryModal, Toast, PwaBanner });

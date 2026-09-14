@@ -1,6 +1,24 @@
 // AtlasForge — export / import (PNG, SVG, JSON, GeoJSON)
 (function () {
+  // On iPad a download link opens a preview; the share sheet has "Save to Files",
+  // AirDrop, Mail… Sharing needs a fresh user gesture, so async exports (PNG) may
+  // fall back to the link.
   function download(blob, filename) {
+    const touch = window.PWA && window.PWA.iOS;
+    if (touch && navigator.canShare) {
+      try {
+        const file = new File([blob], filename, { type: blob.type || "application/octet-stream" });
+        if (navigator.canShare({ files: [file] })) {
+          navigator.share({ files: [file], title: filename }).catch((e) => {
+            if (!e || e.name !== "AbortError") linkDownload(blob, filename);
+          });
+          return;
+        }
+      } catch (e) { /* fall through to the link */ }
+    }
+    linkDownload(blob, filename);
+  }
+  function linkDownload(blob, filename) {
     const a = document.createElement("a");
     a.href = URL.createObjectURL(blob);
     a.download = filename;
@@ -141,6 +159,48 @@
     img.src = url;
   };
 
+  // small preview for the project library: terrain (custom worlds) or land, plus
+  // state colours; drawn synchronously so it always shows the project it was called for
+  Exports.thumbnail = function () {
+    const App = window.App, p = App.project, bm = App.basemap;
+    if (!p || !bm || bm.status !== "ready") return null;
+    const W = 480, H = Math.round(480 * window.MAP_H / window.MAP_W);
+    const cv = document.createElement("canvas");
+    cv.width = W; cv.height = H;
+    const ctx = cv.getContext("2d");
+    ctx.fillStyle = p.settings.sea;
+    ctx.fillRect(0, 0, W, H);
+    ctx.scale(W / window.MAP_W, H / window.MAP_H);
+    const world = window.World && window.World.active() && window.World.canvas && bm.proj;
+    if (world) {
+      const p0 = bm.proj([0, 0]), p1 = bm.proj([window.World.GW, window.World.GH]);
+      ctx.drawImage(window.World.canvas, p0[0], p0[1], p1[0] - p0[0], p1[1] - p0[1]);
+    } else if (bm.landPath) {
+      ctx.fillStyle = p.settings.land;
+      try { ctx.fill(new Path2D(bm.landPath)); } catch (e) {}
+    }
+    ctx.globalAlpha = world ? (p.settings.worldFillOpacity != null ? p.settings.worldFillOpacity : 0.62) : 1;
+    bm.features.forEach((f) => {
+      const e = window.effRegion(p, f.id);
+      const col = e && (e.color || (e.owner && p.states[e.owner] && p.states[e.owner].color));
+      if (!col && world) return;
+      ctx.fillStyle = col || p.settings.land;
+      try { ctx.fill(f._p2d || (f._p2d = new Path2D(f.d))); } catch (e2) {}
+    });
+    return cv;
+  };
+  Exports.saveThumbnail = function () {
+    const App = window.App;
+    if (!window.ProjectStore || !window.ProjectStore.available || !App.projectId) return Promise.resolve();
+    const id = App.projectId;
+    let cv = null;
+    try { cv = Exports.thumbnail(); } catch (e) { cv = null; }
+    if (!cv) return Promise.resolve();
+    return new Promise((resolve) => {
+      cv.toBlob((blob) => { window.ProjectStore.saveThumb(id, blob).then(resolve, resolve); }, "image/jpeg", 0.82);
+    });
+  };
+
   Exports.json = function () {
     const App = window.App;
     if (!App.project) return;
@@ -170,14 +230,9 @@
     try {
       const data = JSON.parse(await f.text());
       if (!data.basemapId) throw new Error("not a project");
-      const App = window.App;
-      App.project = Object.assign(window.newProjectData(data.basemapId), data);
-      window.normalizeStatuses && window.normalizeStatuses(App.project);
-      App.undoStack.length = 0; App.redoStack.length = 0;
-      App.ui.selection = []; App.ui.activeState = null; App.ui.modal = null;
-      App.emit();
-      window.scheduleSave();
-      window.Geo.load(App.project);
+      // an imported file becomes a new project in the library (never overwrites the open one)
+      if (window.App.project) { if (Exports.saveThumbnail) Exports.saveThumbnail(); await window.Actions.saveNow(); }
+      window.Actions.openProjectData(data, null);
     } catch (e) {
       window.Actions.toast(window.t("toast.importError"));
     }

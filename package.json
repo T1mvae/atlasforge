@@ -1,0 +1,18 @@
+{
+  "name": "atlasforge",
+  "private": true,
+  "description": "AtlasForge — political / fantasy map editor (static site + installable PWA)",
+  "scripts": {
+    "build": "node tools/build.mjs"
+  },
+  "devDependencies": {
+    "@babel/standalone": "7.29.0",
+    "d3": "7.9.0",
+    "polygon-clipping": "0.15.7",
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
+    "topojson-client": "3.1.0",
+    "topojson-server": "3.0.1",
+    "topojson-simplify": "3.0.3"
+  }
+}

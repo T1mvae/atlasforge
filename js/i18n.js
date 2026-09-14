@@ -465,7 +465,11 @@ window.I18N = {
     "world.atlasSize": "{c} characters · ~{t} tokens",
     "world.atlasCopy": "Copy",
     "world.atlasSave": "Download .md",
-    "world.copied": "Atlas copied to clipboard"
+    "world.copied": "Atlas copied to clipboard",
+    "pwa.updateReady": "A new version of AtlasForge is ready.",
+    "pwa.reload": "Reload",
+    "pwa.installHint": "Install AtlasForge: tap Share → “Add to Home Screen”. The installed app works offline and keeps your maps safe.",
+    "pwa.dismiss": "Got it"
   },
   ru: {
     "app.title": "AtlasForge",
@@ -932,6 +936,10 @@ window.I18N = {
     "world.atlasSize": "{c} символов · ~{t} токенов",
     "world.atlasCopy": "Скопировать",
     "world.atlasSave": "Скачать .md",
-    "world.copied": "Атлас скопирован в буфер обмена"
+    "world.copied": "Атлас скопирован в буфер обмена",
+    "pwa.updateReady": "Готова новая версия AtlasForge.",
+    "pwa.reload": "Обновить",
+    "pwa.installHint": "Установите AtlasForge: «Поделиться» → «На экран „Домой“». Установленное приложение работает без интернета и надёжно хранит карты.",
+    "pwa.dismiss": "Понятно"
   }
 };

@@ -260,8 +260,9 @@
   // so the same project works whether served from the site root or a subfolder.
   function localCandidates(path) {
     if (!path) return [];
-    const out = [path];
-    if (path[0] === "/") out.push(path.slice(1));
+    // relative first: on GitHub Pages the site lives under /atlasforge/, so an
+    // absolute "/data/…" is a guaranteed 404 round-trip before the working URL
+    const out = path[0] === "/" ? [path.slice(1), path] : [path];
     const base = path.split("/").pop();
     out.push("data/" + base, base, "./data/" + base);
     return [...new Set(out)];

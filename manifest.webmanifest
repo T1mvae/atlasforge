@@ -1,0 +1,17 @@
+{
+  "name": "AtlasForge — редактор карт",
+  "short_name": "AtlasForge",
+  "description": "Редактор политических и фэнтезийных карт: рисуй мир стилусом, нарезай провинции, веди историю государств.",
+  "lang": "ru",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#16191d",
+  "theme_color": "#16191d",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

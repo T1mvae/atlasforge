@@ -6,12 +6,20 @@ AtlasForge is a browser-based editor for political / historical / alternate-hist
 
 ## Commands
 
-- **Run locally** (required — the app `fetch`es `data/*.geojson`, so `file://` fails): serve over HTTP, then open `index.html`.
+- **Build** (required after editing anything under `js/`, `css/`, `icons/` or `tools/sw.template.js`): `npm install` once, then `npm run build` (`tools/build.mjs`). It:
+  - copies the UMD libraries into `vendor/` (the app has **no CDN dependencies** — it must work offline as an installed PWA);
+  - precompiles `js/*.jsx` → `build/*.js` with the **same Babel 7.29.0 presets (`react` + `env`) the in-browser transformer used**, so the output stays classic scripts whose top-level declarations are shared globals, exactly like before;
+  - stamps every local asset URL in `index.html` / `Map Editor.html` with a content hash `?v=` (GitHub Pages sends `max-age=600`; without the stamp a returning visitor keeps old files);
+  - writes `sw.js` from `tools/sw.template.js` (precache list + version);
+  - writes `dev.html` — the same page loading `js/*.jsx` through in-browser Babel, for iterating without rebuilding (no service worker there).
+  `build/`, `vendor/`, `sw.js`, `dev.html` and the stamped HTML are **committed**: Pages serves the repo root of `main`, there is no CI build.
+- **Run locally** (required — the app `fetch`es `data/*.geojson`, so `file://` fails): serve over HTTP, then open `index.html` (built) or `dev.html` (live JSX).
   ```bash
   python3 -m http.server 8123    # .claude/launch.json defines this as the "map-editor" config
   ```
-- **No build, no `npm install`, no test suite, no linter.** It is a static site; React 18 + Babel-standalone + D3 + topojson + polygon-clipping load from CDN and the `js/` files are served as-is.
-- **Deploy:** run `python3 tools/stamp_assets.py` (rewrites both HTML entries with a content-hash `?v=` on every local `js/`/`css/` asset), then push to `main` → GitHub Pages serves the repo root. **Without the stamp a returning visitor keeps the cached old `js/*` and the deploy looks like a no-op** — Pages sends `cache-control: max-age=600` and nothing else busts it. `index.html` is the Pages entry and is a byte-identical copy of `Map Editor.html`; `stamp_assets.py` writes both. The sandboxed preview browser cannot load the github.io URL — verify deploys with `curl`/`gh` (HTTP 200 + grep the deployed `js/`).
+- **No test suite, no linter.**
+- **Deploy:** `npm run build`, commit, push to `main` → GitHub Pages serves the repo root. The sandboxed preview browser cannot load the github.io URL — verify deploys with `curl`/`gh` (HTTP 200 + grep the deployed `js/`).
+- **PWA / service worker** (`js/pwa.js`, `sw.js`): shell assets are precached and served cache-first (hashed URLs); `data/*.geojson` is cached on first use (cache `af-data-v1`); navigations are network-first with an offline fallback. A new version waits until the user taps "Reload" in the banner. The in-app preview browser cannot register service workers — test offline behaviour with headless Chrome (e.g. puppeteer-core against a local server, `page.setOfflineMode(true)`).
 - **Regenerate map data** (rarely): `python3 tools/build_*.py` then `npx mapshaper` to simplify. Source mods live in git-ignored folders (`OWB_helping_files/`, `World_helping_files/`); the app only ever loads from `data/`. Base datasets are never modified by the editor.
   - AGOT (CK3): `python3 tools/build_agot_from_mod.py` + `tools/build_agot_terrain.py`, both reading `map_data_agot/` through **`tools/agot_source.py`, which composites the official base mod with the submod folders nested inside it** (`LAYERS`, in priority order). The official map is always authoritative; every submod may only fill what the official map leaves blank (a huge impassable block = world the mod has not made yet). An earlier submod keeps its additions over a later one. Every layer's ids carry its own offset because the submods re-use the raw numbers for different places.
     - Title hierarchy: base + LoV carry it in the banner comments of `provinces/*.txt` (two different formats — `parse_base` / `parse_overlay`). The Summer Isles and Essos Expanded ship **no titles at all**, so the builder derives them: Summer Isles = one county per named barony, duchies = the landmasses; Essos Expanded = kingdom per culture (its only real per-province data), duchy per contiguous stretch of that culture, counties k-means-clustered to `FAR_EAST_COUNTY` baronies so the far east stays as paintable as the rest. Derived titles carry `generated: true`.
@@ -20,9 +28,9 @@ AtlasForge is a browser-based editor for political / historical / alternate-hist
 
 ## Architecture
 
-No-build, in-browser app. Everything hangs off `window` globals; there are no modules/imports.
+Static site, classic scripts (JSX precompiled by `npm run build`). Everything hangs off `window` globals; there are no modules/imports.
 
-**Load order** (from `index.html` / `Map Editor.html`): CDN libs → `js/i18n.js` → `core.js` → `geo.js` → `regions.js` → `export.js` → `edit.js` → `world.js` → *(Babel)* `map.jsx` → `world.jsx` → `panels.jsx` → `chrome.jsx` → `app.jsx`. `.js` files are plain `<script src>`; `.jsx` files are `type="text/babel"` and transpiled in the browser at load.
+**Load order** (from `index.html` / `Map Editor.html`): `vendor/` libs → `js/i18n.js` → `core.js` → `pwa.js` → `geo.js` → `regions.js` → `export.js` → `edit.js` → `world.js` → `build/map.js` → `build/world.js` → `build/panels.js` → `build/chrome.js` → `build/app.js` (the last five are `js/*.jsx` precompiled). Edit the sources in `js/`, never `build/`.
 
 **Global singletons:** `App` (state, `App.version`, `emit`/`subscribe`), `Actions` (every mutation + undo/redo), `Geo`, `RegionModel`, `GeomEdit`, `Exports`, `ColorUtil`, `BASEMAPS`, `MAP_STYLES`, `t()`. React components read `App.version` via `useSyncExternalStore`; **all state changes go through `Actions.mut(fn, opts)`** (the single write + undo entry point) — never mutate `App.project` directly.
 
@@ -55,5 +63,6 @@ No-build, in-browser app. Everything hangs off `window` globals; there are no mo
 
 ## Verifying changes in the browser
 
+- **Rebuild first:** `index.html` runs `build/*.js`; after editing a `.jsx` run `npm run build` (or test on `dev.html`).
 - **Stale-JS cache:** a same-port reload serves cached `js/*` (both plain scripts *and* the Babel `.jsx`). To pick up edits reliably, load on a **fresh port** (new origin = fresh cache) — start another `python3 -m http.server <newport>` and navigate there.
 - **Screenshots lag React:** confirm state by reading `App.*` / the DOM via `javascript_tool` / `read_page`, not from a screenshot taken right after an action.

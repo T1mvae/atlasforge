@@ -468,3 +468,12 @@ body.resizing .map-stage { pointer-events: none; }
   font: 12px/1.45 ui-monospace, SFMono-Regular, Menlo, monospace;
   background: var(--panel-2); color: var(--text); border: 1px solid var(--border); border-radius: 8px; padding: 10px;
 }
+
+/* ---------- installable app (PWA) ---------- */
+.pwa-banner {
+  position: fixed; left: 50%; bottom: calc(56px + env(safe-area-inset-bottom)); transform: translateX(-50%);
+  z-index: 250; display: flex; align-items: center; gap: 12px; max-width: min(640px, 92vw);
+  background: var(--panel); border: 1px solid var(--border); border-radius: 12px;
+  padding: 10px 12px 10px 16px; box-shadow: var(--shadow); font-size: 13px; line-height: 1.35;
+}
+.pwa-banner .btn { flex: 0 0 auto; }

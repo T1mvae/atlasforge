@@ -83,6 +83,7 @@ function AppRoot() {
       <Timeline></Timeline>
       {App.ui.modal === "templates" && <TemplatesModal></TemplatesModal>}
       {App.ui.modal === "atlas" && window.AtlasModal && <AtlasModal></AtlasModal>}
+      <PwaBanner></PwaBanner>
       <Toast></Toast>
     </div>
   );

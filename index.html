@@ -2,34 +2,42 @@
 <html lang="ru" data-theme="dark">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>AtlasForge — редактор политических карт</title>
-<link rel="stylesheet" href="css/editor.css?v=6d0101cf6f">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#16191d">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="AtlasForge">
+<link rel="manifest" href="manifest.webmanifest?v=10553cf767">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png?v=953bc6d2b1">
+<link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png?v=3be2bf771a">
+<link rel="stylesheet" href="css/editor.css?v=dc853b29a5">
 </head>
 <body>
 <div id="root"></div>
 
-<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
-<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
-<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
-<script src="https://cdn.jsdelivr.net/npm/d3@7.9.0/dist/d3.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/topojson-client@3.1.0/dist/topojson-client.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/topojson-simplify@3.0.3/dist/topojson-simplify.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/topojson-server@3.0.1/dist/topojson-server.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/polygon-clipping@0.15.7/dist/polygon-clipping.umd.js"></script>
+<script src="vendor/react.production.min.js?v=e91b261662"></script>
+<script src="vendor/react-dom.production.min.js?v=7d4842a904"></script>
+<script src="vendor/d3.min.js?v=69faba9d2f"></script>
+<script src="vendor/topojson-client.min.js?v=7561eb0097"></script>
+<script src="vendor/topojson-simplify.min.js?v=7c24712513"></script>
+<script src="vendor/topojson-server.min.js?v=c10743095f"></script>
+<script src="vendor/polygon-clipping.umd.min.js?v=6aa5a82c1d"></script>
 
-<script src="js/i18n.js?v=2a1fd33b4c"></script>
+<script src="js/i18n.js?v=c8ac784ce7"></script>
 <script src="js/core.js?v=d3991c3672"></script>
-<script src="js/geo.js?v=fc852ce29b"></script>
+<script src="js/pwa.js?v=0e8b112713"></script>
+<script src="js/geo.js?v=a68a71e50b"></script>
 <script src="js/regions.js?v=e79649b7ce"></script>
 <script src="js/export.js?v=5e7c633ab4"></script>
 <script src="js/edit.js?v=bfb1feadc3"></script>
 <script src="js/world.js?v=a9349ea8cb"></script>
 
-<script type="text/babel" src="js/map.jsx?v=22efbf68c2"></script>
-<script type="text/babel" src="js/world.jsx?v=f1a6991e4a"></script>
-<script type="text/babel" src="js/panels.jsx?v=544a4a37e1"></script>
-<script type="text/babel" src="js/chrome.jsx?v=4978a34fa1"></script>
-<script type="text/babel" src="js/app.jsx?v=1c5f336ca5"></script>
+<script src="build/map.js?v=9c602926a1"></script>
+<script src="build/world.js?v=682175a27f"></script>
+<script src="build/panels.js?v=c264b97e67"></script>
+<script src="build/chrome.js?v=a13588c118"></script>
+<script src="build/app.js?v=34dcfb5dad"></script>
 </body>
 </html>

@@ -309,10 +309,34 @@ function TemplatesModal() {
   );
 }
 
+// installable app: "new version ready" + "add to Home Screen" (Safari on iPad)
+function PwaBanner() {
+  useStore();
+  const P = window.PWA;
+  if (!P) return null;
+  if (P.updateReady) {
+    return (
+      <div className="pwa-banner">
+        <span>{t("pwa.updateReady")}</span>
+        <button className="btn primary" onClick={() => P.applyUpdate()}>{t("pwa.reload")}</button>
+      </div>
+    );
+  }
+  if (P.showInstallHint() && !App.ui.modal) {
+    return (
+      <div className="pwa-banner">
+        <span>{t("pwa.installHint")}</span>
+        <button className="btn outline" onClick={() => P.hideInstallHint()}>{t("pwa.dismiss")}</button>
+      </div>
+    );
+  }
+  return null;
+}
+
 function Toast() {
   useStore();
   if (!App.ui.toast) return null;
   return <div className="toast">{App.ui.toast}</div>;
 }
 
-Object.assign(window, { TopBar, Legend, Timeline, TemplatesModal, Toast });
+Object.assign(window, { TopBar, Legend, Timeline, TemplatesModal, Toast, PwaBanner });

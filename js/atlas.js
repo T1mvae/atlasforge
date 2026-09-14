@@ -62,7 +62,7 @@
     const isLand = (i) => h[i] > 0 && !lake[i];
     const cellOf = Atlas.rasterize(features);
     const cells = features.map(() => ({ n: 0, land: 0, sx: 0, sy: 0, hsum: 0, hmax: -1e9, hmaxAt: -1, tsum: 0, psum: 0,
-      bandH: [0, 0, 0, 0, 0], coverH: [0, 0, 0, 0, 0, 0], biomeH: new Map(),
+      bandH: [0, 0, 0, 0, 0], coverH: new Array(window.World.COVER_CLASSES.length).fill(0), biomeH: new Map(),
       waters: new Map(), nb: new Map(), lands: new Map(), ranges: new Map(), rivers: new Set() }));
     const land = TA.components(W, H, isLand, false);
     const water = TA.components(W, H, (i) => !isLand(i), false);
@@ -104,7 +104,8 @@
         wc.salt = true; // contains sea-level water (not only a lake surface)
       }
     }
-    water.list.forEach((c) => { if (!c.edge) c.kind = c.salt ? "sea" : "lake"; });
+    // enclosed water is a lake, unless it is as big as an inland sea (≥ 4000 cells)
+    water.list.forEach((c) => { if (!c.edge) c.kind = c.area >= 4000 ? "sea" : "lake"; });
     const inc = (m, k, v) => m.set(k, (m.get(k) || 0) + (v || 1));
     for (let y = 0; y < H; y++) {
       for (let x = 0; x < W; x++) {
@@ -168,7 +169,7 @@
     if ((cell.bandH[3] + cell.bandH[4]) / L >= 0.4) return "mountain";
     if ((cell.bandH[2] + cell.bandH[3] + cell.bandH[4]) / L >= 0.4) return "hills";
     let best = 0;
-    for (let k = 1; k < 6; k++) if (cell.coverH[k] > cell.coverH[best]) best = k;
+    for (let k = 1; k < cell.coverH.length; k++) if (cell.coverH[k] > cell.coverH[best]) best = k;
     return window.World.COVER_CLASSES[best];
   };
 
@@ -249,8 +250,8 @@
     en: ["east", "north-east", "north", "north-west", "west", "south-west", "south", "south-east"]
   };
   const TERR = {
-    ru: { plains: "равнины", forest: "леса", desert: "пустыни", marsh: "болота", tundra: "тундра", jungle: "джунгли", hills: "холмы", mountain: "горы", high: "высокогорья" },
-    en: { plains: "plains", forest: "forest", desert: "desert", marsh: "marsh", tundra: "tundra", jungle: "jungle", hills: "hills", mountain: "mountains", high: "high mountains" }
+    ru: { plains: "равнины", forest: "леса", desert: "пустыни", marsh: "болота", tundra: "тундра", jungle: "джунгли", taiga: "тайга", savanna: "саванна", glacier: "ледники", hills: "холмы", mountain: "горы", high: "высокогорья" },
+    en: { plains: "plains", forest: "forest", desert: "desert", marsh: "marsh", tundra: "tundra", jungle: "jungle", taiga: "taiga", savanna: "savanna", glacier: "glaciers", hills: "hills", mountain: "mountains", high: "high mountains" }
   };
   Atlas.BIOME_NAMES = {
     ru: ["вода", "ледники", "тундра", "тайга", "холодная пустыня", "полупустыня", "степи и луга", "лиственные леса",
@@ -330,9 +331,12 @@
     const ranges = an.ranges.filter((c) => c.area >= 20).sort((a, b) => b.area - a.area);
     const rangeLabel = {};
     ranges.forEach((c, i) => { rangeLabel[c.id] = rangeName[c.id] || (ru ? "Горы " : "Mountains ") + (i + 1); });
+    // unnamed rivers get a number no named river already uses ("Река 1" is a default name)
     const riverLabel = {};
+    const taken = new Set(an.rivers.map((ri) => ri.rv.name).filter(Boolean));
     let rn = 0;
-    an.rivers.forEach((ri) => { riverLabel[ri.k] = ri.rv.name || (ru ? "Река " : "River ") + (++rn); });
+    const nextName = () => { let nm; do { nm = (ru ? "Река " : "River ") + (++rn); } while (taken.has(nm)); return nm; };
+    an.rivers.forEach((ri) => { riverLabel[ri.k] = ri.rv.name || nextName(); });
     return { totalLand, lands, landLabel, waters, waterLabel, ranges, rangeLabel, riverLabel };
   };
 
@@ -364,14 +368,14 @@
     const stName = (sid) => (sid ? p.states[sid].name : (ru ? "ничейные земли" : "unclaimed land"));
     const cellC = (i) => { const c = an.cells[i]; return c.land ? [c.sx / c.land, c.sy / c.land] : [0, 0]; };
     const terrainPct = (list) => {
-      const hh = { plains: 0, forest: 0, desert: 0, marsh: 0, tundra: 0, jungle: 0, hills: 0, mountain: 0, high: 0 };
+      const hh = { plains: 0, forest: 0, desert: 0, marsh: 0, tundra: 0, jungle: 0, taiga: 0, savanna: 0, glacier: 0, hills: 0, mountain: 0, high: 0 };
       let tot = 0;
       list.forEach((i) => {
         const c = an.cells[i];
         tot += c.land;
         hh.high += c.bandH[4]; hh.mountain += c.bandH[3]; hh.hills += c.bandH[2];
         const low = c.land ? c.bandH[1] / c.land : 0;
-        for (let k = 0; k < 6; k++) hh[World.COVER_CLASSES[k]] += c.coverH[k] * low;
+        for (let k = 0; k < World.COVER_CLASSES.length; k++) hh[World.COVER_CLASSES[k]] += c.coverH[k] * low;
       });
       if (!tot) return "";
       return Object.keys(hh).map((k) => [k, hh[k] / tot]).filter((e) => e[1] >= 0.05).sort((a, b) => b[1] - a[1])
@@ -462,21 +466,21 @@
         const cellsHere = [...c.cells.keys()].sort((a, b) => c.cells.get(b) - c.cells.get(a));
         const owners = [...new Set(cellsHere.map(ownerOf).filter(Boolean))].map((o) => p.states[o].name);
         const peak = at(c.hmaxAt);
-        const snowy = c.high / c.area >= 0.1;
+        const snowy = c.hmax >= (+w.snowline || 4200) - 200;
         L.push(ru
           ? `- **${N.rangeLabel[c.id]}** — ${mapPosition(lang, cx, cy)} карты, тянутся ${orientation(lang, ax.ang)} на ~${fmt(Math.max(ax.len, 1) * km)} км. Высшая вершина ${m(c.hmax)} (${fmt(peak[0] * km)}, ${fmt(peak[1] * km)})${snowy ? ", вершины в снегах" : ""}.${cellsHere.length ? ` Провинции: ${listJoin(cellsHere.slice(0, 12).map(provName))}${cellsHere.length > 12 ? " и др" : ""}.` : ""}${owners.length ? ` Государства: ${listJoin(owners)}.` : ""}`
           : `- **${N.rangeLabel[c.id]}** — ${mapPosition(lang, cx, cy)} of the map, running ${orientation(lang, ax.ang)} for ~${fmt(Math.max(ax.len, 1) * km)} km. Highest peak ${m(c.hmax)} (${fmt(peak[0] * km)}, ${fmt(peak[1] * km)})${snowy ? ", snow-capped" : ""}.${cellsHere.length ? ` Provinces: ${listJoin(cellsHere.slice(0, 12).map(provName))}${cellsHere.length > 12 ? " etc" : ""}.` : ""}${owners.length ? ` States: ${listJoin(owners)}.` : ""}`);
       });
       L.push("");
     }
-    const bigRivers = an.rivers.filter((ri) => ri.rv.hand || ri.rv.name || (ri.rv.order || 0) >= 2 || ri.len >= 25);
+    const bigRivers = an.rivers.filter((ri) => ri.rv.name || ri.rv.major || ri.len >= 25);
     if (bigRivers.length) {
       L.push(ru ? "### Реки" : "### Rivers");
       bigRivers.sort((a, b) => b.len - a.len).forEach((ri) => {
         const path = ri.cells.map((i) => `${provName(i)} (${stName(ownerOf(i))})`);
         const into = ri.rv.into >= 0 ? an.rivers.find((x) => x.rv.index === ri.rv.into) : null;
         const mouth = into ? N.riverLabel[into.k] : ri.mouthWater >= 0 ? (N.waterLabel[ri.mouthWater] || (ru ? "водоём" : "a body of water")) : null;
-        const navigable = (ri.rv.order || 0) >= 4 || (ri.rv.flux && ri.rv.flux >= (+w.riverThreshold || 60) * 12);
+        const navigable = World.riverNavigable(ri.rv, km);
         L.push(ru
           ? `- **${N.riverLabel[ri.k]}** — ~${fmt(ri.len * km)} км${ri.rv.order ? `, порядок ${ri.rv.order}` : ""}${navigable ? ", судоходна" : ""}. ${ri.sourceHeight > 0 ? `Исток на высоте ${m(ri.sourceHeight)}. ` : ""}${path.length ? `От истока к устью: ${path.join(" → ")}. ` : ""}${mouth ? `Впадает в: ${mouth}.` : ""}`
           : `- **${N.riverLabel[ri.k]}** — ~${fmt(ri.len * km)} km${ri.rv.order ? `, order ${ri.rv.order}` : ""}${navigable ? ", navigable" : ""}. ${ri.sourceHeight > 0 ? `Source at ${m(ri.sourceHeight)}. ` : ""}${path.length ? `Source to mouth: ${path.join(" → ")}. ` : ""}${mouth ? `Flows into: ${mouth}.` : ""}`);

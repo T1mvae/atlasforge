@@ -32,6 +32,7 @@ function AppRoot() {
         return;
       }
       if (k === "escape") {
+        if (window.World && World.preview && !App.ui.modal) { World.cancelGeography(); return; }
         if (App.ui.roadFrom) { Actions.ui({ roadFrom: null }); return; }
         if (App.ui.card) { Actions.ui({ card: null }); return; }
         if (App.ui.geomDraw) { App.ui.geomDraw = null; Actions.ui({ tool: "select" }); return; }
@@ -89,6 +90,7 @@ function AppRoot() {
       {App.ui.modal === "templates" && <TemplatesModal></TemplatesModal>}
       {App.ui.modal === "library" && <LibraryModal></LibraryModal>}
       {App.ui.modal === "atlas" && window.AtlasModal && <AtlasModal></AtlasModal>}
+      {App.ui.modal === "geo" && window.GeoSheet && <GeoSheet></GeoSheet>}
       <PwaBanner></PwaBanner>
       <Toast></Toast>
     </div>

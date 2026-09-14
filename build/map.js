@@ -193,7 +193,10 @@ var TERRAIN_COLORS = {
   urban: "#b08f8a",
   tundra: "#cfd8d2",
   lakes: "#8fb6cf",
-  ocean: "#9fc1d6"
+  ocean: "#9fc1d6",
+  taiga: "#55805d",
+  savanna: "#cbbd7a",
+  glacier: "#e8eef2"
 };
 
 // Province fill, chosen by the project display mode. Region display modes mute the
@@ -1564,7 +1567,7 @@ function MapView() {
           _mx7 = _clientToMap16[0],
           _my7 = _clientToMap16[1];
         var tolData = (g.finger || e.pointerType === "touch" ? 16 : 8) / Math.max(0.0001, _k * World.mapUnitsPerCell() * (svgRef.current.getScreenCTM().a || 1));
-        var rv = World.riverAt(World.mapToGrid([_mx7, _my7]), tolData);
+        var rv = World.preview ? null : World.riverAt(World.mapToGrid([_mx7, _my7]), tolData);
         if (rv) {
           Actions.ui({
             card: {
@@ -2686,7 +2689,7 @@ function MapView() {
         tool: "select"
       });
     }
-  }, t("edit.cancel"))), worldOn && App.ui.tool === "world" && window.WorldPalette && /*#__PURE__*/React.createElement(WorldPalette, null), App.ui.tool === "place" && window.ObjectPalette && ready && /*#__PURE__*/React.createElement(ObjectPalette, null), window.RoadModeBar && /*#__PURE__*/React.createElement(RoadModeBar, null), window.WorldCard && /*#__PURE__*/React.createElement(WorldCard, null), /*#__PURE__*/React.createElement("div", {
+  }, t("edit.cancel"))), worldOn && App.ui.tool === "world" && window.WorldPalette && /*#__PURE__*/React.createElement(WorldPalette, null), worldOn && (World.preview || World.geoBusy) && window.GeoBar && /*#__PURE__*/React.createElement(GeoBar, null), App.ui.tool === "place" && window.ObjectPalette && ready && /*#__PURE__*/React.createElement(ObjectPalette, null), window.RoadModeBar && /*#__PURE__*/React.createElement(RoadModeBar, null), window.WorldCard && /*#__PURE__*/React.createElement(WorldCard, null), /*#__PURE__*/React.createElement("div", {
     className: "minimap",
     onPointerDown: onMinimapClick
   }, /*#__PURE__*/React.createElement("canvas", {

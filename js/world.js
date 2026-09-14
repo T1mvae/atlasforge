@@ -1,17 +1,21 @@
-// AtlasForge — custom world: paint terrain with a stylus, simulate climate and rivers,
-// cut the land into provinces that respect ridges, export a text atlas for AI.
+// AtlasForge — custom world: paint terrain with a stylus, make it geographically plausible
+// on request, cut the land into provinces that respect ridges, export a text atlas for AI.
 //
+// What is painted is what the map shows: nothing is simulated behind the painter's back.
 // Model (project.world, version 2):
 //   height — Int16 metres above datum on a RW×RH raster (RES cells per data unit);
-//            water is where height ≤ seaLevel
-//   cover  — Uint8 painted land cover per raster cell, 0 = follow the climate (biome)
-//   rivers — hand-drawn river guides (polylines in data units); with automatic rivers
-//            on they are carved into the terrain and lend their names to the flow
+//            water (seas and lakes) is where height ≤ seaLevel
+//   cover  — Uint8 painted land cover per raster cell (COVER), 0 = nothing painted
+//   rivers — rivers as polylines in data units, source → mouth; the eraser removes any
+//            of them. `auto: true` marks rivers the geography pass added.
+// "Поправить географию" (World.runGeography → TA.geography in the worker) returns edited
+// copies of all three; they are previewed on a second canvas and committed as one undo
+// step (World.applyGeography) — or thrown away.
 // The rasters live in memory (World.height / World.cover); they are copied into
 // project.world.rasters only when the project is saved (World.pack) and never enter
 // the JSON undo slice — raster edits have their own diff entries in the undo stack.
-// Analysis (climate, hydrology, provinces, atlas) runs on the data grid GW×GH
-// (1000 × 510, one cell per data unit) in js/terrain.worker.js.
+// Analysis (basins for provinces, climate for the atlas) runs on demand on the data
+// grid GW×GH (1000 × 510, one cell per data unit) in js/terrain.worker.js.
 (function () {
   const App = window.App;
   const Actions = window.Actions;
@@ -22,28 +26,37 @@
   const RW = GW * RES, RH = GH * RES;
   const HMIN = -8000, HMAX = 9000;
 
-  // painted cover values (0 = climate decides)
-  const COVER = ["auto", "plains", "forest", "desert", "marsh", "tundra", "jungle"];
-  const COVER_CLASSES = ["plains", "forest", "desert", "marsh", "tundra", "jungle"]; // analysis classes
+  // painted cover values (0 = nothing painted); indices match TA.COVER_OF_BIOME
+  const COVER = ["none", "plains", "forest", "desert", "marsh", "tundra", "jungle", "taiga", "savanna", "glacier"];
+  const COVER_CLASSES = COVER.slice(1); // analysis classes (unpainted land counts as plains)
 
   const RELIEF_BRUSHES = ["land", "sea", "plains", "hills", "mountains", "peaks", "ridge", "valley", "raise", "lower", "smooth"];
-  const COVER_BRUSHES = ["autoCover", "meadow", "forest", "desert", "marsh", "tundra", "jungle"];
+  // index in this list = the cover value the brush paints ("autoCover" erases the cover)
+  const COVER_BRUSHES = ["autoCover", "meadow", "forest", "desert", "marsh", "tundra", "jungle", "taiga", "savanna", "glacier"];
   const WATER_BRUSHES = ["river", "eraseRiver"];
   const BRUSHES = RELIEF_BRUSHES.concat(COVER_BRUSHES, WATER_BRUSHES);
-  const COVER_OF_BRUSH = { autoCover: 0, meadow: 1, forest: 2, desert: 3, marsh: 4, tundra: 5, jungle: 6 };
+  const COVER_OF_BRUSH = {};
+  COVER_BRUSHES.forEach((b, i) => { COVER_OF_BRUSH[b] = i; });
   const LINE_BRUSHES = { ridge: 1, valley: 1, river: 1 };
   const BRUSH_SWATCH = {
     land: "#b9c282", sea: "#4a7aa8", plains: "#c9cf95", hills: "#b09a6c", mountains: "#8c7e70", peaks: "#eef1f3",
     ridge: "#7a6b5c", valley: "#9dbb86", raise: "#c2a878", lower: "#7d9fb8", smooth: "#9aa3ad",
-    autoCover: "#a8b98a", meadow: "#b9c47f", forest: "#5f9150", desert: "#e2cc8e", marsh: "#849c76", tundra: "#cdd4c8", jungle: "#3f7f4a",
+    autoCover: "#c4c795", meadow: "#b9c47f", forest: "#5f9150", desert: "#e2cc8e", marsh: "#849c76", tundra: "#cdd4c8", jungle: "#3f7f4a",
+    taiga: "#4f7a5a", savanna: "#cdbd78", glacier: "#e9f0f5",
     river: "#3f77b3", eraseRiver: "#c65a5a"
   };
+  // the options of the geography pass and their defaults
+  const GEO_DEFAULTS = { fixRivers: true, addRivers: true, density: 0.5, lakes: true, biomes: true, foothills: true, erosion: false };
 
   const World = (window.World = {
     GW, GH, RES, RW, RH, COVER, COVER_CLASSES, BRUSHES, RELIEF_BRUSHES, COVER_BRUSHES, WATER_BRUSHES, BRUSH_SWATCH,
     height: null, cover: null, canvas: null, ctx: null,
-    hydro: null,          // latest worker result (see onHydro)
+    hydro: null,          // latest analysis from the worker (basins, climate) — never drawn
     rasterRev: 0,         // bumps on every raster change
+    preview: null,        // pending geography pass: { height, cover, rivers, report, opts }
+    compare: false,       // while previewing: show the map as it was
+    geoBusy: false,
+    previewCanvas: null,
     penSeen: false, renderRev: 0
   });
 
@@ -51,13 +64,14 @@
     return {
       version: 2, rivers: [], riverNames: {}, scaleKm: 5, cellSize: 18,
       seed: (Math.random() * 1e9) | 0, rev: 0, genRev: null,
-      seaLevel: 0,
+      seaLevel: 0, snowline: 4200,
       climate: { latTop: 70, latBottom: -10, tEquator: 27, tPole: -28 },
-      autoRivers: true, riverThreshold: 60,
+      geoOpts: Object.assign({}, GEO_DEFAULTS),
       provinceOpts: { mountains: "sides", riversAsBorders: false, citySeeds: true },
       rasters: null
     };
   };
+  World.GEO_DEFAULTS = GEO_DEFAULTS;
 
   World.active = function () {
     const p = App.project;
@@ -134,10 +148,16 @@
   }
 
   function ensureDefaults(w) {
+    // worlds from the version that simulated rivers, lakes and biomes on every stroke:
+    // those now appear only through the geography pass (the palette explains it once)
+    if ("autoRivers" in w) w.legacyAuto = true;
+    delete w.autoRivers;
+    delete w.riverThreshold;
     const d = World.newWorldData();
     for (const k in d) if (w[k] === undefined && k !== "rasters") w[k] = d[k];
     w.climate = Object.assign({}, d.climate, w.climate || {});
     w.provinceOpts = Object.assign({}, d.provinceOpts, w.provinceOpts || {});
+    w.geoOpts = Object.assign({}, GEO_DEFAULTS, w.geoOpts || {});
     if (!w.riverNames) w.riverNames = {};
   }
 
@@ -167,7 +187,6 @@
     delete w.elev; delete w.cover; delete w.w; delete w.h;
     w.version = 2;
     ensureDefaults(w);
-    w.autoRivers = !(w.rivers && w.rivers.length); // keep a hand-drawn river network as it was
   }
 
   function blur(x0, y0, x1, y1, passes) {
@@ -183,7 +202,7 @@
   }
 
   let loadedFor = null, settingsKey = "";
-  const keyOf = (w) => JSON.stringify([w.seaLevel, w.climate, w.autoRivers, w.riverThreshold]);
+  const keyOf = (w) => JSON.stringify([w.seaLevel, w.snowline]); // settings the picture depends on
   // bring the in-memory rasters in line with the open project (open, import, undo)
   World.sync = function (force) {
     if (!World.active()) return false;
@@ -191,6 +210,8 @@
     ensureBuffers();
     if (force || loadedFor !== p) {
       loadedFor = p;
+      World.preview = null;
+      World.compare = false;
       if (w.version !== 2) {
         ensureBuffers();
         World.height.fill(-1500); World.cover.fill(0);
@@ -217,14 +238,13 @@
       World.hydro = null;
       settingsKey = keyOf(w);
       World.renderAll();
-      World.requestHydro(0);
       return true;
     }
     const k = keyOf(w);
     if (k !== settingsKey) {
       settingsKey = k;
       World.renderAll();
-      World.requestHydro(150);
+      if (World.preview) renderPreview();
     }
     return false;
   };
@@ -260,7 +280,6 @@
   function changed(x0, y0, x1, y1) {
     World.rasterRev++;
     markDirty(x0, y0, x1, y1);
-    World.requestHydro(450);
     if (App.project && App.project.world) App.project.world.rev = (App.project.world.rev || 0) + 1;
     window.scheduleSave();
   }
@@ -295,21 +314,24 @@
   }
 
   // ---------------- rendering ----------------
-  const BIOME_COLOR = [null, "#eef3f6", "#b9c0ae", "#5f8160", "#c9c2a3", "#d8c79c", "#b7c47e",
-    "#6e9a57", "#4d8a56", "#e4cc8e", "#cdbd78", "#7ea655", "#3f7d46", "#7f9c7b"].map((c) => (c ? hex(c) : null));
-  const COVER_COLOR = [null, "#b9c47f", "#638f53", "#e0c98c", "#809a76", "#c6cdc0", "#43824c"].map((c) => (c ? hex(c) : null));
-  const ROCK = hex("#8f8173"), SNOW = hex("#f3f6f8"), SHALLOW = hex("#90c1da"), MID = hex("#5d9bc5"), DEEP = hex("#35699a"), LAKE = hex("#78abd0");
+  // purely a picture of the rasters: unpainted land takes a neutral tone, snow lies above
+  // the snow line, lakes are water like the sea
+  const COVER_COLOR = [hex("#c4c795"), "#b9c47f", "#638f53", "#e0c98c", "#809a76", "#c6cdc0", "#43824c", "#58805f", "#cbbd7a", "#e8eef2"]
+    .map((c) => (typeof c === "string" ? hex(c) : c));
+  const ROCK = hex("#8f8173"), SNOW = hex("#f3f6f8"), SHALLOW = hex("#90c1da"), MID = hex("#5d9bc5"), DEEP = hex("#35699a");
+  const GLACIER = 9;
 
-  function paintRect(x0, y0, x1, y1) {
+  // paint a raster rectangle of heights Hh / cover C into ctx (the terrain canvas or the preview)
+  function paintRect(x0, y0, x1, y1, Hh, C, ctx) {
     ensureBuffers();
+    Hh = Hh || World.height; C = C || World.cover; ctx = ctx || World.ctx;
     x0 = clamp(x0, 0, RW - 1); y0 = clamp(y0, 0, RH - 1); x1 = clamp(x1, 0, RW - 1); y1 = clamp(y1, 0, RH - 1);
     const w = x1 - x0 + 1, h = y1 - y0 + 1;
     if (w <= 0 || h <= 0) return;
-    const img = World.ctx.createImageData(w, h);
+    const img = ctx.createImageData(w, h);
     const data = img.data;
-    const Hh = World.height, C = World.cover;
     const sl = sea();
-    const hy = World.hydro;
+    const snowline = +W0().snowline || 4200;
     const cellM = ((+W0().scaleKm || 5) * 1000) / RES;
     const zf = 5.5 / cellM; // exaggerated relief
     let o = 0;
@@ -318,7 +340,6 @@
       for (let x = x0; x <= x1; x++) {
         const i = y * RW + x;
         const hr = Hh[i] - sl;
-        const di = (y >> 1) * GW + (x >> 1);
         let r, g, b;
         const grain = (hash2(x, y, 7) - 0.5);
         if (hr <= 0) {
@@ -329,30 +350,23 @@
           b = SHALLOW[2] + (MID[2] - SHALLOW[2]) * t1 + (DEEP[2] - MID[2]) * t2;
           const k = grain * 4;
           r += k; g += k; b += k;
-        } else if (hy && hy.lake[di]) {
-          r = LAKE[0]; g = LAKE[1]; b = LAKE[2];
         } else {
           const cv = C[i];
-          const bio = hy ? hy.biome[di] : 0;
-          let base = cv ? COVER_COLOR[cv] : (bio ? BIOME_COLOR[bio] : COVER_COLOR[1]);
+          const base = COVER_COLOR[cv] || COVER_COLOR[0];
           r = base[0]; g = base[1]; b = base[2];
-          // bare rock with altitude
-          const rt = smoothstep(1100, 3400, hr) * 0.78;
+          // bare rock with altitude (not under a glacier)
+          const rt = cv === GLACIER ? 0 : smoothstep(1100, 3400, hr) * 0.78;
           r += (ROCK[0] - r) * rt; g += (ROCK[1] - g) * rt; b += (ROCK[2] - b) * rt;
-          // snow: cold enough at this height (climate), else a plain height snowline
-          let snow;
-          if (hy) {
-            const t = hy.temp[di] - 6.5 * (hr - Math.max(0, hy.hgrid ? hy.hgrid[di] : hr)) / 1000;
-            snow = 0.92 * smoothstep(-4, -11, t + (vnoise(x / 3, y / 3, 11) - 0.5) * 4);
-          } else {
-            snow = smoothstep(3800, 5200, hr + (vnoise(x / 3, y / 3, 11) - 0.5) * 600);
-          }
+          const snow = smoothstep(snowline - 400, snowline + 900, hr + (vnoise(x / 3, y / 3, 11) - 0.5) * 600);
           if (snow > 0) { r += (SNOW[0] - r) * snow; g += (SNOW[1] - g) * snow; b += (SNOW[2] - b) * snow; }
-          // Horn hillshade, light from the north-west
+          // Horn hillshade, light from the north-west; water next to the shore counts as
+          // level ground, so a lake high in the hills does not throw a cliff shadow
           const xm = x > 0 ? x - 1 : x, xp = x < RW - 1 ? x + 1 : x;
-          const a1 = Hh[ym * RW + xm], a2 = Hh[ym * RW + x], a3 = Hh[ym * RW + xp];
-          const a4 = Hh[y * RW + xm], a6 = Hh[y * RW + xp];
-          const a7 = Hh[yp * RW + xm], a8 = Hh[yp * RW + x], a9 = Hh[yp * RW + xp];
+          const hc = Hh[i];
+          const at = (j) => (Hh[j] <= sl ? hc : Hh[j]);
+          const a1 = at(ym * RW + xm), a2 = at(ym * RW + x), a3 = at(ym * RW + xp);
+          const a4 = at(y * RW + xm), a6 = at(y * RW + xp);
+          const a7 = at(yp * RW + xm), a8 = at(yp * RW + x), a9 = at(yp * RW + xp);
           const dzdx = ((a3 + 2 * a6 + a9) - (a1 + 2 * a4 + a7)) / 8 * zf;
           const dzdy = ((a7 + 2 * a8 + a9) - (a1 + 2 * a2 + a3)) / 8 * zf;
           const len = Math.sqrt(dzdx * dzdx + dzdy * dzdy + 1);
@@ -364,14 +378,14 @@
           if ((x > 0 && Hh[i - 1] <= sl) || (x < RW - 1 && Hh[i + 1] <= sl) || (y > 0 && Hh[i - RW] <= sl) || (y < RH - 1 && Hh[i + RW] <= sl)) {
             r = r * 0.72 + 20; g = g * 0.72 + 22; b = b * 0.72 + 20;
           }
-          const k = grain * (cv === 2 || cv === 6 || bio === 3 || bio === 7 || bio === 8 || bio === 11 || bio === 12 ? 18 : 9);
+          const k = grain * (cv === 2 || cv === 6 || cv === 7 ? 18 : 9);
           r += k; g += k; b += k;
         }
         data[o] = r; data[o + 1] = g; data[o + 2] = b; data[o + 3] = 255;
         o += 4;
       }
     }
-    World.ctx.putImageData(img, x0, y0);
+    ctx.putImageData(img, x0, y0);
   }
 
   World.renderAll = function () {
@@ -501,6 +515,7 @@
   World.strokeActive = () => !!stroke;
   World.strokeStart = function (g, pressure, pointerType, altitude) {
     if (!World.active()) return;
+    if (World.preview || World.geoBusy) { Actions.toast(t("world.geo.busyPaint")); return; }
     ensureBuffers();
     notePressure(pressure, pointerType);
     const brush = App.ui.worldBrush || "land";
@@ -572,9 +587,8 @@
     const riversChanged = riversAfter !== s.riversBefore;
     if (s.bbox[2] < 0) {
       if (riversChanged) {
-        const put = (json) => { const v = JSON.parse(json); w.rivers = v.rivers; w.riverNames = v.names; World.requestHydro(100); window.scheduleSave(); };
+        const put = (json) => { const v = JSON.parse(json); w.rivers = v.rivers; w.riverNames = v.names; window.scheduleSave(); };
         Actions.pushUndoEntry({ kind: "rivers", bytes: riversAfter.length * 2, undo: () => put(s.riversBefore), redo: () => put(riversAfter) });
-        World.requestHydro(100);
         window.scheduleSave();
       }
       App.emit();
@@ -661,45 +675,48 @@
     s.bbox = [Math.min(s.bbox[0], bbox[0]), Math.min(s.bbox[1], bbox[1]), Math.max(s.bbox[2], bbox[2]), Math.max(s.bbox[3], bbox[3])];
   }
 
+  // is there water (sea or lake) within rad data units of a data point?
+  function waterNear(p, rad) {
+    const Hh = World.height, sl = sea();
+    if (!Hh) return false;
+    const r = Math.ceil(rad * RES), cx = Math.floor(p[0] * RES), cy = Math.floor(p[1] * RES);
+    for (let dy = -r; dy <= r; dy++) {
+      const y = cy + dy;
+      if (y < 0 || y >= RH) continue;
+      for (let dx = -r; dx <= r; dx++) {
+        const x = cx + dx;
+        if (x < 0 || x >= RW || dx * dx + dy * dy > r * r) continue;
+        if (Hh[y * RW + x] <= sl) return true;
+      }
+    }
+    return false;
+  }
+  function nearestRiverPoint(rivers, p, tol) {
+    let best = null;
+    rivers.forEach((rv) => {
+      const hit = TA.nearestOnPolyline(rv.pts, p, best ? best.d : tol);
+      if (hit && (!best || hit.d < best.d)) best = hit;
+    });
+    return best;
+  }
+
+  // A drawn river is just a line: nothing is carved. It is read the way it was meant —
+  // a stroke that starts at the sea or on another river and ends inland was drawn from
+  // the mouth, so it is turned round; a mouth on another river joins it exactly.
   function finishRiver(s) {
     const pts0 = s.pts;
     if (pts0.length < 2 || polylineLength(pts0) < 3) return;
-    const pts = TA.rdp(TA.chaikin(pts0, 2, false), 0.18).map((q) => [r2(q[0]), r2(q[1])]);
+    let pts = TA.rdp(TA.chaikin(pts0, 2, false), 0.18).map((q) => [r2(q[0]), r2(q[1])]);
     const w = W0();
-    const n = (w.rivers || []).length + 1;
+    const others = w.rivers || [];
+    const startsOnWater = waterNear(pts[0], 1.2) || !!nearestRiverPoint(others, pts[0], 1.2);
+    const endsOnWater = waterNear(pts[pts.length - 1], 1.2) || !!nearestRiverPoint(others, pts[pts.length - 1], 1.2);
+    if (startsOnWater && !endsOnWater) pts.reverse();
+    const join = nearestRiverPoint(others, pts[pts.length - 1], 1.2);
+    if (join) pts[pts.length - 1] = [r2(join.point[0]), r2(join.point[1])];
+    const n = others.filter((r) => r.name).length + 1;
     const name = t("world.riverDefault").replace("{n}", n);
-    w.rivers = (w.rivers || []).concat([{ id: window.uid(), name, pts, width: 1 }]);
-    // carve a bed that keeps falling from source to mouth, so the simulated flow follows it
-    const Hh = World.height, sl = sea();
-    const L = polylineLength(pts);
-    const samples = Math.max(2, Math.ceil(L * RES * 2));
-    const bed = new Float32Array(samples + 1);
-    let cur = Infinity;
-    const at = (tt) => {
-      let acc = 0;
-      for (let k = 1; k < pts.length; k++) {
-        const seg = Math.hypot(pts[k][0] - pts[k - 1][0], pts[k][1] - pts[k - 1][1]);
-        if (acc + seg >= tt * L) { const u = seg ? (tt * L - acc) / seg : 0; return [pts[k - 1][0] + (pts[k][0] - pts[k - 1][0]) * u, pts[k - 1][1] + (pts[k][1] - pts[k - 1][1]) * u]; }
-        acc += seg;
-      }
-      return pts[pts.length - 1];
-    };
-    for (let k = 0; k <= samples; k++) {
-      const p = at(k / samples);
-      const x = clamp(Math.floor(p[0] * RES), 0, RW - 1), y = clamp(Math.floor(p[1] * RES), 0, RH - 1);
-      cur = Math.min(cur - 2, Hh[y * RW + x] - 6);
-      bed[k] = cur;
-    }
-    const bbox = lineField(pts, 1.2, (i, d, along) => {
-      const target = bed[Math.round(along * samples)];
-      if (Hh[i] > target && Hh[i] > sl) Hh[i] = Math.max(Math.round(target + (Hh[i] - target) * d * 0.7), sl + 1);
-    });
-    s.bbox = [Math.min(s.bbox[0], bbox[0]), Math.min(s.bbox[1], bbox[1]), Math.max(s.bbox[2], bbox[2]), Math.max(s.bbox[3], bbox[3])];
-    // with simulated rivers on, the stroke names the river that forms along it
-    if (w.autoRivers) {
-      const mid = pts[Math.floor(pts.length * 0.6)];
-      w.riverNames = Object.assign({}, w.riverNames, { ["h" + Date.now().toString(36)]: { name, anchor: [r2(mid[0]), r2(mid[1])] } });
-    }
+    w.rivers = others.concat([{ id: window.uid(), name, pts, width: 1 }]);
   }
 
   // the brush that would paint what is under a data point (finger long-press)
@@ -737,7 +754,6 @@
     pushRasterUndo(0, 0, RW - 1, RH - 1, hb, cb, riversAfter !== riversBefore ? { riversBefore, riversAfter } : null);
     World.rasterRev++;
     W0().rev = (W0().rev || 0) + 1;
-    World.requestHydro(50);
     window.scheduleSave();
     App.emit();
   }
@@ -779,7 +795,7 @@
   };
 
   // ---------------- terrain worker ----------------
-  let worker = null, workerReady = null, hydroTimer = null, hydroRev = 0;
+  let worker = null, workerReady = null, hydroRev = 0, geoRev = 0;
   const pending = new Map(); // job rev -> resolve
   function scriptUrl(part) {
     const el = [...document.scripts].find((s) => s.src && s.src.indexOf(part) >= 0) ||
@@ -821,95 +837,81 @@
     return TA.downsample(rel, RW, RH, RES, GW, GH);
   };
 
-  World.requestHydro = function (delay) {
-    if (!World.active()) return;
-    clearTimeout(hydroTimer);
-    hydroTimer = setTimeout(() => { World.runHydro().catch((e) => console.warn(e)); }, delay == null ? 450 : delay);
+  // Analysis of the terrain as it is (basins for smart provinces, climate for the atlas).
+  // It runs on demand and is never drawn.
+  const climateKey = () => JSON.stringify(W0().climate || {});
+  World.hydroFresh = function () {
+    const hy = World.hydro;
+    return !!(hy && hy.rasterRev === World.rasterRev && hy.climateKey === climateKey() && hy.sea === sea());
+  };
+  World.ensureAnalysis = function () {
+    return World.hydroFresh() ? Promise.resolve(World.hydro) : World.runHydro();
   };
   World.runHydro = function () {
     if (!World.active()) return Promise.resolve(null);
     const project = App.project, w = project.world;
     const rev = ++hydroRev;
-    const forRaster = World.rasterRev;
+    const forRaster = World.rasterRev, key = climateKey(), sl = sea();
     const heights = World.dataHeights();
     const hgrid = heights.slice();
-    // hand-drawn rivers are already carved into the terrain; nothing else to send
-    return runJob({ type: "hydro", rev, W: GW, H: GH, heights: heights.buffer, climate: w.climate,
-      riverThreshold: +w.riverThreshold || 60 }, [heights.buffer]).then((m) => {
+    return runJob({ type: "hydro", rev, W: GW, H: GH, heights: heights.buffer, climate: w.climate, riverThreshold: 60 },
+      [heights.buffer]).then((m) => {
       if (rev !== hydroRev || App.project !== project) return null; // superseded
-      const prev = World.hydro;
       World.hydro = {
-        rev, rasterRev: forRaster, hgrid,
-        temp: new Float32Array(m.temp), prec: new Float32Array(m.prec), biome: new Uint8Array(m.biome),
-        lake: new Uint8Array(m.lake), basin: new Int32Array(m.basin), down: new Int32Array(m.down), acc: new Float32Array(m.acc),
-        rivers: m.rivers
+        rev, rasterRev: forRaster, climateKey: key, sea: sl, hgrid,
+        temp: new Float32Array(m.temp), prec: new Float32Array(m.prec),
+        basin: new Int32Array(m.basin), down: new Int32Array(m.down), acc: new Float32Array(m.acc)
       };
-      riverGeomCache = null;
-      repaintClimateChanges(prev, World.hydro);
       App.emit();
       return World.hydro;
     });
   };
-  // repaint only the tiles whose biome, lake or snow picture changed
-  function repaintClimateChanges(prev, next) {
-    if (!prev) { World.renderAll(); return; }
-    const T = 16; // data cells per tile
-    for (let ty = 0; ty < GH; ty += T) {
-      for (let tx = 0; tx < GW; tx += T) {
-        let diff = false;
-        for (let y = ty; y < Math.min(GH, ty + T) && !diff; y++) {
-          for (let x = tx; x < Math.min(GW, tx + T); x++) {
-            const i = y * GW + x;
-            if (prev.biome[i] !== next.biome[i] || prev.lake[i] !== next.lake[i] || Math.abs(prev.temp[i] - next.temp[i]) > 1.5) { diff = true; break; }
-          }
-        }
-        if (diff) paintRect(tx * RES, ty * RES, (tx + T) * RES - 1, (ty + T) * RES - 1);
-      }
-    }
-    World.renderRev++;
-  }
 
   // ---------------- rivers for display / cards ----------------
-  let riverGeomCache = null;
-  // [{ index, name, key, pts, widths, flux, order, … }] in data units
+  // Every river is a drawn polyline (source → mouth). Their network — which river flows
+  // into which, Strahler order, length with tributaries — follows from the drawing.
+  let netCache = null;
+  function riverList(rivers) {
+    if (netCache && netCache.rivers === rivers && netCache.rasterRev === World.rasterRev && netCache.sea === sea()) return netCache.list;
+    const net = TA.riverNetwork(rivers.map((rv) => rv.pts), 1.3);
+    const list = rivers.map((rv, index) => {
+      const pts = rv.pts;
+      const up = net.upLen[index];
+      const src = pts[0], mouth = pts[pts.length - 1];
+      const atEdge = mouth[0] <= 1 || mouth[1] <= 1 || mouth[0] >= GW - 1 || mouth[1] >= GH - 1;
+      const mouthType = net.into[index] >= 0 ? "river" : waterNear(mouth, 1.2) ? "water" : atEdge ? "edge" : "land";
+      // wider downstream, and wider still below each tributary
+      const joins = net.kids[index].map((c) => [net.joinAt[c], net.upLen[c]]).sort((a, b) => a[0] - b[0]);
+      const wMouth = clamp(0.3 + 0.09 * Math.sqrt(up), 0.3, 2.4);
+      let along = 0, j = 0, inflow = 0;
+      const widths = pts.map((p, k) => {
+        if (k) along += Math.hypot(p[0] - pts[k - 1][0], p[1] - pts[k - 1][1]);
+        while (j < joins.length && joins[j][0] <= along) inflow += joins[j++][1];
+        return 0.14 + (wMouth - 0.14) * Math.pow(clamp((along + inflow) / (up || 1), 0, 1), 0.7);
+      });
+      return {
+        index, hand: true, id: rv.id, auto: !!rv.auto, pts, widths,
+        into: net.into[index], order: net.order[index], len: net.len[index], upLen: up,
+        major: up >= 30 || net.order[index] >= 3,
+        mouthType, sourceType: waterNear(src, 1.2) ? "lake" : "spring"
+      };
+    });
+    netCache = { rivers, rasterRev: World.rasterRev, sea: sea(), list };
+    return list;
+  }
+  // [{ index, id, name, notes, pts, widths, into, order, upLen, major, … }] in data units
   World.displayRivers = function () {
     if (!World.active()) return [];
+    World.sync(); // the network reads the terrain (river mouths at water): make sure it is loaded
     const w = W0();
-    if (!w.autoRivers) {
-      return (w.rivers || []).map((rv, index) => ({ index, hand: true, id: rv.id, name: rv.name, pts: rv.pts,
-        widths: rv.pts.map((_, k) => 0.2 + 0.8 * Math.pow(k / Math.max(1, rv.pts.length - 1), 0.8)) }));
-    }
-    const hy = World.hydro;
-    if (!hy) return [];
-    if (riverGeomCache && riverGeomCache.rev === hy.rev && riverGeomCache.names === w.riverNames) return riverGeomCache.list;
-    const thr = +w.riverThreshold || 60;
-    const list = hy.rivers.map((r, index) => {
-      let pts = r.cells.map((c) => [c % GW + 0.5, ((c / GW) | 0) + 0.5]);
-      if (r.mouth >= 0) pts.push([r.mouth % GW + 0.5, ((r.mouth / GW) | 0) + 0.5]);
-      const flux = r.cells.map((c) => hy.acc[c]);
-      if (r.mouth >= 0) flux.push(flux[flux.length - 1]);
-      // smooth with a gentle meander
-      const sm = TA.chaikin(pts, 2, false);
-      const fl = sm.map((_, k) => flux[Math.min(flux.length - 1, Math.round(k / Math.max(1, sm.length - 1) * (flux.length - 1)))]);
-      const widths = fl.map((f) => clamp(0.12 + 0.2 * Math.sqrt(f / thr), 0.12, 2.4));
-      return { index, pts: sm, widths, flux: r.flux, order: r.order, cells: r.cells, mouthType: r.mouthType, into: r.into, sourceType: r.sourceType, mouth: r.mouth };
-    });
-    // names: each named anchor labels the biggest river passing near it
-    Object.entries(w.riverNames || {}).forEach(([key, nm]) => {
-      if (!nm || !nm.anchor) return;
-      const ax = nm.anchor[0], ay = nm.anchor[1];
-      let best = null, bf = -1;
-      list.forEach((rv) => {
-        for (const c of rv.cells) {
-          const x = c % GW + 0.5, y = ((c / GW) | 0) + 0.5;
-          if (Math.abs(x - ax) <= 4 && Math.abs(y - ay) <= 4) { if (rv.flux > bf) { bf = rv.flux; best = rv; } break; }
-        }
-      });
-      if (best && !best.name) { best.name = nm.name; best.key = key; best.notes = nm.notes || ""; }
-    });
-    riverGeomCache = { rev: hy.rev, names: w.riverNames, list };
-    return list;
+    const rivers = World.preview && !World.compare ? World.preview.rivers : (w.rivers || []);
+    return riverList(rivers).map((r) => Object.assign({}, r, { name: rivers[r.index].name, notes: rivers[r.index].notes || "" }));
   };
+
+  // size class 0 stream · 1 river · 2 large river · 3 great river, from the length of the
+  // whole network above the mouth; navigable when big enough
+  World.riverSize = (rv, km) => { const up = (rv.upLen || 0) * km; return up < 80 ? 0 : up < 400 ? 1 : up < 1500 ? 2 : 3; };
+  World.riverNavigable = (rv, km) => (rv.order || 0) >= 4 || (rv.upLen || 0) * km >= 500;
 
   // nearest displayed river to a data point, within tol data units
   World.riverAt = function (g, tol) {
@@ -918,7 +920,7 @@
       const pts = rv.pts;
       for (let k = 0; k < pts.length - 1; k++) {
         const d = TA.distToSeg(g[0], g[1], pts[k], pts[k + 1]);
-        if (d < bd || (best && d <= bd + 0.01 && (rv.flux || 0) > (best.flux || 0))) { bd = d; best = rv; }
+        if (d < bd || (best && d <= bd + 0.01 && rv.upLen > best.upLen)) { bd = d; best = rv; }
       }
     });
     return best;
@@ -941,24 +943,22 @@
     return "M" + ring.map((q) => q[0].toFixed(2) + "," + q[1].toFixed(2)).join("L") + "Z";
   };
 
-  // name a simulated river (anchored near its middle so the name survives edits)
-  World.nameRiver = function (rv, name, notes) {
-    const w = W0();
-    const names = Object.assign({}, w.riverNames || {});
-    if (rv.key && names[rv.key]) {
-      names[rv.key] = Object.assign({}, names[rv.key], { name: name != null ? name : names[rv.key].name, notes: notes != null ? notes : names[rv.key].notes });
-    } else {
-      const c = rv.cells[Math.floor(rv.cells.length * 0.6)];
-      names["r" + Date.now().toString(36)] = { name: name || "", notes: notes || "", anchor: [c % GW + 0.5, ((c / GW) | 0) + 0.5] };
-    }
-    Actions.mut((p) => { p.world.riverNames = names; }, {});
-  };
   World.renameRiver = function (id, name) {
     Actions.mut((p) => { const rv = (p.world.rivers || []).find((r) => r.id === id); if (rv) rv.name = name; }, { undo: false });
   };
+  World.setRiverNotes = function (id, notes) {
+    Actions.mut((p) => { const rv = (p.world.rivers || []).find((r) => r.id === id); if (rv) rv.notes = notes; }, { undo: false });
+  };
   World.deleteRiver = function (id) {
-    Actions.mut((p) => { p.world.rivers = (p.world.rivers || []).filter((r) => r.id !== id); });
-    World.requestHydro(100);
+    const w = W0();
+    const before = JSON.stringify({ rivers: w.rivers || [], names: w.riverNames || {} });
+    w.rivers = (w.rivers || []).filter((r) => r.id !== id);
+    const after = JSON.stringify({ rivers: w.rivers, names: w.riverNames || {} });
+    const put = (json) => { const v = JSON.parse(json); w.rivers = v.rivers; w.riverNames = v.names; window.scheduleSave(); };
+    Actions.pushUndoEntry({ kind: "rivers", bytes: after.length * 2, undo: () => put(before), redo: () => put(after) });
+    if (App.ui.card && App.ui.card.kind === "river") App.ui.card = null;
+    window.scheduleSave();
+    App.emit();
   };
 
   // ---------------- canvas placement ----------------
@@ -972,7 +972,14 @@
     const p0 = proj([0, 0]), p1 = proj([GW, GH]);
     const X0 = ctm.a * (v.k * p0[0] + v.x) + ctm.e - hr.left, Y0 = ctm.d * (v.k * p0[1] + v.y) + ctm.f - hr.top;
     const X1 = ctm.a * (v.k * p1[0] + v.x) + ctm.e - hr.left, Y1 = ctm.d * (v.k * p1[1] + v.y) + ctm.f - hr.top;
-    cv.style.transform = `matrix(${(X1 - X0) / cv.width},0,0,${(Y1 - Y0) / cv.height},${X0},${Y0})`;
+    const tf = `matrix(${(X1 - X0) / cv.width},0,0,${(Y1 - Y0) / cv.height},${X0},${Y0})`;
+    cv.style.transform = tf;
+    const pv = World.previewCanvas;
+    if (pv) {
+      if (pv.parentNode !== host) host.appendChild(pv);
+      pv.style.transform = tf;
+      pv.style.display = World.preview && !World.compare ? "block" : "none";
+    }
   };
   World.mapToGrid = function (pt) {
     const proj = App.basemap && App.basemap.proj;
@@ -986,32 +993,31 @@
 
   // ---------------- data grid for analysis (atlas, province properties) ----------------
   let dgCache = null;
+  // what is on the map: heights, bands, painted cover classes (unpainted land = plains);
+  // climate only when a fresh analysis exists. Lakes are water in the heights, so the
+  // lake layer stays empty (kept for callers that treat lakes separately).
   World.dataGrid = function () {
-    const hy = World.hydro;
+    const fresh = World.hydroFresh();
+    const hy = fresh ? World.hydro : null;
     const key = World.rasterRev + ":" + (hy ? hy.rev : 0) + ":" + sea();
     if (dgCache && dgCache.key === key) return dgCache;
-    const h = hy && hy.rasterRev === World.rasterRev ? hy.hgrid : World.dataHeights();
+    const h = hy ? hy.hgrid : World.dataHeights();
     const N = GW * GH;
     const band = new Uint8Array(N), coverClass = new Uint8Array(N);
     const C = World.cover;
+    const counts = new Int32Array(COVER.length);
     for (let y = 0; y < GH; y++) {
       for (let x = 0; x < GW; x++) {
         const i = y * GW + x;
         band[i] = TA.bandOf(h[i]);
-        // painted cover wins (most common in the block), else the biome's class
-        const counts = [0, 0, 0, 0, 0, 0, 0];
+        counts.fill(0);
         for (let dy = 0; dy < RES; dy++) for (let dx = 0; dx < RES; dx++) counts[C[(y * RES + dy) * RW + x * RES + dx]]++;
         let best = 0;
-        for (let k = 1; k < 7; k++) if (counts[k] > counts[best]) best = k;
-        if (best > 0 && counts[best] >= 2) coverClass[i] = best - 1;
-        else {
-          const bio = hy ? hy.biome[i] : 0;
-          const cls = TA.BIOME_COVER[bio];
-          coverClass[i] = cls ? COVER_CLASSES.indexOf(cls) : 0;
-        }
+        for (let k = 1; k < COVER.length; k++) if (counts[k] > counts[best]) best = k;
+        coverClass[i] = best > 0 && counts[best] >= 2 ? best - 1 : 0;
       }
     }
-    dgCache = { key, h, band, coverClass, lake: hy ? hy.lake : new Uint8Array(N), biome: hy ? hy.biome : null, temp: hy ? hy.temp : null, prec: hy ? hy.prec : null };
+    dgCache = { key, h, band, coverClass, lake: new Uint8Array(N), temp: hy ? hy.temp : null, prec: hy ? hy.prec : null };
     return dgCache;
   };
   World.sea = sea;
@@ -1039,8 +1045,7 @@
     App.emit();
     try {
       const project = App.project, w = project.world;
-      let hy = World.hydro;
-      if (!hy || hy.rasterRev !== World.rasterRev) hy = await World.runHydro();
+      const hy = await World.ensureAnalysis();
       if (!hy || App.project !== project) return;
       const dg = World.dataGrid();
       let anyLand = false;
@@ -1049,7 +1054,7 @@
       const opts = Object.assign({}, w.provinceOpts);
       const riverMask = new Uint8Array(GW * GH);
       if (opts.riversAsBorders) {
-        World.displayRivers().forEach((rv) => { if (rv.hand || rv.order >= 3) World.riverCellsOf(rv).forEach((c) => { riverMask[c] = 1; }); });
+        World.displayRivers().forEach((rv) => { if (rv.major) World.riverCellsOf(rv).forEach((c) => { riverMask[c] = 1; }); });
       }
       const seeds = opts.citySeeds && window.Objects ? Objects.citySeeds(project) : [];
       const S = clamp(+w.cellSize || 18, 5, 60);
@@ -1104,4 +1109,110 @@
     Actions.toast(t("world.generated").replace("{n}", features.length));
     window.Geo.load(project);
   }
+
+  // ---------------- "Поправить географию": run, preview, apply ----------------
+  // slider 0..1 → flux a river needs (few long rivers … many small ones)
+  World.riverThresholdOf = (density) => Math.round(600 * Math.pow(50 / 600, clamp(density == null ? 0.5 : +density, 0, 1)));
+
+  function renderPreview() {
+    const pv = World.preview;
+    if (!pv) return;
+    if (!World.previewCanvas) {
+      const cv = document.createElement("canvas");
+      cv.width = RW; cv.height = RH;
+      cv.className = "world-canvas world-preview";
+      World.previewCanvas = cv;
+      World.previewCtx = cv.getContext("2d");
+    }
+    for (let y = 0; y < RH; y += 256) paintRect(0, y, RW - 1, Math.min(RH - 1, y + 255), pv.height, pv.cover, World.previewCtx);
+  }
+
+  World.runGeography = async function (opts) {
+    if (!World.active() || World.geoBusy) return;
+    const project = App.project, w = project.world;
+    World.geoBusy = true;
+    World.preview = null;
+    World.compare = false;
+    App.emit();
+    try {
+      ensureBuffers();
+      const hb = World.height.slice(), cb = World.cover.slice();
+      const forRaster = World.rasterRev, riversRef = w.rivers || [];
+      const m = await runJob({ type: "geography", rev: ++geoRev, RW, RH, RES, GW, GH, height: hb.buffer, cover: cb.buffer,
+        rivers: riversRef, riverNames: w.riverNames || {}, seaLevel: sea(), climate: w.climate, seed: w.seed,
+        scaleKm: +w.scaleKm || 5, riverThreshold: World.riverThresholdOf(opts.density), minRiverLength: 14, opts }, [hb.buffer, cb.buffer]);
+      if (App.project !== project) return;
+      if (World.rasterRev !== forRaster || (w.rivers || []) !== riversRef) { Actions.toast(t("world.geo.stale")); return; }
+      const rivers = m.rivers.map((r) => (r.id ? r : Object.assign({ id: window.uid() }, r)));
+      World.preview = { height: new Int16Array(m.height), cover: new Uint8Array(m.cover), rivers, report: m.report, opts,
+        rasterRev: forRaster, riversRef };
+      renderPreview();
+      Actions.ui({ card: null, modal: null });
+    } catch (e) {
+      console.error("geography pass failed", e);
+      Actions.toast(t("world.geo.failed"));
+    } finally {
+      World.geoBusy = false;
+      App.emit();
+    }
+  };
+
+  // hold to see the map as it was
+  World.setCompare = function (on) {
+    if (!World.preview || World.compare === !!on) return;
+    World.compare = !!on;
+    if (World.previewCanvas) World.previewCanvas.style.display = World.preview && !World.compare ? "block" : "none";
+    App.emit();
+  };
+
+  World.cancelGeography = function () {
+    if (!World.preview) return;
+    World.preview = null;
+    World.compare = false;
+    if (World.previewCanvas) World.previewCanvas.style.display = "none";
+    App.emit();
+  };
+
+  World.applyGeography = function () {
+    const pv = World.preview;
+    if (!pv || !World.active()) return;
+    const w = W0();
+    if (World.rasterRev !== pv.rasterRev || (w.rivers || []) !== pv.riversRef) { Actions.toast(t("world.geo.stale")); World.cancelGeography(); return; }
+    const Hh = World.height, C = World.cover;
+    let x0 = RW, y0 = RH, x1 = -1, y1 = -1;
+    for (let y = 0; y < RH; y++) {
+      const row = y * RW;
+      for (let x = 0; x < RW; x++) {
+        const i = row + x;
+        if (Hh[i] !== pv.height[i] || C[i] !== pv.cover[i]) {
+          if (x < x0) x0 = x; if (x > x1) x1 = x;
+          if (y < y0) y0 = y; if (y > y1) y1 = y;
+        }
+      }
+    }
+    const riversBefore = JSON.stringify({ rivers: w.rivers || [], names: w.riverNames || {} });
+    w.rivers = pv.rivers;
+    if (pv.opts.addRivers) w.riverNames = {}; // names from the simulated-river days now sit on real rivers
+    delete w.legacyAuto;
+    const riversAfter = JSON.stringify({ rivers: w.rivers, names: w.riverNames });
+    const riversChanged = riversAfter !== riversBefore;
+    if (x1 >= 0) {
+      const hBefore = Hh.slice(), cBefore = C.slice();
+      Hh.set(pv.height);
+      C.set(pv.cover);
+      World.ctx.drawImage(World.previewCanvas, 0, 0); // the preview is already the new picture
+      World.renderRev++;
+      pushRasterUndo(x0, y0, x1, y1, hBefore, cBefore, riversChanged ? { riversBefore, riversAfter } : null);
+      World.rasterRev++;
+      w.rev = (w.rev || 0) + 1;
+    } else if (riversChanged) {
+      const put = (json) => { const v = JSON.parse(json); w.rivers = v.rivers; w.riverNames = v.names; window.scheduleSave(); };
+      Actions.pushUndoEntry({ kind: "rivers", bytes: riversAfter.length * 2, undo: () => put(riversBefore), redo: () => put(riversAfter) });
+    }
+    World.preview = null;
+    World.compare = false;
+    if (World.previewCanvas) World.previewCanvas.style.display = "none";
+    window.scheduleSave();
+    Actions.toast(t(x1 >= 0 || riversChanged ? "world.geo.applied" : "world.geo.nothing"));
+  };
 })();

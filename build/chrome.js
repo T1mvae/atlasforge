@@ -1353,6 +1353,7 @@ function PwaBanner() {
   useStore();
   var P = window.PWA;
   if (!P) return null;
+  if (App.ui.card || window.World && (World.preview || World.geoBusy)) return null; // a card or the geography bar needs the spot
   if (P.updateReady) {
     return /*#__PURE__*/React.createElement("div", {
       className: "pwa-banner"

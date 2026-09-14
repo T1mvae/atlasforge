@@ -286,6 +286,8 @@
   // undo/redo step, the basemap must be rebuilt from the edited collection
   function geomKey(p) { return JSON.stringify(p.regionGeomEdits || null); }
   Actions.undo = function () {
+    // a geography preview on screen: undo means "not this" — drop the preview
+    if (window.World && window.World.preview) { window.World.cancelGeography(); return; }
     if (!App.undoStack.length || !App.project) return;
     const top = App.undoStack[App.undoStack.length - 1];
     if (typeof top === "object") {
@@ -304,6 +306,7 @@
     if (window.World) window.World.sync();
   };
   Actions.redo = function () {
+    if (window.World && window.World.preview) return;
     if (!App.redoStack.length || !App.project) return;
     const top = App.redoStack[App.redoStack.length - 1];
     if (typeof top === "object") {

@@ -132,7 +132,8 @@ function regionFill(r, states, settings, feat) {
 const TERRAIN_COLORS = {
   plains: "#cdbf86", forest: "#5f8a52", hills: "#b09a64", mountain: "#9a8d7d",
   desert: "#e3cd8f", marsh: "#7f9a78", jungle: "#3f7a46", urban: "#b08f8a",
-  tundra: "#cfd8d2", lakes: "#8fb6cf", ocean: "#9fc1d6"
+  tundra: "#cfd8d2", lakes: "#8fb6cf", ocean: "#9fc1d6",
+  taiga: "#55805d", savanna: "#cbbd7a", glacier: "#e8eef2"
 };
 
 // Province fill, chosen by the project display mode. Region display modes mute the
@@ -1041,7 +1042,7 @@ function MapView() {
         const k = view.current.k;
         const [mx, my] = clientToMap(e);
         const tolData = (g.finger || e.pointerType === "touch" ? 16 : 8) / Math.max(0.0001, k * World.mapUnitsPerCell() * (svgRef.current.getScreenCTM().a || 1));
-        const rv = World.riverAt(World.mapToGrid([mx, my]), tolData);
+        const rv = World.preview ? null : World.riverAt(World.mapToGrid([mx, my]), tolData);
         if (rv) { Actions.ui({ card: { kind: "river", index: rv.index }, selection: [] }); return; }
         if (App.ui.card) Actions.ui({ card: null });
       }
@@ -1727,6 +1728,7 @@ function MapView() {
       )}
 
       {worldOn && App.ui.tool === "world" && window.WorldPalette && <WorldPalette></WorldPalette>}
+      {worldOn && (World.preview || World.geoBusy) && window.GeoBar && <GeoBar></GeoBar>}
       {App.ui.tool === "place" && window.ObjectPalette && ready && <ObjectPalette></ObjectPalette>}
       {window.RoadModeBar && <RoadModeBar></RoadModeBar>}
       {window.WorldCard && <WorldCard></WorldCard>}

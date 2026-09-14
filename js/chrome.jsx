@@ -501,6 +501,7 @@ function PwaBanner() {
   useStore();
   const P = window.PWA;
   if (!P) return null;
+  if (App.ui.card || (window.World && (World.preview || World.geoBusy))) return null; // a card or the geography bar needs the spot
   if (P.updateReady) {
     return (
       <div className="pwa-banner">

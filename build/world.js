@@ -5,21 +5,21 @@ function _regenerator() { /*! regenerator-runtime -- Copyright (c) 2014-present,
 function _regeneratorDefine2(e, r, n, t) { var i = Object.defineProperty; try { i({}, "", {}); } catch (e) { i = 0; } _regeneratorDefine2 = function _regeneratorDefine(e, r, n, t) { function o(r, n) { _regeneratorDefine2(e, r, function (e) { return this._invoke(r, n, e); }); } r ? i ? i(e, r, { value: n, enumerable: !t, configurable: !t, writable: !t }) : e[r] = n : (o("next", 0), o("throw", 1), o("return", 2)); }, _regeneratorDefine2(e, r, n, t); }
 function asyncGeneratorStep(n, t, e, r, o, a, c) { try { var i = n[a](c), u = i.value; } catch (n) { return void e(n); } i.done ? t(u) : Promise.resolve(u).then(r, o); }
 function _asyncToGenerator(n) { return function () { var t = this, e = arguments; return new Promise(function (r, o) { var a = n.apply(t, e); function _next(n) { asyncGeneratorStep(a, r, o, _next, _throw, "next", n); } function _throw(n) { asyncGeneratorStep(a, r, o, _next, _throw, "throw", n); } _next(void 0); }); }; }
-function _slicedToArray(r, e) { return _arrayWithHoles(r) || _iterableToArrayLimit(r, e) || _unsupportedIterableToArray(r, e) || _nonIterableRest(); }
-function _nonIterableRest() { throw new TypeError("Invalid attempt to destructure non-iterable instance.\nIn order to be iterable, non-array objects must have a [Symbol.iterator]() method."); }
-function _iterableToArrayLimit(r, l) { var t = null == r ? null : "undefined" != typeof Symbol && r[Symbol.iterator] || r["@@iterator"]; if (null != t) { var e, n, i, u, a = [], f = !0, o = !1; try { if (i = (t = t.call(r)).next, 0 === l) { if (Object(t) !== t) return; f = !1; } else for (; !(f = (e = i.call(t)).done) && (a.push(e.value), a.length !== l); f = !0); } catch (r) { o = !0, n = r; } finally { try { if (!f && null != t["return"] && (u = t["return"](), Object(u) !== u)) return; } finally { if (o) throw n; } } return a; } }
-function _arrayWithHoles(r) { if (Array.isArray(r)) return r; }
 function _toConsumableArray(r) { return _arrayWithoutHoles(r) || _iterableToArray(r) || _unsupportedIterableToArray(r) || _nonIterableSpread(); }
 function _nonIterableSpread() { throw new TypeError("Invalid attempt to spread non-iterable instance.\nIn order to be iterable, non-array objects must have a [Symbol.iterator]() method."); }
-function _unsupportedIterableToArray(r, a) { if (r) { if ("string" == typeof r) return _arrayLikeToArray(r, a); var t = {}.toString.call(r).slice(8, -1); return "Object" === t && r.constructor && (t = r.constructor.name), "Map" === t || "Set" === t ? Array.from(r) : "Arguments" === t || /^(?:Ui|I)nt(?:8|16|32)(?:Clamped)?Array$/.test(t) ? _arrayLikeToArray(r, a) : void 0; } }
 function _iterableToArray(r) { if ("undefined" != typeof Symbol && null != r[Symbol.iterator] || null != r["@@iterator"]) return Array.from(r); }
 function _arrayWithoutHoles(r) { if (Array.isArray(r)) return _arrayLikeToArray(r); }
+function _slicedToArray(r, e) { return _arrayWithHoles(r) || _iterableToArrayLimit(r, e) || _unsupportedIterableToArray(r, e) || _nonIterableRest(); }
+function _nonIterableRest() { throw new TypeError("Invalid attempt to destructure non-iterable instance.\nIn order to be iterable, non-array objects must have a [Symbol.iterator]() method."); }
+function _unsupportedIterableToArray(r, a) { if (r) { if ("string" == typeof r) return _arrayLikeToArray(r, a); var t = {}.toString.call(r).slice(8, -1); return "Object" === t && r.constructor && (t = r.constructor.name), "Map" === t || "Set" === t ? Array.from(r) : "Arguments" === t || /^(?:Ui|I)nt(?:8|16|32)(?:Clamped)?Array$/.test(t) ? _arrayLikeToArray(r, a) : void 0; } }
 function _arrayLikeToArray(r, a) { (null == a || a > r.length) && (a = r.length); for (var e = 0, n = Array(a); e < a; e++) n[e] = r[e]; return n; }
+function _iterableToArrayLimit(r, l) { var t = null == r ? null : "undefined" != typeof Symbol && r[Symbol.iterator] || r["@@iterator"]; if (null != t) { var e, n, i, u, a = [], f = !0, o = !1; try { if (i = (t = t.call(r)).next, 0 === l) { if (Object(t) !== t) return; f = !1; } else for (; !(f = (e = i.call(t)).done) && (a.push(e.value), a.length !== l); f = !0); } catch (r) { o = !0, n = r; } finally { try { if (!f && null != t["return"] && (u = t["return"](), Object(u) !== u)) return; } finally { if (o) throw n; } } return a; } }
+function _arrayWithHoles(r) { if (Array.isArray(r)) return r; }
 function _defineProperty(e, r, t) { return (r = _toPropertyKey(r)) in e ? Object.defineProperty(e, r, { value: t, enumerable: !0, configurable: !0, writable: !0 }) : e[r] = t, e; }
 function _toPropertyKey(t) { var i = _toPrimitive(t, "string"); return "symbol" == _typeof(i) ? i : i + ""; }
 function _toPrimitive(t, r) { if ("object" != _typeof(t) || !t) return t; var e = t[Symbol.toPrimitive]; if (void 0 !== e) { var i = e.call(t, r || "default"); if ("object" != _typeof(i)) return i; throw new TypeError("@@toPrimitive must return a primitive value."); } return ("string" === r ? String : Number)(t); }
-// AtlasForge — custom world UI: brush palette, world settings, AI atlas modal,
-// brush-size rail and the river card
+// AtlasForge — custom world UI: brush palette, world settings, the geography pass (options
+// sheet + preview bar), AI atlas modal, brush-size rail and the river card
 var fmtNum = function fmtNum(v) {
   return Math.round(v).toLocaleString(App.ui.lang === "ru" ? "ru-RU" : "en-US");
 };
@@ -89,6 +89,8 @@ function WorldPalette() {
     });
   };
   var strengthBrush = brush === "raise" || brush === "lower" || brush === "smooth";
+  var busy = !!(World.preview || World.geoBusy);
+  var rivers = w.rivers || [];
   var generate = function generate() {
     if (hasProvinces && !confirm(t("world.regenAsk"))) return;
     Actions.toast(t("world.generating"));
@@ -130,7 +132,27 @@ function WorldPalette() {
         worldPaletteCollapsed: true
       });
     }
-  }, "\u25C2")), /*#__PURE__*/React.createElement("div", {
+  }, "\u25C2")), w.legacyAuto && !busy && /*#__PURE__*/React.createElement("div", {
+    className: "wp-banner"
+  }, /*#__PURE__*/React.createElement("div", null, t("world.legacy.text")), /*#__PURE__*/React.createElement("button", {
+    className: "btn outline",
+    onClick: function onClick() {
+      return World.setWorld({
+        legacyAuto: false
+      });
+    }
+  }, t("world.legacy.ok"))), /*#__PURE__*/React.createElement("button", {
+    className: "btn primary wp-geo",
+    disabled: busy,
+    onClick: function onClick() {
+      return Actions.ui({
+        modal: "geo",
+        card: null
+      });
+    }
+  }, t("world.geo.button")), /*#__PURE__*/React.createElement("div", {
+    className: "wp-note"
+  }, busy ? t("world.geo.previewing") : t("world.geo.hint")), !busy && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", {
     className: "wp-section"
   }, t("world.groupRelief")), /*#__PURE__*/React.createElement(BrushGrid, {
     list: World.RELIEF_BRUSHES,
@@ -277,6 +299,31 @@ function WorldPalette() {
   }, t("world.stale")), /*#__PURE__*/React.createElement("div", {
     className: "wp-note"
   }, t("world.smartHint"))), /*#__PURE__*/React.createElement(WorldSection, {
+    id: "rivers",
+    title: t("world.rivers") + (rivers.length ? " (" + rivers.length + ")" : "")
+  }, !rivers.length && /*#__PURE__*/React.createElement("div", {
+    className: "wp-note"
+  }, t("world.noRivers")), rivers.length > 0 && /*#__PURE__*/React.createElement("div", {
+    className: "wp-rivers"
+  }, rivers.map(function (rv) {
+    return /*#__PURE__*/React.createElement("div", {
+      key: rv.id,
+      className: "wp-river"
+    }, /*#__PURE__*/React.createElement("input", {
+      className: "input",
+      value: rv.name || "",
+      placeholder: t("card.unnamedRiver"),
+      onChange: function onChange(e) {
+        return World.renameRiver(rv.id, e.target.value);
+      }
+    }), /*#__PURE__*/React.createElement("button", {
+      className: "btn icon",
+      title: t("world.deleteRiver"),
+      onClick: function onClick() {
+        return World.deleteRiver(rv.id);
+      }
+    }, "\u2715"));
+  }))), /*#__PURE__*/React.createElement(WorldSection, {
     id: "nature",
     title: t("world.nature")
   }, /*#__PURE__*/React.createElement("label", {
@@ -294,6 +341,22 @@ function WorldPalette() {
       });
     }
   })), /*#__PURE__*/React.createElement("label", {
+    className: "wp-field"
+  }, /*#__PURE__*/React.createElement("span", null, t("world.snowline"), " \u2014 ", fmtNum(w.snowline || 4200), " ", t("world.m")), /*#__PURE__*/React.createElement("input", {
+    type: "range",
+    className: "range",
+    min: "1000",
+    max: "7000",
+    step: "100",
+    value: w.snowline || 4200,
+    onChange: function onChange(e) {
+      return World.setWorld({
+        snowline: +e.target.value
+      });
+    }
+  })), /*#__PURE__*/React.createElement("div", {
+    className: "wp-note"
+  }, t("world.climateHint")), /*#__PURE__*/React.createElement("label", {
     className: "wp-field"
   }, /*#__PURE__*/React.createElement("span", null, t("world.latTop"), " \u2014 ", (_clim$latTop = clim.latTop) !== null && _clim$latTop !== void 0 ? _clim$latTop : 70, "\xB0"), /*#__PURE__*/React.createElement("input", {
     type: "range",
@@ -335,30 +398,6 @@ function WorldPalette() {
         tEquator: +e.target.value
       });
     }
-  })), /*#__PURE__*/React.createElement("label", {
-    className: "check-row wp-check"
-  }, /*#__PURE__*/React.createElement("input", {
-    type: "checkbox",
-    checked: w.autoRivers !== false,
-    onChange: function onChange(e) {
-      return World.setWorld({
-        autoRivers: e.target.checked
-      });
-    }
-  }), t("world.autoRivers")), w.autoRivers !== false && /*#__PURE__*/React.createElement("label", {
-    className: "wp-field"
-  }, /*#__PURE__*/React.createElement("span", null, t("world.riverThreshold")), /*#__PURE__*/React.createElement("input", {
-    type: "range",
-    className: "range",
-    min: "15",
-    max: "400",
-    step: "5",
-    value: w.riverThreshold || 60,
-    onChange: function onChange(e) {
-      return World.setWorld({
-        riverThreshold: +e.target.value
-      });
-    }
   }))), /*#__PURE__*/React.createElement(WorldSection, {
     id: "map",
     title: t("world.mapSettings")
@@ -398,25 +437,6 @@ function WorldPalette() {
         undo: false
       });
     }
-  })), w.autoRivers === false && (w.rivers || []).length > 0 && /*#__PURE__*/React.createElement("div", {
-    className: "wp-rivers"
-  }, (w.rivers || []).map(function (rv) {
-    return /*#__PURE__*/React.createElement("div", {
-      key: rv.id,
-      className: "wp-river"
-    }, /*#__PURE__*/React.createElement("input", {
-      className: "input",
-      value: rv.name,
-      onChange: function onChange(e) {
-        return World.renameRiver(rv.id, e.target.value);
-      }
-    }), /*#__PURE__*/React.createElement("button", {
-      className: "btn icon",
-      title: t("world.deleteRiver"),
-      onClick: function onClick() {
-        return World.deleteRiver(rv.id);
-      }
-    }, "\u2715"));
   })), /*#__PURE__*/React.createElement("div", {
     className: "wp-row"
   }, /*#__PURE__*/React.createElement("button", {
@@ -439,7 +459,204 @@ function WorldPalette() {
     }
   }, t("world.atlas")), /*#__PURE__*/React.createElement("div", {
     className: "wp-note"
-  }, t("world.labelsHint")));
+  }, t("world.labelsHint"))));
+}
+
+// ---------- "Поправить географию" ----------
+// the options sheet: what the pass may change, then a preview on the map
+function GeoSheet() {
+  useStore();
+  var p = App.project;
+  var _React$useState = React.useState(function () {
+      return Object.assign({}, World.GEO_DEFAULTS, p && p.world && p.world.geoOpts || {});
+    }),
+    _React$useState2 = _slicedToArray(_React$useState, 2),
+    o = _React$useState2[0],
+    setO = _React$useState2[1];
+  if (!p || !p.world || !World.active()) return null;
+  var set = function set(patch) {
+    return setO(Object.assign({}, o, patch));
+  };
+  var hasRivers = (p.world.rivers || []).some(function (r) {
+    return !r.auto;
+  });
+  var any = o.fixRivers || o.addRivers || o.lakes || o.biomes || o.foothills || o.erosion;
+  var close = function close() {
+    return Actions.ui({
+      modal: null
+    });
+  };
+  var run = function run() {
+    World.setWorld({
+      geoOpts: o
+    });
+    close();
+    World.runGeography(o);
+  };
+  var opt = function opt(k, extra) {
+    return /*#__PURE__*/React.createElement("label", {
+      className: "geo-opt" + (o[k] ? " on" : "")
+    }, /*#__PURE__*/React.createElement("input", {
+      type: "checkbox",
+      checked: !!o[k],
+      onChange: function onChange(e) {
+        return set(_defineProperty({}, k, e.target.checked));
+      }
+    }), /*#__PURE__*/React.createElement("span", {
+      className: "geo-opt-text"
+    }, /*#__PURE__*/React.createElement("b", null, t("world.geo.opt." + k)), /*#__PURE__*/React.createElement("span", null, t("world.geo.desc." + k)), extra));
+  };
+  return /*#__PURE__*/React.createElement("div", {
+    className: "modal-backdrop",
+    onClick: close
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "modal geo-sheet",
+    onClick: function onClick(e) {
+      return e.stopPropagation();
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "modal-head"
+  }, /*#__PURE__*/React.createElement("span", {
+    className: "modal-title"
+  }, t("world.geo.title")), /*#__PURE__*/React.createElement("button", {
+    className: "btn icon",
+    onClick: close
+  }, "\u2715")), /*#__PURE__*/React.createElement("div", {
+    className: "modal-body"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "muted"
+  }, t("world.geo.intro")), /*#__PURE__*/React.createElement("div", {
+    className: "wp-section"
+  }, t("world.geo.groupWater")), opt("fixRivers", !hasRivers ? /*#__PURE__*/React.createElement("span", {
+    className: "geo-opt-warn"
+  }, t("world.geo.noDrawnRivers")) : null), opt("addRivers"), o.addRivers && /*#__PURE__*/React.createElement("label", {
+    className: "wp-field geo-slider"
+  }, /*#__PURE__*/React.createElement("span", null, t("world.geo.density")), /*#__PURE__*/React.createElement("input", {
+    type: "range",
+    className: "range",
+    min: "0",
+    max: "1",
+    step: "0.05",
+    value: o.density == null ? 0.5 : o.density,
+    onChange: function onChange(e) {
+      return set({
+        density: +e.target.value
+      });
+    }
+  })), opt("lakes"), /*#__PURE__*/React.createElement("div", {
+    className: "wp-section"
+  }, t("world.geo.groupLand")), opt("biomes"), opt("foothills"), opt("erosion")), /*#__PURE__*/React.createElement("div", {
+    className: "modal-foot"
+  }, /*#__PURE__*/React.createElement("button", {
+    className: "btn outline",
+    onClick: close
+  }, t("modal.cancel")), /*#__PURE__*/React.createElement("button", {
+    className: "btn primary",
+    disabled: !any,
+    onClick: run
+  }, t("world.geo.run")))));
+}
+
+// what the pass changed, in plain words
+function geoReportLines(r, opts) {
+  var names = function names(list) {
+    var named = list.filter(Boolean);
+    if (!named.length) return "";
+    return " (" + named.slice(0, 3).join(", ") + (named.length > 3 ? "…" : "") + ")";
+  };
+  var out = [];
+  if (opts.fixRivers) {
+    if (r.reversed.length) out.push(t("world.geo.r.reversed").replace("{n}", r.reversed.length) + names(r.reversed));
+    if (r.extended.length) {
+      var km = r.extended.reduce(function (s, e) {
+        return s + e.km;
+      }, 0);
+      out.push(t("world.geo.r.extended").replace("{n}", r.extended.length).replace("{km}", fmtNum(km)) + names(r.extended.map(function (e) {
+        return e.name;
+      })));
+    }
+    if (r.gorges.length) out.push(t("world.geo.r.gorges").replace("{n}", r.gorges.length) + names(r.gorges));
+    if (!r.reversed.length && !r.extended.length && !r.gorges.length) out.push(t("world.geo.r.riversOk"));
+  }
+  if (opts.addRivers) {
+    out.push(t("world.geo.r.added").replace("{n}", r.added).replace("{m}", r.tributaries) + (r.replaced ? " " + t("world.geo.r.replaced").replace("{n}", r.replaced) : ""));
+    if (r.named) out.push(t("world.geo.r.named").replace("{n}", r.named));
+  }
+  if (opts.lakes) out.push(r.lakes ? t("world.geo.r.lakes").replace("{n}", r.lakes).replace("{km}", fmtNum(r.lakeKm2)) : t("world.geo.r.noLakes"));
+  if (opts.biomes) out.push(t("world.geo.r.biomes").replace("{n}", r.biomePct || 0));
+  if (opts.foothills) out.push(r.foothillsKm2 ? t("world.geo.r.foothills").replace("{km}", fmtNum(r.foothillsKm2)) : t("world.geo.r.noFoothills"));
+  if (opts.erosion) out.push(t("world.geo.r.erosion"));
+  return out;
+}
+
+// preview bar over the map: what changed, hold to compare, apply or discard
+function GeoBar() {
+  useStore();
+  if (World.geoBusy) {
+    return /*#__PURE__*/React.createElement("div", {
+      className: "geo-bar",
+      "data-export-skip": "1"
+    }, /*#__PURE__*/React.createElement("div", {
+      className: "geo-bar-busy"
+    }, /*#__PURE__*/React.createElement("div", {
+      className: "spinner"
+    }), /*#__PURE__*/React.createElement("span", null, t("world.geo.running"))));
+  }
+  var pv = World.preview;
+  if (!pv) return null;
+  var off = function off() {
+    return World.setCompare(false);
+  };
+  return /*#__PURE__*/React.createElement("div", {
+    className: "geo-bar",
+    "data-export-skip": "1",
+    onPointerDown: function onPointerDown(e) {
+      return e.stopPropagation();
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "geo-bar-title"
+  }, World.compare ? t("world.geo.showingBefore") : t("world.geo.previewTitle")), /*#__PURE__*/React.createElement("ul", {
+    className: "geo-report"
+  }, geoReportLines(pv.report, pv.opts).map(function (line, i) {
+    return /*#__PURE__*/React.createElement("li", {
+      key: i
+    }, line);
+  })), /*#__PURE__*/React.createElement("div", {
+    className: "geo-bar-actions"
+  }, /*#__PURE__*/React.createElement("button", {
+    className: "btn outline geo-hold" + (World.compare ? " on" : ""),
+    onPointerDown: function onPointerDown(e) {
+      e.preventDefault();
+      try {
+        e.currentTarget.setPointerCapture(e.pointerId);
+      } catch (err) {}
+      World.setCompare(true);
+    },
+    onPointerUp: off,
+    onPointerCancel: off,
+    onLostPointerCapture: off,
+    onContextMenu: function onContextMenu(e) {
+      return e.preventDefault();
+    }
+  }, t("world.geo.holdBefore")), /*#__PURE__*/React.createElement("button", {
+    className: "btn outline",
+    onClick: function onClick() {
+      World.cancelGeography();
+      Actions.ui({
+        modal: "geo"
+      });
+    }
+  }, t("world.geo.adjust")), /*#__PURE__*/React.createElement("button", {
+    className: "btn outline",
+    onClick: function onClick() {
+      return World.cancelGeography();
+    }
+  }, t("world.geo.discard")), /*#__PURE__*/React.createElement("button", {
+    className: "btn primary",
+    onClick: function onClick() {
+      return World.applyGeography();
+    }
+  }, t("world.geo.apply"))));
 }
 
 // Procreate-style vertical brush-size rail on the left edge of the map: drag with a
@@ -506,21 +723,32 @@ function WorldSizeRail() {
 // analysis of the current provinces + rivers, cached per basemap / hydrology / project version
 var worldAnalysisCache = null;
 function worldAnalysis() {
+  var riversRef = World.preview && !World.compare ? World.preview.rivers : App.project.world.rivers || [];
   var key = App.basemap.count + ":" + (World.hydro ? World.hydro.rev : 0) + ":" + World.rasterRev + ":" + App.terrVersion + ":" + App.ui.lang;
-  if (!worldAnalysisCache || worldAnalysisCache.key !== key || worldAnalysisCache.bm !== App.basemap) {
+  var c = worldAnalysisCache;
+  if (!c || c.key !== key || c.bm !== App.basemap || c.riversRef !== riversRef) {
     var feats = App.basemap.raw && App.basemap.raw.features || [];
     var rivers = World.displayRivers();
-    var an = Atlas.analyze(feats, rivers);
     worldAnalysisCache = {
       key: key,
       bm: App.basemap,
-      an: an,
+      riversRef: riversRef,
+      an: Atlas.analyze(feats, rivers),
       feats: feats,
-      rivers: rivers,
-      names: Atlas.names(an, App.ui.lang === "ru" ? "ru" : "en")
+      rivers: rivers
     };
   }
-  return worldAnalysisCache;
+  // names change while typing: refresh them without redoing the analysis
+  var wa = worldAnalysisCache;
+  wa.rivers.forEach(function (rv) {
+    var rec = riversRef[rv.index];
+    if (rec) {
+      rv.name = rec.name;
+      rv.notes = rec.notes || "";
+    }
+  });
+  wa.names = Atlas.names(wa.an, App.ui.lang === "ru" ? "ru" : "en");
+  return wa;
 }
 function CardRow(_ref3) {
   var k = _ref3.k,
@@ -564,10 +792,8 @@ function RiverCard(_ref4) {
   var autoName = ri ? names.riverLabel[ri.k] : "";
   var cells = World.riverCellsOf(rv);
   var srcH = cells.length ? an.dg.h[cells[0]] : 0;
+  var mouthH = cells.length ? an.dg.h[cells[cells.length - 1]] : 0;
   var len = ri ? ri.len * km : 0;
-  var thr = +w.riverThreshold || 60;
-  var size = rv.flux ? rv.flux < thr * 3 ? 0 : rv.flux < thr * 12 ? 1 : rv.flux < thr * 40 ? 2 : 3 : null;
-  var navigable = (rv.order || 0) >= 4 || rv.flux && rv.flux >= thr * 12;
   var states = [];
   (ri ? ri.cells : []).forEach(function (i) {
     var o = ownerOf(i);
@@ -581,37 +807,14 @@ function RiverCard(_ref4) {
     return x.rv === into;
   }) : null;
   var mouthWater = ri && ri.mouthWater >= 0 ? names.waterLabel[ri.mouthWater] : null;
-  var mouthText = into ? into.name || (intoRi ? names.riverLabel[intoRi.k] : t("card.unnamed")) : mouthWater || (rv.mouthType === "land" ? t("card.sink") : t("card.sea"));
+  var mouthText = into ? into.name || (intoRi ? names.riverLabel[intoRi.k] : t("card.unnamed")) : rv.mouthType === "water" ? mouthWater || t("card.sea") : rv.mouthType === "edge" ? t("card.edge") : t("card.sink");
   var tributaries = rivers.filter(function (r) {
     return r.into === rv.index;
   });
-  var basinArea = null;
-  var hy = World.hydro;
-  if (hy && rv.cells && rv.cells.length) {
-    var b = hy.basin[rv.cells[rv.cells.length - 1]];
-    var n = 0;
-    for (var i = 0; i < hy.basin.length; i++) if (hy.basin[i] === b) n++;
-    basinArea = n * km * km;
-  }
   var firstProv = ri && ri.cells.length ? ri.cells[0] : -1,
     lastProv = ri && ri.cells.length ? ri.cells[ri.cells.length - 1] : -1;
-  var handRec = rv.hand ? (w.rivers || []).find(function (r) {
-    return r.id === rv.id;
-  }) : null;
-  var notes = rv.hand ? handRec && handRec.notes || "" : rv.notes || "";
-  var rename = function rename(name) {
-    return rv.hand ? World.renameRiver(rv.id, name) : World.nameRiver(rv, name, null);
-  };
-  var setNotes = function setNotes(text) {
-    if (rv.hand) Actions.mut(function (pp) {
-      var r = pp.world.rivers.find(function (x) {
-        return x.id === rv.id;
-      });
-      if (r) r.notes = text;
-    }, {
-      undo: false
-    });else World.nameRiver(rv, rv.name != null ? rv.name : autoName, text);
-  };
+  var uphill = srcH > 0 && mouthH > srcH + 50;
+  var rec = (w.rivers || [])[rv.index] || {}; // live record: typing edits it in place
   var zoom = function zoom() {
     var proj = App.basemap.proj;
     var xs = rv.pts.map(function (q) {
@@ -641,55 +844,65 @@ function RiverCard(_ref4) {
     }
   }, "\u2715")), /*#__PURE__*/React.createElement("input", {
     className: "input card-title",
-    value: rv.name != null ? rv.name : "",
+    value: rec.name || "",
     placeholder: autoName || t("card.unnamedRiver"),
     onChange: function onChange(e) {
-      return rename(e.target.value);
+      return World.renameRiver(rv.id, e.target.value);
     }
   }), /*#__PURE__*/React.createElement("div", {
     className: "card-grid"
   }, /*#__PURE__*/React.createElement(CardRow, {
     k: t("card.length"),
     v: len ? "≈ " + fmtNum(len) + " " + t("world.km") : null
-  }), rv.order ? /*#__PURE__*/React.createElement(CardRow, {
+  }), tributaries.length ? /*#__PURE__*/React.createElement(CardRow, {
+    k: t("card.withTributaries"),
+    v: "≈ " + fmtNum(rv.upLen * km) + " " + t("world.km")
+  }) : null, /*#__PURE__*/React.createElement(CardRow, {
     k: t("card.order"),
     v: rv.order
-  }) : null, size != null ? /*#__PURE__*/React.createElement(CardRow, {
+  }), /*#__PURE__*/React.createElement(CardRow, {
     k: t("card.size"),
-    v: t("card.size" + size)
-  }) : null, rv.flux ? /*#__PURE__*/React.createElement(CardRow, {
+    v: t("card.size" + World.riverSize(rv, km))
+  }), /*#__PURE__*/React.createElement(CardRow, {
     k: t("card.navigable"),
-    v: navigable ? t("card.yes") : t("card.no")
-  }) : null, /*#__PURE__*/React.createElement(CardRow, {
+    v: World.riverNavigable(rv, km) ? t("card.yes") : t("card.no")
+  }), /*#__PURE__*/React.createElement(CardRow, {
     k: t("card.source"),
     v: [srcH > 0 ? fmtNum(srcH) + " " + t("world.m") : "", firstProv >= 0 ? provName(firstProv) : "", rv.sourceType === "lake" ? t("card.fromLake") : ""].filter(Boolean).join(" · ")
   }), /*#__PURE__*/React.createElement(CardRow, {
     k: t("card.mouth"),
     v: [mouthText, lastProv >= 0 ? provName(lastProv) : ""].filter(Boolean).join(" · ")
-  }), basinArea ? /*#__PURE__*/React.createElement(CardRow, {
-    k: t("card.basin"),
-    v: "≈ " + fmtNum(basinArea) + " " + t("world.km2")
-  }) : null, states.length ? /*#__PURE__*/React.createElement(CardRow, {
+  }), states.length ? /*#__PURE__*/React.createElement(CardRow, {
     k: t("card.states"),
     v: states.join(" → ")
   }) : null, tributaries.length ? /*#__PURE__*/React.createElement(CardRow, {
     k: t("card.tributaries"),
     v: tributaries.map(function (r) {
-      return r.name || t("card.unnamed");
+      var x = an.rivers.find(function (q) {
+        return q.rv === r;
+      });
+      return r.name || (x ? names.riverLabel[x.k] : t("card.unnamed"));
     }).join(", ")
-  }) : null), /*#__PURE__*/React.createElement("textarea", {
+  }) : null), uphill && /*#__PURE__*/React.createElement("div", {
+    className: "card-warn"
+  }, t("card.uphill")), /*#__PURE__*/React.createElement("textarea", {
     className: "textarea card-notes",
     placeholder: t("card.notes"),
-    value: notes,
+    value: rec.notes || "",
     onChange: function onChange(e) {
-      return setNotes(e.target.value);
+      return World.setRiverNotes(rv.id, e.target.value);
     }
   }), /*#__PURE__*/React.createElement("div", {
     className: "card-actions"
   }, /*#__PURE__*/React.createElement("button", {
     className: "btn outline",
     onClick: zoom
-  }, t("card.showOnMap"))));
+  }, t("card.showOnMap")), /*#__PURE__*/React.createElement("button", {
+    className: "btn outline danger",
+    onClick: function onClick() {
+      return World.deleteRiver(rv.id);
+    }
+  }, t("world.deleteRiver"))));
 }
 function WorldCard() {
   useStore();
@@ -705,10 +918,17 @@ function WorldCard() {
 }
 function AtlasModal() {
   useStore();
-  var _React$useState = React.useState(true),
-    _React$useState2 = _slicedToArray(_React$useState, 2),
-    withProvinces = _React$useState2[0],
-    setWithProvinces = _React$useState2[1];
+  var _React$useState3 = React.useState(true),
+    _React$useState4 = _slicedToArray(_React$useState3, 2),
+    withProvinces = _React$useState4[0],
+    setWithProvinces = _React$useState4[1];
+  // the atlas describes the climate too: make sure the analysis matches the map
+  React.useEffect(function () {
+    World.ensureAnalysis()["catch"](function (e) {
+      return console.warn(e);
+    });
+  }, []);
+  var hyRev = World.hydroFresh() ? World.hydro.rev : 0;
   var text = React.useMemo(function () {
     try {
       return Atlas.build({
@@ -718,7 +938,7 @@ function AtlasModal() {
       console.error(e);
       return String(e);
     }
-  }, [withProvinces, App.ui.lang]);
+  }, [withProvinces, App.ui.lang, hyRev]);
   var areaRef = React.useRef(null);
   var copy = /*#__PURE__*/function () {
     var _ref5 = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee() {
@@ -819,6 +1039,8 @@ Object.assign(window, {
   WorldCard: WorldCard,
   worldAnalysis: worldAnalysis,
   CardRow: CardRow,
-  fmtNum: fmtNum
+  fmtNum: fmtNum,
+  GeoSheet: GeoSheet,
+  GeoBar: GeoBar
 });
 //# sourceMappingURL=world.js.map

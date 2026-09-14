@@ -141,7 +141,7 @@
     heap.push(start, hx(start));
     // rivers slow a land road down (fords, bridges)
     const riverCell = new Uint8Array(N);
-    if (!sea) World.displayRivers().forEach((rv) => { if ((rv.order || 1) >= 2 || rv.hand) World.riverCellsOf(rv).forEach((c) => { riverCell[c] = 1; }); });
+    if (!sea) World.displayRivers().forEach((rv) => { if (rv.major) World.riverCellsOf(rv).forEach((c) => { riverCell[c] = 1; }); });
     let found = false, steps = 0;
     while (heap.n && steps++ < N * 2) {
       const c = heap.pop();

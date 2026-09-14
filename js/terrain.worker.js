@@ -1,5 +1,5 @@
-// AtlasForge — terrain worker: climate, hydrology and smart provinces for custom worlds,
-// off the main thread so painting on an iPad never stalls.
+// AtlasForge — terrain worker: climate, hydrology, smart provinces and the geography pass
+// for custom worlds, off the main thread so painting on an iPad never stalls.
 //
 // The page passes the script URLs it loaded (with their ?v= cache stamps) in the first
 // message, so the worker always runs the same versions as the page.
@@ -17,6 +17,12 @@ self.onmessage = (ev) => {
     if (!ready) throw new Error("worker not initialised");
     if (msg.type === "hydro") self.postMessage(hydro(msg), transferables(["temp", "prec", "biome", "lake", "basin", "down", "acc"], msg));
     else if (msg.type === "provinces") self.postMessage(provinces(msg));
+    else if (msg.type === "geography") {
+      const t0 = Date.now();
+      const out = self.TerrainAlgos.geography(msg);
+      self.postMessage({ type: "geography", rev: msg.rev, height: out.height, cover: out.cover, rivers: out.rivers,
+        report: Object.assign(out.report, { ms: Date.now() - t0 }) }, [out.height, out.cover]);
+    }
   } catch (e) {
     self.postMessage({ type: "error", job: msg.type, rev: msg.rev, message: String(e && e.stack || e) });
   }

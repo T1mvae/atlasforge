@@ -1,5 +1,5 @@
 // AtlasForge — top bar, menus, search, legend, timeline, modals, toast
-function MenuButton({ id, label, children }) {
+function MenuButton({ id, label, children, right }) {
   useStore();
   const open = App.ui.menu === id;
   return (
@@ -7,7 +7,7 @@ function MenuButton({ id, label, children }) {
       <button className="btn" onClick={(e) => { e.stopPropagation(); Actions.ui({ menu: open ? null : id }); }}>
         {label} <span style={{ fontSize: 9, opacity: 0.6 }}>▼</span>
       </button>
-      {open && <div className="menu" onClick={(e) => e.stopPropagation()}>{children}</div>}
+      {open && <div className={"menu" + (right ? " right" : "")} onClick={(e) => e.stopPropagation()}>{children}</div>}
     </div>
   );
 }
@@ -90,7 +90,9 @@ function TopBar() {
   const p = App.project;
   return (
     <div className="topbar" data-screen-label="Top bar">
-      <div className="brand"><span className="brand-glyph">AF</span><span>{t("app.title")}</span></div>
+      <button className={"btn icon panel-toggle" + (App.ui.leftOpen ? " on" : "")} title={t("input.toggleLeft")}
+        onClick={() => Actions.setPref({ leftOpen: !App.ui.leftOpen })}><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4"><rect x="2" y="3" width="12" height="10" rx="1.5"></rect><path d="M6 3 V13"></path></svg></button>
+      <div className="brand"><span className="brand-glyph">AF</span><span className="brand-name">{t("app.title")}</span></div>
       {p && (
         <input className="proj-name" value={p.name} onChange={(e) => Actions.mut((pr) => { pr.name = e.target.value; }, { undo: false })}></input>
       )}
@@ -123,12 +125,31 @@ function TopBar() {
       <div className="tb-spacer"></div>
       <SearchBox></SearchBox>
       <div className="tb-sep"></div>
+      <MenuButton id="input" label={<span className="input-menu-label"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4"><path d="M11 2.5 L13.5 5 L6 12.5 L3 13 L3.5 10 Z"></path><path d="M9.5 4 L12 6.5"></path></svg></span>} right>
+        <div className="menu-title">{t("input.title")}</div>
+        <label className="menu-check">
+          <input type="checkbox" checked={App.ui.pencilOnly !== false} onChange={(e) => Actions.setPref({ pencilOnly: e.target.checked })}></input>
+          <span>{t("input.pencilOnly")}<small>{t("input.pencilOnlyHint")}</small></span>
+        </label>
+        <label className="menu-check">
+          <input type="checkbox" checked={App.ui.worldPressure !== false} onChange={(e) => Actions.setPref({ worldPressure: e.target.checked })}></input>
+          <span>{t("world.pressure")}<small>{window.World && World.pressureSupport() === "no" ? t("input.noPressure") : t("input.pressureHint")}</small></span>
+        </label>
+        <label className="menu-check">
+          <input type="checkbox" checked={!!App.ui.tiltSize} onChange={(e) => Actions.setPref({ tiltSize: e.target.checked })}></input>
+          <span>{t("input.tilt")}<small>{t("input.tiltHint")}</small></span>
+        </label>
+        <div className="menu-sep"></div>
+        <div className="menu-note">{t("input.gestures")}</div>
+      </MenuButton>
       <button className="btn" title="Language" onClick={() => Actions.setLang(App.ui.lang === "ru" ? "en" : "ru")}>
         {App.ui.lang === "ru" ? "RU" : "EN"}
       </button>
       <button className="btn icon" title={t("theme.toggle")} onClick={() => Actions.setTheme(App.ui.theme === "dark" ? "light" : "dark")}>
         {App.ui.theme === "dark" ? "☾" : "☀"}
       </button>
+      <button className={"btn icon panel-toggle" + (App.ui.rightOpen ? " on" : "")} title={t("input.toggleRight")}
+        onClick={() => Actions.setPref({ rightOpen: !App.ui.rightOpen })}><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4"><rect x="2" y="3" width="12" height="10" rx="1.5"></rect><path d="M10 3 V13"></path></svg></button>
       <button className="btn icon" title="Presentation (P)" onClick={() => Actions.ui({ present: true, menu: null })}>
         <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><rect x="2" y="3" width="12" height="8" rx="1"></rect><path d="M8 11 V13.5 M5.5 13.5 H10.5"></path></svg>
       </button>
@@ -498,10 +519,53 @@ function PwaBanner() {
   return null;
 }
 
+// round quick menu for thumbs (bottom-right of the map): the actions one reaches for
+// mid-drawing without travelling to the toolbars
+function QuickMenu() {
+  useStore();
+  const open = !!App.ui.quickOpen;
+  if (!App.project || App.ui.present) return null;
+  const world = window.World && World.active();
+  const close = () => Actions.ui({ quickOpen: false });
+  const items = [
+    { key: "undo", icon: "↶", label: t("edit.undo"), disabled: !App.undoStack.length, run: () => Actions.undo() },
+    { key: "redo", icon: "↷", label: t("edit.redo"), disabled: !App.redoStack.length, run: () => Actions.redo() },
+    { key: "panels", icon: "▭", label: t("input.panels"), run: () => {
+      const any = App.ui.leftOpen || App.ui.rightOpen;
+      Actions.setPref({ leftOpen: !any && window.innerWidth >= 1300, rightOpen: !any });
+    } },
+    { key: "fit", icon: "⤢", label: t("zoom.fit"), run: () => MapAPI.fit() },
+    { key: "select", icon: "➚", label: t("tools.select"), on: App.ui.tool === "select", run: () => Actions.ui({ tool: "select" }) },
+    { key: "paint", icon: "✎", label: t("tools.paint"), on: App.ui.tool === "paint", run: () => Actions.ui({ tool: "paint" }) },
+    world
+      ? { key: "world", icon: "⛰", label: t("tools.world"), on: App.ui.tool === "world", run: () => Actions.ui({ tool: "world" }) }
+      : { key: "label", icon: "T", label: t("tools.label"), on: App.ui.tool === "label", run: () => Actions.ui({ tool: "label" }) },
+    { key: "present", icon: "◱", label: t("input.fullscreen"), run: () => Actions.ui({ present: true }) }
+  ];
+  const short = (label) => String(label).replace(/\s*\([^)]*\)\s*$/, "");
+  return (
+    <div className={"quick-menu" + (open ? " open" : "")} data-export-skip="1">
+      {open && <div className="quick-scrim" onPointerDown={close}></div>}
+      {open && (
+        <div className="quick-grid">
+          {items.map((it) => (
+            <button key={it.key} className={"quick-item" + (it.on ? " on" : "")} disabled={it.disabled}
+              onClick={() => { it.run(); if (it.key !== "undo" && it.key !== "redo") close(); }}>
+              <span className="quick-icon">{it.icon}</span>
+              <span className="quick-label">{short(it.label)}</span>
+            </button>
+          ))}
+        </div>
+      )}
+      <button className="quick-toggle" title={t("input.quick")} onClick={() => Actions.ui({ quickOpen: !open })}>{open ? "✕" : "◎"}</button>
+    </div>
+  );
+}
+
 function Toast() {
   useStore();
   if (!App.ui.toast) return null;
   return <div className="toast">{App.ui.toast}</div>;
 }
 
-Object.assign(window, { TopBar, Legend, Timeline, TemplatesModal, LibraryModal, Toast, PwaBanner });
+Object.assign(window, { TopBar, Legend, Timeline, TemplatesModal, LibraryModal, Toast, PwaBanner, QuickMenu });

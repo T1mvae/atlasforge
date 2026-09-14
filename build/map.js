@@ -454,6 +454,8 @@ function MapView() {
   var brushRef = useRef(null); // custom world: brush outline following the pen
   var riverPrevRef = useRef(null); // custom world: river stroke preview
   var touches = useRef(new Map()); // active touch pointers (pinch zoom / two-finger pan)
+  var tapRef = useRef(null); // multi-finger tap recognizer: { t0, max, moved, starts }
+  var longPressRef = useRef(null); // finger long-press (eyedropper) timer
   var autonomyCacheRef = useRef({});
   var project = App.project;
   var bm = App.basemap;
@@ -736,14 +738,70 @@ function MapView() {
     App.ui.geomDraw = null;
     App.emit();
   }, []);
+
+  // finger long-press = eyedropper: terrain brush on custom worlds, else the owner state
+  var armLongPress = function armLongPress(e, rid) {
+    clearTimeout(longPressRef.current);
+    var cx = e.clientX,
+      cy = e.clientY;
+    longPressRef.current = setTimeout(function () {
+      var g = gesture.current;
+      if (!g || g.mode !== "down" || touches.current.size !== 1) return;
+      gesture.current = null; // the lift that follows must not also select
+      if (window.World && World.active() && App.ui.tool === "world") {
+        var b = World.pickBrush(World.mapToGrid(clientToMap({
+          clientX: cx,
+          clientY: cy
+        })));
+        if (b) {
+          Actions.ui({
+            worldBrush: b
+          });
+          Actions.toast(t("input.pickedBrush").replace("{b}", t("world.brush." + b)));
+        }
+        return;
+      }
+      var e0 = rid && App.project ? effRegion(App.project, rid) : null;
+      if (e0 && e0.owner && App.project.states[e0.owner]) {
+        Actions.ui({
+          activeState: e0.owner
+        });
+        Actions.toast(t("input.pickedState").replace("{s}", App.project.states[e0.owner].name));
+      }
+    }, 520);
+  };
   var onPointerDown = useCallback(function (e) {
     if (e.button === 2) return;
     var tool = App.ui.tool;
     // ---- touch: two fingers pinch-zoom / pan on every map ----
     if (e.pointerType === "touch") {
+      var now = performance.now();
       touches.current.set(e.pointerId, [e.clientX, e.clientY]);
+      if (touches.current.size === 1) tapRef.current = {
+        t0: now,
+        max: 1,
+        moved: false,
+        starts: new Map()
+      };
+      var tap = tapRef.current;
+      if (tap) {
+        tap.max = Math.max(tap.max, touches.current.size);
+        tap.starts.set(e.pointerId, [e.clientX, e.clientY]);
+      }
+      clearTimeout(longPressRef.current);
       if (touches.current.size >= 2) {
-        if (window.World && World.strokeActive()) World.strokeEnd();
+        // a second finger: this is a gesture. A stroke the first finger started a
+        // moment ago was part of it (two-finger tap / pinch) — drop it, don't commit.
+        var g0 = gesture.current;
+        var young = tap && now - tap.t0 < 350;
+        if (g0 && g0.mode === "world") {
+          try {
+            svgRef.current.releasePointerCapture(g0.pointerId);
+          } catch (err) {}
+          young ? World.strokeCancel() : World.strokeEnd();
+        } else if (g0 && g0.mode === "paint") {
+          young ? Actions.cancelStroke() : Actions.endStroke();
+        }
         var _ref3 = _toConsumableArray(touches.current.values()),
           a = _ref3[0],
           b = _ref3[1];
@@ -758,19 +816,6 @@ function MapView() {
         return;
       }
     }
-    if (e.pointerType === "pen" && window.World) World.penSeen = true;
-    // ---- custom world terrain brushes (a finger pans once a pen has been used) ----
-    if (tool === "world" && window.World && World.active() && e.button === 0 && !(e.pointerType === "touch" && World.penSeen)) {
-      var g = World.mapToGrid(clientToMap(e));
-      World.strokeStart(g, e.pressure, e.pointerType);
-      gesture.current = {
-        mode: "world"
-      };
-      try {
-        svgRef.current.setPointerCapture(e.pointerId);
-      } catch (err) {}
-      return;
-    }
     var rid = e.target.dataset ? e.target.dataset.id : null;
     var regId = e.target.dataset ? e.target.dataset.regionId : null;
     var lbl = e.target.dataset ? e.target.dataset.label : null;
@@ -781,6 +826,42 @@ function MapView() {
       vx = _clientToViewbox6[0],
       vy = _clientToViewbox6[1];
     var mapPt = clientToMap(e);
+    if (e.pointerType === "pen" && window.World && !World.penSeen) {
+      World.penSeen = true;
+      App.emit();
+    }
+    // ---- stylus draws, fingers navigate: once a pen has been seen (and the
+    // "pencil only" preference is on) a finger pans, pinches, taps to select and
+    // long-presses to pick — it never paints ----
+    var fingerNav = e.pointerType === "touch" && window.World && World.penSeen && App.ui.pencilOnly !== false;
+    if (fingerNav) {
+      gesture.current = {
+        mode: "down",
+        vx: vx,
+        vy: vy,
+        rid: rid,
+        regId: regId,
+        shift: false,
+        tool: "select",
+        panOk: true,
+        finger: true
+      };
+      armLongPress(e, rid);
+      return;
+    }
+    // ---- custom world terrain brushes ----
+    if (tool === "world" && window.World && World.active() && e.button === 0) {
+      var g = World.mapToGrid(clientToMap(e));
+      World.strokeStart(g, e.pressure, e.pointerType, e.altitudeAngle);
+      gesture.current = {
+        mode: "world",
+        pointerId: e.pointerId
+      };
+      try {
+        svgRef.current.setPointerCapture(e.pointerId);
+      } catch (err) {}
+      return;
+    }
 
     // ---- reference backdrop move / resize ----
     if (e.target.dataset && (e.target.dataset.backdrop || e.target.dataset.bdresize)) {
@@ -943,6 +1024,12 @@ function MapView() {
     var g = gesture.current;
     if (e.pointerType === "touch" && touches.current.has(e.pointerId)) {
       touches.current.set(e.pointerId, [e.clientX, e.clientY]);
+      var tap = tapRef.current;
+      var st = tap && tap.starts.get(e.pointerId);
+      if (st && Math.hypot(e.clientX - st[0], e.clientY - st[1]) > 12) {
+        tap.moved = true;
+        clearTimeout(longPressRef.current);
+      }
       if (g && g.mode === "pinch" && touches.current.size >= 2) {
         var _ref4 = _toConsumableArray(touches.current.values()),
           a = _ref4[0],
@@ -981,7 +1068,8 @@ function MapView() {
         World.strokeMove(list.map(function (ev) {
           return {
             g: World.mapToGrid(clientToMap(ev)),
-            pressure: ev.pressure
+            pressure: ev.pressure,
+            altitude: ev.altitudeAngle
           };
         }));
         var prev = World.strokePreview();
@@ -1179,7 +1267,21 @@ function MapView() {
     }
   }, [clientToViewbox, clientToMap, paintRegion, setView]);
   var onPointerUp = useCallback(function (e) {
-    if (e.pointerType === "touch") touches.current["delete"](e.pointerId);
+    if (e.pointerType === "touch") {
+      touches.current["delete"](e.pointerId);
+      clearTimeout(longPressRef.current);
+      var tap = tapRef.current;
+      if (tap && touches.current.size === 0) {
+        tapRef.current = null;
+        // two-finger tap = undo, three-finger tap = redo (Procreate convention)
+        if (!tap.moved && tap.max >= 2 && performance.now() - tap.t0 < 350) {
+          gesture.current = null;
+          if (tap.max === 2) Actions.undo();else Actions.redo();
+          Actions.toast(t(tap.max === 2 ? "input.undo" : "input.redo"));
+          return;
+        }
+      }
+    }
     if (e.type === "pointerleave" && brushRef.current) brushRef.current.style.display = "none";
     var g = gesture.current;
     if (g && g.mode === "pinch") {
@@ -1195,7 +1297,9 @@ function MapView() {
       if (riverPrevRef.current) riverPrevRef.current.style.display = "none";
       if (e.type === "pointerup") World.strokeMove([{
         g: World.mapToGrid(clientToMap(e)),
-        pressure: e.pressure
+        pressure: e.pressure,
+        altitude: e.altitudeAngle,
+        "final": true
       }]);
       World.strokeEnd();
       return;
@@ -2330,7 +2434,31 @@ function MapView() {
     return t(ty === "state-grid" ? "stat.states" : ty === "region-grid" ? "stat.regions" : "stat.provinces");
   }()), App.regionData.status === "ready" && App.regionData.regions.length > 0 && /*#__PURE__*/React.createElement("span", null, /*#__PURE__*/React.createElement("b", null, App.regionData.regions.length), " ", t("stat.regionsShort")), RegionModel.supportsRegions() && /*#__PURE__*/React.createElement("span", null, regionMode ? t("mode.region") : t("mode.province")), /*#__PURE__*/React.createElement("span", {
     ref: zoomTextRef
-  }, "100%")), /*#__PURE__*/React.createElement("div", {
+  }, "100%")), !App.ui.rightOpen && ready && (App.ui.selection.length > 0 || App.ui.activeState) && function () {
+    var rid = App.ui.selection[0];
+    var f = rid && bm.byId[rid];
+    var er = rid ? effRegion(project, rid) : null;
+    var st = App.ui.activeState && states[App.ui.activeState];
+    var label = f ? (er && er.name || (App.ui.lang === "ru" && f.nameRu ? f.nameRu : f.name)) + (App.ui.selection.length > 1 ? " +" + (App.ui.selection.length - 1) : "") : st ? st.name : "";
+    return /*#__PURE__*/React.createElement("button", {
+      className: "sel-pill",
+      "data-export-skip": "1",
+      onClick: function onClick() {
+        return Actions.setPref({
+          rightOpen: true
+        });
+      }
+    }, st && !f && /*#__PURE__*/React.createElement("span", {
+      className: "state-swatch",
+      style: {
+        background: st.color
+      }
+    }), /*#__PURE__*/React.createElement("span", {
+      className: "sel-pill-name"
+    }, label), /*#__PURE__*/React.createElement("span", {
+      className: "sel-pill-open"
+    }, t("input.properties"), " \u203A"));
+  }(), window.QuickMenu && /*#__PURE__*/React.createElement(QuickMenu, null), worldOn && App.ui.tool === "world" && window.WorldSizeRail && /*#__PURE__*/React.createElement(WorldSizeRail, null), /*#__PURE__*/React.createElement("div", {
     className: "zoom-controls"
   }, /*#__PURE__*/React.createElement("button", {
     className: "btn icon",

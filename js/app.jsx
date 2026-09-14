@@ -71,11 +71,14 @@ function AppRoot() {
       <TopBar></TopBar>
       <div className="app-mid">
         <Toolbar></Toolbar>
-        <StatesPanel></StatesPanel>
+        {App.ui.leftOpen && <StatesPanel></StatesPanel>}
         <MapView></MapView>
         <Legend></Legend>
-        <PanelResizer></PanelResizer>
-        <PropsPanel></PropsPanel>
+        {App.ui.rightOpen && <PanelResizer></PanelResizer>}
+        {App.ui.rightOpen && <PropsPanel></PropsPanel>}
+        {(App.ui.leftOpen || App.ui.rightOpen) && !App.ui.present && (
+          <div className="drawer-scrim" onClick={() => Actions.setPref({ leftOpen: false, rightOpen: false })}></div>
+        )}
         {App.ui.present && (
           <button className="btn outline present-exit" onClick={() => Actions.ui({ present: false })}>{t("present.exit")}</button>
         )}

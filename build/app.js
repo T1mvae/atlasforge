@@ -181,7 +181,15 @@ function AppRoot() {
     "data-screen-label": "AtlasForge editor"
   }, /*#__PURE__*/React.createElement(TopBar, null), /*#__PURE__*/React.createElement("div", {
     className: "app-mid"
-  }, /*#__PURE__*/React.createElement(Toolbar, null), /*#__PURE__*/React.createElement(StatesPanel, null), /*#__PURE__*/React.createElement(MapView, null), /*#__PURE__*/React.createElement(Legend, null), /*#__PURE__*/React.createElement(PanelResizer, null), /*#__PURE__*/React.createElement(PropsPanel, null), App.ui.present && /*#__PURE__*/React.createElement("button", {
+  }, /*#__PURE__*/React.createElement(Toolbar, null), App.ui.leftOpen && /*#__PURE__*/React.createElement(StatesPanel, null), /*#__PURE__*/React.createElement(MapView, null), /*#__PURE__*/React.createElement(Legend, null), App.ui.rightOpen && /*#__PURE__*/React.createElement(PanelResizer, null), App.ui.rightOpen && /*#__PURE__*/React.createElement(PropsPanel, null), (App.ui.leftOpen || App.ui.rightOpen) && !App.ui.present && /*#__PURE__*/React.createElement("div", {
+    className: "drawer-scrim",
+    onClick: function onClick() {
+      return Actions.setPref({
+        leftOpen: false,
+        rightOpen: false
+      });
+    }
+  }), App.ui.present && /*#__PURE__*/React.createElement("button", {
     className: "btn outline present-exit",
     onClick: function onClick() {
       return Actions.ui({

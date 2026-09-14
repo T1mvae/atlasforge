@@ -82,7 +82,14 @@
       legendPos: null,
       toast: null,
       playing: false,
-      propsWidth: 320            // right properties panel width (px), persisted
+      propsWidth: 320,           // right properties panel width (px), persisted
+      // ---- tablet / stylus preferences (persisted with the UI prefs) ----
+      leftOpen: window.innerWidth >= 1300,   // states sidebar shown
+      rightOpen: window.innerWidth >= 1000,  // properties panel shown
+      pencilOnly: true,          // once a pen was seen, fingers only navigate / select
+      worldPressure: true,       // pen pressure changes the terrain brush size (when the pen reports it)
+      tiltSize: false,           // pen tilt widens the terrain brush
+      worldStabilizer: 0         // 0..0.85 stroke smoothing (lag) for terrain brushes
     },
     project: null,
     projectId: null,              // key of the open project in the IndexedDB library (js/storage.js)
@@ -243,6 +250,18 @@
     strokeOpen = true;
   };
   Actions.endStroke = function () { strokeOpen = false; };
+  Actions.strokeOpen = function () { return strokeOpen; };
+  // throw away a grouped stroke that turned out to be accidental (e.g. the first
+  // finger of a two-finger tap): restore the snapshot taken by beginStroke
+  Actions.cancelStroke = function () {
+    if (!strokeOpen || !App.project || !App.undoStack.length) { strokeOpen = false; return; }
+    strokeOpen = false;
+    applySlice(App.project, App.undoStack.pop());
+    App.terrVersion++; App.regionVersion++;
+    scheduleSave();
+    App.emit();
+    if (window.World) window.World.sync(true);
+  };
 
   // geometry edits live in the same undo slice; when they change across an
   // undo/redo step, the basemap must be rebuilt from the edited collection
@@ -301,11 +320,21 @@
   document.addEventListener("visibilitychange", () => { if (document.visibilityState === "hidden" && saveTimer) saveNow(); });
   window.addEventListener("pagehide", () => { if (saveTimer) saveNow(); });
 
+  const PREF_KEYS = ["lang", "theme", "propsWidth", "leftOpen", "rightOpen", "pencilOnly", "worldPressure", "tiltSize",
+    "worldStabilizer", "worldSize", "worldRough", "worldBrush"];
   function saveUiPrefs() {
     try {
-      localStorage.setItem(LS_UI, JSON.stringify({ lang: App.ui.lang, theme: App.ui.theme, propsWidth: App.ui.propsWidth }));
+      const out = {};
+      PREF_KEYS.forEach((k) => { if (App.ui[k] !== undefined) out[k] = App.ui[k]; });
+      localStorage.setItem(LS_UI, JSON.stringify(out));
     } catch (e) {}
   }
+  // UI preference change that survives restarts
+  Actions.setPref = function (patch) {
+    Object.assign(App.ui, patch);
+    saveUiPrefs();
+    App.emit();
+  };
 
   // ---------- generic mutators ----------
   Actions.ui = function (patch) {
@@ -1084,8 +1113,11 @@
   Actions.loadSaved = async function () {
     try {
       const ui = JSON.parse(localStorage.getItem(LS_UI) || "null");
-      if (ui) Object.assign(App.ui, { lang: ui.lang || "ru", theme: ui.theme || "dark",
-        propsWidth: Math.max(240, Math.min(600, +ui.propsWidth || 320)) });
+      if (ui) {
+        PREF_KEYS.forEach((k) => { if (ui[k] !== undefined) App.ui[k] = ui[k]; });
+        Object.assign(App.ui, { lang: ui.lang || "ru", theme: ui.theme || "dark",
+          propsWidth: Math.max(240, Math.min(600, +ui.propsWidth || 320)) });
+      }
     } catch (e) {}
     const store = window.ProjectStore;
     if (store && store.available) {

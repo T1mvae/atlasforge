@@ -15,7 +15,8 @@ function _arrayWithHoles(r) { if (Array.isArray(r)) return r; }
 function MenuButton(_ref) {
   var id = _ref.id,
     label = _ref.label,
-    children = _ref.children;
+    children = _ref.children,
+    right = _ref.right;
   useStore();
   var open = App.ui.menu === id;
   return /*#__PURE__*/React.createElement("div", {
@@ -34,7 +35,7 @@ function MenuButton(_ref) {
       opacity: 0.6
     }
   }, "\u25BC")), open && /*#__PURE__*/React.createElement("div", {
-    className: "menu",
+    className: "menu" + (right ? " right" : ""),
     onClick: function onClick(e) {
       return e.stopPropagation();
     }
@@ -189,11 +190,36 @@ function TopBar() {
   return /*#__PURE__*/React.createElement("div", {
     className: "topbar",
     "data-screen-label": "Top bar"
-  }, /*#__PURE__*/React.createElement("div", {
+  }, /*#__PURE__*/React.createElement("button", {
+    className: "btn icon panel-toggle" + (App.ui.leftOpen ? " on" : ""),
+    title: t("input.toggleLeft"),
+    onClick: function onClick() {
+      return Actions.setPref({
+        leftOpen: !App.ui.leftOpen
+      });
+    }
+  }, /*#__PURE__*/React.createElement("svg", {
+    width: "16",
+    height: "16",
+    viewBox: "0 0 16 16",
+    fill: "none",
+    stroke: "currentColor",
+    strokeWidth: "1.4"
+  }, /*#__PURE__*/React.createElement("rect", {
+    x: "2",
+    y: "3",
+    width: "12",
+    height: "10",
+    rx: "1.5"
+  }), /*#__PURE__*/React.createElement("path", {
+    d: "M6 3 V13"
+  }))), /*#__PURE__*/React.createElement("div", {
     className: "brand"
   }, /*#__PURE__*/React.createElement("span", {
     className: "brand-glyph"
-  }, "AF"), /*#__PURE__*/React.createElement("span", null, t("app.title"))), p && /*#__PURE__*/React.createElement("input", {
+  }, "AF"), /*#__PURE__*/React.createElement("span", {
+    className: "brand-name"
+  }, t("app.title"))), p && /*#__PURE__*/React.createElement("input", {
     className: "proj-name",
     value: p.name,
     onChange: function onChange(e) {
@@ -319,7 +345,60 @@ function TopBar() {
     className: "tb-spacer"
   }), /*#__PURE__*/React.createElement(SearchBox, null), /*#__PURE__*/React.createElement("div", {
     className: "tb-sep"
-  }), /*#__PURE__*/React.createElement("button", {
+  }), /*#__PURE__*/React.createElement(MenuButton, {
+    id: "input",
+    label: /*#__PURE__*/React.createElement("span", {
+      className: "input-menu-label"
+    }, /*#__PURE__*/React.createElement("svg", {
+      width: "16",
+      height: "16",
+      viewBox: "0 0 16 16",
+      fill: "none",
+      stroke: "currentColor",
+      strokeWidth: "1.4"
+    }, /*#__PURE__*/React.createElement("path", {
+      d: "M11 2.5 L13.5 5 L6 12.5 L3 13 L3.5 10 Z"
+    }), /*#__PURE__*/React.createElement("path", {
+      d: "M9.5 4 L12 6.5"
+    }))),
+    right: true
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "menu-title"
+  }, t("input.title")), /*#__PURE__*/React.createElement("label", {
+    className: "menu-check"
+  }, /*#__PURE__*/React.createElement("input", {
+    type: "checkbox",
+    checked: App.ui.pencilOnly !== false,
+    onChange: function onChange(e) {
+      return Actions.setPref({
+        pencilOnly: e.target.checked
+      });
+    }
+  }), /*#__PURE__*/React.createElement("span", null, t("input.pencilOnly"), /*#__PURE__*/React.createElement("small", null, t("input.pencilOnlyHint")))), /*#__PURE__*/React.createElement("label", {
+    className: "menu-check"
+  }, /*#__PURE__*/React.createElement("input", {
+    type: "checkbox",
+    checked: App.ui.worldPressure !== false,
+    onChange: function onChange(e) {
+      return Actions.setPref({
+        worldPressure: e.target.checked
+      });
+    }
+  }), /*#__PURE__*/React.createElement("span", null, t("world.pressure"), /*#__PURE__*/React.createElement("small", null, window.World && World.pressureSupport() === "no" ? t("input.noPressure") : t("input.pressureHint")))), /*#__PURE__*/React.createElement("label", {
+    className: "menu-check"
+  }, /*#__PURE__*/React.createElement("input", {
+    type: "checkbox",
+    checked: !!App.ui.tiltSize,
+    onChange: function onChange(e) {
+      return Actions.setPref({
+        tiltSize: e.target.checked
+      });
+    }
+  }), /*#__PURE__*/React.createElement("span", null, t("input.tilt"), /*#__PURE__*/React.createElement("small", null, t("input.tiltHint")))), /*#__PURE__*/React.createElement("div", {
+    className: "menu-sep"
+  }), /*#__PURE__*/React.createElement("div", {
+    className: "menu-note"
+  }, t("input.gestures"))), /*#__PURE__*/React.createElement("button", {
     className: "btn",
     title: "Language",
     onClick: function onClick() {
@@ -332,6 +411,29 @@ function TopBar() {
       return Actions.setTheme(App.ui.theme === "dark" ? "light" : "dark");
     }
   }, App.ui.theme === "dark" ? "☾" : "☀"), /*#__PURE__*/React.createElement("button", {
+    className: "btn icon panel-toggle" + (App.ui.rightOpen ? " on" : ""),
+    title: t("input.toggleRight"),
+    onClick: function onClick() {
+      return Actions.setPref({
+        rightOpen: !App.ui.rightOpen
+      });
+    }
+  }, /*#__PURE__*/React.createElement("svg", {
+    width: "16",
+    height: "16",
+    viewBox: "0 0 16 16",
+    fill: "none",
+    stroke: "currentColor",
+    strokeWidth: "1.4"
+  }, /*#__PURE__*/React.createElement("rect", {
+    x: "2",
+    y: "3",
+    width: "12",
+    height: "10",
+    rx: "1.5"
+  }), /*#__PURE__*/React.createElement("path", {
+    d: "M10 3 V13"
+  }))), /*#__PURE__*/React.createElement("button", {
     className: "btn icon",
     title: "Presentation (P)",
     onClick: function onClick() {
@@ -1272,6 +1374,138 @@ function PwaBanner() {
   }
   return null;
 }
+
+// round quick menu for thumbs (bottom-right of the map): the actions one reaches for
+// mid-drawing without travelling to the toolbars
+function QuickMenu() {
+  useStore();
+  var open = !!App.ui.quickOpen;
+  if (!App.project || App.ui.present) return null;
+  var world = window.World && World.active();
+  var close = function close() {
+    return Actions.ui({
+      quickOpen: false
+    });
+  };
+  var items = [{
+    key: "undo",
+    icon: "↶",
+    label: t("edit.undo"),
+    disabled: !App.undoStack.length,
+    run: function run() {
+      return Actions.undo();
+    }
+  }, {
+    key: "redo",
+    icon: "↷",
+    label: t("edit.redo"),
+    disabled: !App.redoStack.length,
+    run: function run() {
+      return Actions.redo();
+    }
+  }, {
+    key: "panels",
+    icon: "▭",
+    label: t("input.panels"),
+    run: function run() {
+      var any = App.ui.leftOpen || App.ui.rightOpen;
+      Actions.setPref({
+        leftOpen: !any && window.innerWidth >= 1300,
+        rightOpen: !any
+      });
+    }
+  }, {
+    key: "fit",
+    icon: "⤢",
+    label: t("zoom.fit"),
+    run: function run() {
+      return MapAPI.fit();
+    }
+  }, {
+    key: "select",
+    icon: "➚",
+    label: t("tools.select"),
+    on: App.ui.tool === "select",
+    run: function run() {
+      return Actions.ui({
+        tool: "select"
+      });
+    }
+  }, {
+    key: "paint",
+    icon: "✎",
+    label: t("tools.paint"),
+    on: App.ui.tool === "paint",
+    run: function run() {
+      return Actions.ui({
+        tool: "paint"
+      });
+    }
+  }, world ? {
+    key: "world",
+    icon: "⛰",
+    label: t("tools.world"),
+    on: App.ui.tool === "world",
+    run: function run() {
+      return Actions.ui({
+        tool: "world"
+      });
+    }
+  } : {
+    key: "label",
+    icon: "T",
+    label: t("tools.label"),
+    on: App.ui.tool === "label",
+    run: function run() {
+      return Actions.ui({
+        tool: "label"
+      });
+    }
+  }, {
+    key: "present",
+    icon: "◱",
+    label: t("input.fullscreen"),
+    run: function run() {
+      return Actions.ui({
+        present: true
+      });
+    }
+  }];
+  var _short = function _short(label) {
+    return String(label).replace(/\s*\([^)]*\)\s*$/, "");
+  };
+  return /*#__PURE__*/React.createElement("div", {
+    className: "quick-menu" + (open ? " open" : ""),
+    "data-export-skip": "1"
+  }, open && /*#__PURE__*/React.createElement("div", {
+    className: "quick-scrim",
+    onPointerDown: close
+  }), open && /*#__PURE__*/React.createElement("div", {
+    className: "quick-grid"
+  }, items.map(function (it) {
+    return /*#__PURE__*/React.createElement("button", {
+      key: it.key,
+      className: "quick-item" + (it.on ? " on" : ""),
+      disabled: it.disabled,
+      onClick: function onClick() {
+        it.run();
+        if (it.key !== "undo" && it.key !== "redo") close();
+      }
+    }, /*#__PURE__*/React.createElement("span", {
+      className: "quick-icon"
+    }, it.icon), /*#__PURE__*/React.createElement("span", {
+      className: "quick-label"
+    }, _short(it.label)));
+  })), /*#__PURE__*/React.createElement("button", {
+    className: "quick-toggle",
+    title: t("input.quick"),
+    onClick: function onClick() {
+      return Actions.ui({
+        quickOpen: !open
+      });
+    }
+  }, open ? "✕" : "◎"));
+}
 function Toast() {
   useStore();
   if (!App.ui.toast) return null;
@@ -1286,6 +1520,7 @@ Object.assign(window, {
   TemplatesModal: TemplatesModal,
   LibraryModal: LibraryModal,
   Toast: Toast,
-  PwaBanner: PwaBanner
+  PwaBanner: PwaBanner,
+  QuickMenu: QuickMenu
 });
 //# sourceMappingURL=chrome.js.map

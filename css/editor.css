@@ -509,3 +509,109 @@ body.resizing .map-stage { pointer-events: none; }
 .btn.danger { color: var(--danger); }
 .offline-chip { margin-left: 6px; font-size: 11px; padding: 2px 8px; cursor: pointer; }
 .offline-chip.ready { cursor: default; color: var(--text-dim); }
+
+/* ---------- tablet: panels, safe areas, touch sizes ---------- */
+#root, .app { height: 100vh; height: 100dvh; }
+.app {
+  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+  -webkit-user-select: none; user-select: none; -webkit-touch-callout: none;
+}
+.app input, .app textarea, .app select, .app [contenteditable] { -webkit-user-select: text; user-select: text; }
+html, body { overscroll-behavior: none; -webkit-text-size-adjust: 100%; }
+button, .chip, .state-row, .menu-item { touch-action: manipulation; }
+.panel-toggle { color: var(--text-dim); }
+.panel-toggle.on { color: var(--accent); }
+.input-menu-label { display: inline-flex; }
+.menu-title { font-size: 11px; font-weight: 700; color: var(--text-faint); text-transform: uppercase; letter-spacing: 0.5px; padding: 6px 10px 2px; }
+.menu-check { display: flex; gap: 10px; align-items: flex-start; padding: 8px 10px; border-radius: 5px; cursor: pointer; max-width: 320px; }
+.menu-check:hover { background: var(--accent-soft); }
+.menu-check input { margin-top: 2px; accent-color: var(--accent); width: 16px; height: 16px; flex: none; }
+.menu-check small { display: block; color: var(--text-faint); font-size: 11px; line-height: 1.35; margin-top: 2px; }
+.menu-note { color: var(--text-faint); font-size: 11px; line-height: 1.45; padding: 4px 10px 8px; max-width: 320px; }
+.drawer-scrim { display: none; }
+
+/* narrow screens (iPad portrait, split view): side panels become drawers over the map */
+@media (max-width: 1000px) {
+  .states-panel, .props-panel {
+    position: absolute; top: 0; bottom: 0; z-index: 60; box-shadow: var(--shadow);
+  }
+  .states-panel { left: 44px; }
+  .props-panel { right: 0; width: min(360px, 88vw) !important; }
+  .panel-resizer { display: none; }
+  .drawer-scrim { display: block; position: absolute; inset: 0; z-index: 55; background: rgba(0, 0, 0, 0.28); }
+  .brand-name, .proj-name { display: none; }
+  .search-input { width: 150px; }
+}
+
+/* selection pill (properties panel hidden) */
+.sel-pill {
+  position: absolute; left: 50%; bottom: 58px; transform: translateX(-50%); z-index: 25;
+  display: flex; align-items: center; gap: 10px; max-width: min(520px, 80%);
+  background: var(--panel); color: var(--text); border: 1px solid var(--border); border-radius: 999px;
+  padding: 8px 8px 8px 16px; box-shadow: var(--shadow); font: inherit; cursor: pointer;
+}
+.sel-pill-name { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sel-pill-open { background: var(--accent); color: #fff; border-radius: 999px; padding: 4px 12px; font-size: 12px; font-weight: 600; white-space: nowrap; }
+
+/* quick menu */
+.quick-menu { position: absolute; right: 60px; bottom: 12px; z-index: 40; width: 48px; height: 48px; }
+.quick-scrim { position: fixed; inset: 0; z-index: -1; }
+.quick-toggle {
+  position: absolute; inset: 0; border-radius: 50%; border: 1px solid var(--border);
+  background: var(--panel); color: var(--text); font-size: 20px; box-shadow: var(--shadow); cursor: pointer;
+}
+.quick-menu.open .quick-toggle { background: var(--accent); color: #fff; border-color: var(--accent); }
+.quick-grid {
+  position: absolute; right: 0; bottom: calc(100% + 10px); display: grid; grid-template-columns: repeat(4, 76px); gap: 6px;
+  background: var(--panel); border: 1px solid var(--border); border-radius: 16px; padding: 8px; box-shadow: var(--shadow);
+}
+.quick-item {
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px;
+  height: 64px; border-radius: 12px; border: 1px solid transparent; background: var(--panel-2); color: var(--text);
+  font: inherit; cursor: pointer; padding: 4px;
+}
+.quick-item.on { border-color: var(--accent); background: var(--accent-soft); }
+.quick-item:disabled { opacity: 0.4; }
+.quick-icon { font-size: 20px; line-height: 1; }
+.quick-label { font-size: 10.5px; line-height: 1.15; text-align: center; color: var(--text-dim); }
+
+/* brush size rail (custom world) */
+.size-rail {
+  position: absolute; left: 10px; top: 50%; transform: translateY(-50%); z-index: 22;
+  width: 40px; height: min(300px, 50%); padding: 16px 0; touch-action: none; cursor: ns-resize;
+}
+.size-rail.shifted { left: 256px; }
+.size-rail-track {
+  position: relative; margin: 0 auto; width: 10px; height: 100%; border-radius: 999px;
+  background: var(--panel); border: 1px solid var(--border); box-shadow: var(--shadow);
+}
+.size-rail-fill { position: absolute; left: 0; right: 0; bottom: 0; border-radius: 999px; background: var(--accent); opacity: 0.55; }
+.size-rail-thumb {
+  position: absolute; left: 50%; transform: translateX(-50%); width: 34px; height: 28px; border-radius: 14px;
+  background: var(--panel); border: 1px solid var(--accent); color: var(--text); font-size: 11px; font-weight: 700;
+  display: grid; place-items: center; box-shadow: var(--shadow);
+}
+
+/* coarse pointers (fingers): bigger targets everywhere */
+@media (pointer: coarse) {
+  .app { grid-template-rows: 52px 1fr auto; }
+  .btn { height: 38px; padding: 0 12px; }
+  .btn.icon { width: 40px; }
+  .toolbar { width: 56px; gap: 6px; }
+  .tool-btn { width: 44px; height: 44px; }
+  .menu { min-width: 250px; }
+  .menu-item { padding: 12px 12px; }
+  .chip { padding: 6px 12px; font-size: 12.5px; }
+  .props-tab { padding: 11px 4px; font-size: 13px; }
+  .state-row { padding: 10px 10px; }
+  .input, .select, .textarea { padding: 9px 10px; font-size: 16px; } /* 16px: no Safari zoom on focus */
+  .check-row input, .menu-check input { width: 20px; height: 20px; }
+  .range { height: 28px; }
+  .zoom-controls .btn { width: 44px; height: 44px; }
+  .wp-brush { min-height: 42px; }
+  .search-input { height: 38px; font-size: 16px; }
+  .quick-menu { width: 54px; height: 54px; right: 66px; }
+  .quick-grid { grid-template-columns: repeat(4, 82px); }
+  .quick-item { height: 70px; }
+  @media (max-width: 1000px) { .states-panel { left: 56px; } }
+}

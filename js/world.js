@@ -122,11 +122,11 @@
     }
   }
   // (re)decode the rasters when the project's encoded copy changed (load, undo, redo)
-  World.sync = function () {
+  World.sync = function (force) {
     if (!World.active()) return false;
     const w = App.project.world;
     ensureBuffers();
-    if (w.elev === World.encElev && w.cover === World.encCover) return false;
+    if (!force && w.elev === World.encElev && w.cover === World.encCover) return false;
     World.elev.set(rleDecode(w.elev, GW * GH));
     World.cover.set(rleDecode(w.cover, GW * GH));
     World.encElev = w.elev; World.encCover = w.cover;
@@ -307,12 +307,30 @@
     markDirty(x0, y0, x1, y1);
   }
 
-  function brushRadius(pressure, pointerType) {
+  // Many iPad styluses (Apple Pencil USB-C, Logitech Crayon) report no pressure: a
+  // constant value. Watch pen samples; once they never vary, size ignores pressure.
+  const pressureProbe = { n: 0, min: 1, max: 0 };
+  World.pressureSupport = function () {
+    if (pressureProbe.n < 40) return "unknown";
+    return pressureProbe.max - pressureProbe.min > 0.02 ? "yes" : "no";
+  };
+  function notePressure(pressure, pointerType) {
+    if (pointerType !== "pen" || pressure == null) return;
+    pressureProbe.n++;
+    if (pressure < pressureProbe.min) pressureProbe.min = pressure;
+    if (pressure > pressureProbe.max) pressureProbe.max = pressure;
+  }
+  function brushRadius(pressure, pointerType, altitude) {
     const size = App.ui.worldSize || 12;
-    if (pointerType === "pen" && App.ui.worldPressure !== false) {
-      return Math.max(0.6, size * (0.2 + 0.95 * Math.pow(clamp(pressure || 0.5, 0, 1), 0.85)));
+    let r = size;
+    if (pointerType === "pen" && App.ui.worldPressure !== false && World.pressureSupport() !== "no") {
+      r = size * (0.2 + 0.95 * Math.pow(clamp(pressure || 0.5, 0, 1), 0.85));
     }
-    return size;
+    if (pointerType === "pen" && App.ui.tiltSize && altitude != null) {
+      // a pen held flat (altitude → 0) paints broadly, like the side of a pencil lead
+      r *= 0.7 + 1.1 * (1 - clamp(altitude / (Math.PI / 2), 0, 1));
+    }
+    return Math.max(0.6, r);
   }
   World.brushRadius = brushRadius;
 
@@ -333,17 +351,18 @@
 
   let stroke = null;
   World.strokeActive = () => !!stroke;
-  World.strokeStart = function (g, pressure, pointerType) {
+  World.strokeStart = function (g, pressure, pointerType, altitude) {
     if (!World.active()) return;
     ensureBuffers();
+    notePressure(pressure, pointerType);
     const brush = App.ui.worldBrush || "land";
-    const r = brushRadius(pressure, pointerType);
+    const r = brushRadius(pressure, pointerType, altitude);
     if (brush === "river") {
       stroke = { brush, pts: [g], pointerType };
       return;
     }
     Actions.beginStroke();
-    stroke = { brush, last: g, lastR: r, pointerType, changed: false };
+    stroke = { brush, last: g, lastR: r, pointerType, changed: false, pos: g };
     if (brush === "eraseRiver") eraseRiversAt(g, r);
     else { dab(brush, g[0], g[1], r); stroke.changed = true; }
   };
@@ -356,9 +375,15 @@
       });
       return;
     }
+    const lag = clamp(+App.ui.worldStabilizer || 0, 0, 0.85);
     samples.forEach((s) => {
-      const r = brushRadius(s.pressure, stroke.pointerType);
+      notePressure(s.pressure, stroke.pointerType);
+      const r = brushRadius(s.pressure, stroke.pointerType, s.altitude);
       if (stroke.brush === "eraseRiver") { eraseRiversAt(s.g, r); stroke.last = s.g; return; }
+      // stabilizer: the brush trails the pen, smoothing hand jitter
+      const target = s.final || !lag ? s.g : [stroke.pos[0] + (s.g[0] - stroke.pos[0]) * (1 - lag), stroke.pos[1] + (s.g[1] - stroke.pos[1]) * (1 - lag)];
+      stroke.pos = target;
+      s = { g: target };
       const [lx, ly] = stroke.last;
       const dist = Math.hypot(s.g[0] - lx, s.g[1] - ly);
       const step = Math.max(0.5, Math.min(r, stroke.lastR) * 0.35);
@@ -372,6 +397,14 @@
   };
   World.strokePreview = function () {
     return stroke && stroke.brush === "river" ? stroke.pts : null;
+  };
+  // abandon the stroke in progress (a second finger arrived: it was a gesture)
+  World.strokeCancel = function () {
+    const s = stroke;
+    stroke = null;
+    if (!s) return;
+    if (s.brush === "river") { App.emit(); return; }
+    Actions.cancelStroke();
   };
   World.strokeEnd = function () {
     const s = stroke;
@@ -431,6 +464,18 @@
       rivers.push({ id: window.uid(), name: t("world.riverDefault").replace("{n}", n), pts: smooth, width: 1 });
     });
   }
+
+  // the brush that would paint what is under a grid point (finger long-press)
+  World.pickBrush = function (g) {
+    if (!World.elev) return null;
+    const x = Math.floor(g[0]), y = Math.floor(g[1]);
+    if (x < 0 || y < 0 || x >= GW || y >= GH) return null;
+    const i = y * GW + x, e = World.elev[i];
+    if (e === 0) return "sea";
+    if (e === 3) return "mountains";
+    if (e === 2) return "hills";
+    return ["plains", "forest", "desert", "marsh", "tundra", "jungle"][World.cover[i]] || "plains";
+  };
 
   World.renameRiver = function (id, name) {
     Actions.mut((p) => { const rv = (p.world.rivers || []).find((r) => r.id === id); if (rv) rv.name = name; }, { undo: false });

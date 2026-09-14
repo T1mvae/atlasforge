@@ -35,7 +35,7 @@ function WorldPalette() {
       </div>
       <div className="wp-brushes">
         {World.BRUSHES.map((b) => (
-          <button key={b} className={"wp-brush" + (brush === b ? " on" : "")} onClick={() => Actions.ui({ worldBrush: b })} title={t("world.brushHint." + b)}>
+          <button key={b} className={"wp-brush" + (brush === b ? " on" : "")} onClick={() => Actions.setPref({ worldBrush: b })} title={t("world.brushHint." + b)}>
             <span className="wp-swatch" style={{ background: World.BRUSH_SWATCH[b] }}></span>
             <span>{t("world.brush." + b)}</span>
           </button>
@@ -43,15 +43,20 @@ function WorldPalette() {
       </div>
       <label className="wp-field">
         <span>{t("world.size")} — {size}</span>
-        <input type="range" className="range" min="1" max="60" step="1" value={size} onChange={(e) => Actions.ui({ worldSize: +e.target.value })}></input>
+        <input type="range" className="range" min="1" max="60" step="1" value={size} onChange={(e) => Actions.setPref({ worldSize: +e.target.value })}></input>
       </label>
       <label className="check-row wp-check">
-        <input type="checkbox" checked={App.ui.worldPressure !== false} onChange={(e) => Actions.ui({ worldPressure: e.target.checked })}></input>
-        {t("world.pressure")}
+        <input type="checkbox" checked={App.ui.worldPressure !== false} onChange={(e) => Actions.setPref({ worldPressure: e.target.checked })}></input>
+        {t("world.pressure")}{window.World && World.pressureSupport() === "no" ? " — " + t("input.noPressureShort") : ""}
       </label>
       <label className="check-row wp-check">
-        <input type="checkbox" checked={App.ui.worldRough !== false} onChange={(e) => Actions.ui({ worldRough: e.target.checked })}></input>
+        <input type="checkbox" checked={App.ui.worldRough !== false} onChange={(e) => Actions.setPref({ worldRough: e.target.checked })}></input>
         {t("world.rough")}
+      </label>
+      <label className="wp-field">
+        <span>{t("input.stabilizer")} — {Math.round((+App.ui.worldStabilizer || 0) * 100)}%</span>
+        <input type="range" className="range" min="0" max="0.85" step="0.05" value={+App.ui.worldStabilizer || 0}
+          onChange={(e) => Actions.setPref({ worldStabilizer: +e.target.value })}></input>
       </label>
 
       <div className="wp-sep"></div>
@@ -107,6 +112,47 @@ function WorldPalette() {
   );
 }
 
+// Procreate-style vertical brush-size rail on the left edge of the map: drag with a
+// thumb while the other hand draws (no keyboard shortcuts on an iPad)
+function WorldSizeRail() {
+  useStore();
+  const size = App.ui.worldSize || 12;
+  const MIN = 1, MAX = 60;
+  const trackRef = React.useRef(null);
+  const setFrom = (clientY) => {
+    const r = trackRef.current.getBoundingClientRect();
+    const k = 1 - Math.min(1, Math.max(0, (clientY - r.top) / r.height));
+    // quadratic: fine control over small brushes
+    Actions.ui({ worldSize: Math.max(MIN, Math.round(MIN + (MAX - MIN) * k * k)) });
+  };
+  const onDown = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const el = e.currentTarget;
+    try { el.setPointerCapture(e.pointerId); } catch (err) {}
+    setFrom(e.clientY);
+    const move = (ev) => setFrom(ev.clientY);
+    const up = () => {
+      el.removeEventListener("pointermove", move);
+      el.removeEventListener("pointerup", up);
+      el.removeEventListener("pointercancel", up);
+      Actions.setPref({ worldSize: App.ui.worldSize });
+    };
+    el.addEventListener("pointermove", move);
+    el.addEventListener("pointerup", up);
+    el.addEventListener("pointercancel", up);
+  };
+  const k = Math.sqrt((size - MIN) / (MAX - MIN));
+  return (
+    <div className={"size-rail" + (App.ui.worldPaletteCollapsed ? "" : " shifted")} data-export-skip="1" onPointerDown={onDown} title={t("world.size")}>
+      <div className="size-rail-track" ref={trackRef}>
+        <div className="size-rail-fill" style={{ height: (k * 100) + "%" }}></div>
+        <div className="size-rail-thumb" style={{ bottom: "calc(" + (k * 100) + "% - 14px)" }}>{size}</div>
+      </div>
+    </div>
+  );
+}
+
 function AtlasModal() {
   useStore();
   const [withProvinces, setWithProvinces] = React.useState(true);
@@ -148,4 +194,4 @@ function AtlasModal() {
   );
 }
 
-Object.assign(window, { WorldPalette, AtlasModal });
+Object.assign(window, { WorldPalette, AtlasModal, WorldSizeRail });

@@ -76,7 +76,7 @@ function WorldPalette() {
       key: b,
       className: "wp-brush" + (brush === b ? " on" : ""),
       onClick: function onClick() {
-        return Actions.ui({
+        return Actions.setPref({
           worldBrush: b
         });
       },
@@ -97,7 +97,7 @@ function WorldPalette() {
     step: "1",
     value: size,
     onChange: function onChange(e) {
-      return Actions.ui({
+      return Actions.setPref({
         worldSize: +e.target.value
       });
     }
@@ -107,21 +107,35 @@ function WorldPalette() {
     type: "checkbox",
     checked: App.ui.worldPressure !== false,
     onChange: function onChange(e) {
-      return Actions.ui({
+      return Actions.setPref({
         worldPressure: e.target.checked
       });
     }
-  }), t("world.pressure")), /*#__PURE__*/React.createElement("label", {
+  }), t("world.pressure"), window.World && World.pressureSupport() === "no" ? " — " + t("input.noPressureShort") : ""), /*#__PURE__*/React.createElement("label", {
     className: "check-row wp-check"
   }, /*#__PURE__*/React.createElement("input", {
     type: "checkbox",
     checked: App.ui.worldRough !== false,
     onChange: function onChange(e) {
-      return Actions.ui({
+      return Actions.setPref({
         worldRough: e.target.checked
       });
     }
-  }), t("world.rough")), /*#__PURE__*/React.createElement("div", {
+  }), t("world.rough")), /*#__PURE__*/React.createElement("label", {
+    className: "wp-field"
+  }, /*#__PURE__*/React.createElement("span", null, t("input.stabilizer"), " \u2014 ", Math.round((+App.ui.worldStabilizer || 0) * 100), "%"), /*#__PURE__*/React.createElement("input", {
+    type: "range",
+    className: "range",
+    min: "0",
+    max: "0.85",
+    step: "0.05",
+    value: +App.ui.worldStabilizer || 0,
+    onChange: function onChange(e) {
+      return Actions.setPref({
+        worldStabilizer: +e.target.value
+      });
+    }
+  })), /*#__PURE__*/React.createElement("div", {
     className: "wp-sep"
   }), /*#__PURE__*/React.createElement("div", {
     className: "wp-section"
@@ -236,6 +250,67 @@ function WorldPalette() {
     className: "wp-note"
   }, t("world.labelsHint")));
 }
+
+// Procreate-style vertical brush-size rail on the left edge of the map: drag with a
+// thumb while the other hand draws (no keyboard shortcuts on an iPad)
+function WorldSizeRail() {
+  useStore();
+  var size = App.ui.worldSize || 12;
+  var MIN = 1,
+    MAX = 60;
+  var trackRef = React.useRef(null);
+  var setFrom = function setFrom(clientY) {
+    var r = trackRef.current.getBoundingClientRect();
+    var k = 1 - Math.min(1, Math.max(0, (clientY - r.top) / r.height));
+    // quadratic: fine control over small brushes
+    Actions.ui({
+      worldSize: Math.max(MIN, Math.round(MIN + (MAX - MIN) * k * k))
+    });
+  };
+  var onDown = function onDown(e) {
+    e.preventDefault();
+    e.stopPropagation();
+    var el = e.currentTarget;
+    try {
+      el.setPointerCapture(e.pointerId);
+    } catch (err) {}
+    setFrom(e.clientY);
+    var move = function move(ev) {
+      return setFrom(ev.clientY);
+    };
+    var _up = function up() {
+      el.removeEventListener("pointermove", move);
+      el.removeEventListener("pointerup", _up);
+      el.removeEventListener("pointercancel", _up);
+      Actions.setPref({
+        worldSize: App.ui.worldSize
+      });
+    };
+    el.addEventListener("pointermove", move);
+    el.addEventListener("pointerup", _up);
+    el.addEventListener("pointercancel", _up);
+  };
+  var k = Math.sqrt((size - MIN) / (MAX - MIN));
+  return /*#__PURE__*/React.createElement("div", {
+    className: "size-rail" + (App.ui.worldPaletteCollapsed ? "" : " shifted"),
+    "data-export-skip": "1",
+    onPointerDown: onDown,
+    title: t("world.size")
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "size-rail-track",
+    ref: trackRef
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "size-rail-fill",
+    style: {
+      height: k * 100 + "%"
+    }
+  }), /*#__PURE__*/React.createElement("div", {
+    className: "size-rail-thumb",
+    style: {
+      bottom: "calc(" + k * 100 + "% - 14px)"
+    }
+  }, size)));
+}
 function AtlasModal() {
   useStore();
   var _React$useState3 = React.useState(true),
@@ -347,6 +422,7 @@ function AtlasModal() {
 }
 Object.assign(window, {
   WorldPalette: WorldPalette,
-  AtlasModal: AtlasModal
+  AtlasModal: AtlasModal,
+  WorldSizeRail: WorldSizeRail
 });
 //# sourceMappingURL=world.js.map

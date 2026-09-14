@@ -833,7 +833,7 @@ function LibraryModal() {
   };
   var exportFile = function exportFile(it) {
     return act(/*#__PURE__*/_asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee5() {
-      var p, name, _t3;
+      var p, name, data, _t3;
       return _regenerator().w(function (_context5) {
         while (1) switch (_context5.n) {
           case 0:
@@ -858,7 +858,8 @@ function LibraryModal() {
             return _context5.a(2);
           case 4:
             name = (p.name || "map").replace(/[^\w\u0400-\u04FF -]+/g, "").trim() || "map";
-            window.downloadBlob(new Blob([JSON.stringify(p, null, 1)], {
+            data = window.World ? World.exportable(p) : p;
+            window.downloadBlob(new Blob([JSON.stringify(data, null, 1)], {
               type: "application/json"
             }), name + ".atlasforge.json");
           case 5:

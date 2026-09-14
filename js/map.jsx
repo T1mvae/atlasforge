@@ -975,6 +975,15 @@ function MapView() {
         return;
       }
       if (tool === "fill" && g.rid) { fillByOwner(g.rid); return; }
+      if ((tool === "select" || tool === "pan") && window.World && World.active()) {
+        // a river under the tap (generous finger tolerance) opens its card
+        const k = view.current.k;
+        const [mx, my] = clientToMap(e);
+        const tolData = (g.finger || e.pointerType === "touch" ? 16 : 8) / Math.max(0.0001, k * World.mapUnitsPerCell() * (svgRef.current.getScreenCTM().a || 1));
+        const rv = World.riverAt(World.mapToGrid([mx, my]), tolData);
+        if (rv) { Actions.ui({ card: { kind: "river", index: rv.index }, selection: [] }); return; }
+        if (App.ui.card) Actions.ui({ card: null });
+      }
       if (tool === "select" || tool === "pan") {
         if (App.ui.selectMode === "region") {
           const regId = g.regId || provRegionRef.current[g.rid];
@@ -1365,14 +1374,20 @@ function MapView() {
             </g>
           )}
           {/* ---- custom world: painted rivers (tapered ribbons) ---- */}
-          {ready && worldOn && settings.showRivers !== false && (project.world.rivers || []).length > 0 && (
-            <g id="world-rivers" pointerEvents="none">
-              {project.world.rivers.map((rv) => (
-                <path key={"wr" + rv.id} d={World.riverPath(rv, bm.proj)} fill="#3f74a8" stroke="#3f74a8"
-                  strokeWidth="0.9" strokeLinejoin="round" vectorEffect="non-scaling-stroke"></path>
-              ))}
-            </g>
-          )}
+          {ready && worldOn && settings.showRivers !== false && (() => {
+            const list = World.displayRivers();
+            if (!list.length) return null;
+            const sel = App.ui.card && App.ui.card.kind === "river" ? App.ui.card.index : -1;
+            return (
+              <g id="world-rivers" pointerEvents="none">
+                {list.map((rv) => (
+                  <path key={"wr" + rv.index} d={World.riverPath(rv, bm.proj)} fill={rv.index === sel ? "#1f5fa8" : "#3f74a8"}
+                    stroke={rv.index === sel ? "#ffcf5a" : "#3f74a8"} strokeWidth={rv.index === sel ? 2 : 0.7}
+                    strokeLinejoin="round" vectorEffect="non-scaling-stroke"></path>
+                ))}
+              </g>
+            );
+          })()}
           {/* ---- physical relief (under region overlay): ranges + deserts + forest ---- */}
           {physReady && phys.relief.length > 0 && (
             <g id="phys-relief" pointerEvents="none">
@@ -1648,6 +1663,7 @@ function MapView() {
       )}
 
       {worldOn && App.ui.tool === "world" && window.WorldPalette && <WorldPalette></WorldPalette>}
+      {window.WorldCard && <WorldCard></WorldCard>}
 
       <div className="minimap" onPointerDown={onMinimapClick}>
         <canvas ref={minimapRef}></canvas>

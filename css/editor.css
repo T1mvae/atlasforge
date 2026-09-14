@@ -615,3 +615,29 @@ button, .chip, .state-row, .menu-item { touch-action: manipulation; }
   .quick-item { height: 70px; }
   @media (max-width: 1000px) { .states-panel { left: 56px; } }
 }
+
+/* ---------- custom world v2: palette groups, cards ---------- */
+.wp-group { border-top: 1px solid var(--border); padding-top: 4px; }
+.wp-group-head {
+  display: flex; align-items: center; gap: 6px; width: 100%; background: none; border: none; color: var(--text);
+  font: inherit; font-weight: 700; padding: 6px 0; cursor: pointer; text-align: left;
+}
+.wp-group-body { display: flex; flex-direction: column; gap: 8px; padding-bottom: 6px; }
+.wp-section { font-size: 11px; font-weight: 700; color: var(--text-faint); text-transform: uppercase; letter-spacing: 0.5px; margin-top: 2px; }
+.world-palette .chip-row .chip { flex: 1; text-align: center; }
+
+.info-card {
+  position: absolute; left: 50%; bottom: 16px; transform: translateX(-50%); z-index: 45;
+  width: min(460px, calc(100% - 24px)); max-height: min(70%, 560px); overflow-y: auto;
+  background: var(--panel); border: 1px solid var(--border); border-radius: 16px; box-shadow: var(--shadow);
+  padding: 12px 14px 14px; display: flex; flex-direction: column; gap: 10px;
+}
+.card-head { display: flex; align-items: center; justify-content: space-between; }
+.card-kind { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.6px; color: var(--text-dim); }
+.card-title { font-size: 17px; font-weight: 700; }
+.card-grid { display: flex; flex-direction: column; gap: 5px; }
+.card-row { display: flex; gap: 10px; font-size: 13px; line-height: 1.35; }
+.card-k { flex: 0 0 38%; color: var(--text-dim); }
+.card-v { flex: 1; color: var(--text); }
+.card-notes { min-height: 64px; }
+.card-actions { display: flex; gap: 8px; flex-wrap: wrap; }

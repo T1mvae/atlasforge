@@ -204,7 +204,8 @@
   Exports.json = function () {
     const App = window.App;
     if (!App.project) return;
-    const blob = new Blob([JSON.stringify(App.project, null, 1)], { type: "application/json" });
+    const data = window.World ? window.World.exportable(App.project) : App.project;
+    const blob = new Blob([JSON.stringify(data, null, 1)], { type: "application/json" });
     download(blob, fileBase() + ".atlasforge.json");
   };
 

@@ -163,6 +163,8 @@
       regions: {},
       groups: {},
       labels: [],
+      // ---- places on the map: cities, fortresses, ports… (js/objects.js) ----
+      objects: {},
       featLabels: {},                               // featureId -> { dx, dy, angle, size, hidden } (per-region name overrides)
       years: [],
       snapshots: {},
@@ -224,7 +226,9 @@
       regionLayers: p.regionLayers || [], customRegions: p.customRegions || {}, regionEdits: p.regionEdits || {},
       regionGeomEdits: p.regionGeomEdits || { removed: {}, features: {} }, backdrop: p.backdrop || null,
       autonomies: p.autonomies || {}, valueLists: p.valueLists || {}, catalogs: p.catalogs || {},
-      world: p.world || null
+      // custom worlds: settings and rivers only — the rasters have their own diff entries
+      world: window.World ? window.World.sliceWorld(p.world) : (p.world || null),
+      objects: p.objects || {}
     });
   }
   function applySlice(p, json) {
@@ -242,6 +246,21 @@
 
   const Actions = (window.Actions = {});
 
+  // Non-slice undo entries ({ undo(), redo(), bytes }) — e.g. terrain raster diffs in
+  // custom worlds. They share the stack with the JSON slices so the order is kept.
+  const UNDO_BYTES = 160 * 1024 * 1024;
+  Actions.pushUndoEntry = function (entry) {
+    if (!App.project) return;
+    App.undoStack.push(entry);
+    App.redoStack.length = 0;
+    let bytes = 0;
+    for (const e of App.undoStack) bytes += typeof e === "string" ? e.length * 2 : (e.bytes || 0);
+    while ((App.undoStack.length > 60 || bytes > UNDO_BYTES) && App.undoStack.length > 1) {
+      const old = App.undoStack.shift();
+      bytes -= typeof old === "string" ? old.length * 2 : (old.bytes || 0);
+    }
+  };
+
   Actions.beginStroke = function () {
     if (!App.project || strokeOpen) return;
     App.undoStack.push(politicalSlice(App.project));
@@ -254,13 +273,12 @@
   // throw away a grouped stroke that turned out to be accidental (e.g. the first
   // finger of a two-finger tap): restore the snapshot taken by beginStroke
   Actions.cancelStroke = function () {
-    if (!strokeOpen || !App.project || !App.undoStack.length) { strokeOpen = false; return; }
+    if (!strokeOpen || !App.project || !App.undoStack.length || typeof App.undoStack[App.undoStack.length - 1] !== "string") { strokeOpen = false; return; }
     strokeOpen = false;
     applySlice(App.project, App.undoStack.pop());
     App.terrVersion++; App.regionVersion++;
     scheduleSave();
     App.emit();
-    if (window.World) window.World.sync(true);
   };
 
   // geometry edits live in the same undo slice; when they change across an
@@ -268,6 +286,14 @@
   function geomKey(p) { return JSON.stringify(p.regionGeomEdits || null); }
   Actions.undo = function () {
     if (!App.undoStack.length || !App.project) return;
+    const top = App.undoStack[App.undoStack.length - 1];
+    if (typeof top === "object") {
+      App.undoStack.pop();
+      top.undo();
+      App.redoStack.push(top);
+      scheduleSave(); App.emit();
+      return;
+    }
     const before = geomKey(App.project);
     App.redoStack.push(politicalSlice(App.project));
     applySlice(App.project, App.undoStack.pop());
@@ -278,6 +304,14 @@
   };
   Actions.redo = function () {
     if (!App.redoStack.length || !App.project) return;
+    const top = App.redoStack[App.redoStack.length - 1];
+    if (typeof top === "object") {
+      App.redoStack.pop();
+      top.redo();
+      App.undoStack.push(top);
+      scheduleSave(); App.emit();
+      return;
+    }
     const before = geomKey(App.project);
     App.undoStack.push(politicalSlice(App.project));
     applySlice(App.project, App.redoStack.pop());
@@ -296,6 +330,7 @@
     saveTimer = null;
     if (!App.project) return Promise.resolve();
     const store = window.ProjectStore;
+    if (window.World && window.World.active()) window.World.pack(App.project);
     if (store && store.available) {
       if (!App.projectId) App.projectId = uid();
       return store.save(App.projectId, App.project).catch((e) => {
@@ -304,7 +339,7 @@
       });
     }
     try {
-      localStorage.setItem(LS_KEY, JSON.stringify(App.project));
+      localStorage.setItem(LS_KEY, JSON.stringify(window.World ? window.World.exportable(App.project) : App.project));
     } catch (e) {
       Actions.toast(t("toast.storage"));
     }

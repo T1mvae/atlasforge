@@ -1,38 +1,62 @@
-// AtlasForge — custom world: paint terrain with a stylus, cut it into provinces,
-// and export a plain-text atlas that an AI can reason about.
+// AtlasForge — custom world: paint terrain with a stylus, simulate climate and rivers,
+// cut the land into provinces that respect ridges, export a text atlas for AI.
 //
-// The painting IS the data. Two categorical rasters on a GW×GH grid live in
-// project.world (RLE + base64 so they stay small in localStorage and in the undo
-// slice): `elev` (0 water, 1 lowland, 2 hills, 3 mountains) and `cover`
-// (index into COVER). Rivers are polylines in grid units. Grid units are the data
-// coordinates of the "world" basemap (identityFrame: 1000 × 510), so the grid,
-// generated provinces and project geometry edits all share one coordinate space.
+// Model (project.world, version 2):
+//   height — Int16 metres above datum on a RW×RH raster (RES cells per data unit);
+//            water is where height ≤ seaLevel
+//   cover  — Uint8 painted land cover per raster cell, 0 = follow the climate (biome)
+//   rivers — hand-drawn river guides (polylines in data units); with automatic rivers
+//            on they are carved into the terrain and lend their names to the flow
+// The rasters live in memory (World.height / World.cover); they are copied into
+// project.world.rasters only when the project is saved (World.pack) and never enter
+// the JSON undo slice — raster edits have their own diff entries in the undo stack.
+// Analysis (climate, hydrology, provinces, atlas) runs on the data grid GW×GH
+// (1000 × 510, one cell per data unit) in js/terrain.worker.js.
 (function () {
   const App = window.App;
   const Actions = window.Actions;
+  const TA = window.TerrainAlgos;
 
-  const GW = 1000, GH = 510, RS = 2;          // grid size; canvas pixels per grid cell
-  const COVER = ["plains", "forest", "desert", "marsh", "tundra", "jungle"];
-  const ELEV_BRUSH = { land: 1, hills: 2, mountains: 3 };
-  const COVER_BRUSH = { plains: 0, forest: 1, desert: 2, marsh: 3, tundra: 4, jungle: 5 };
-  const BRUSHES = ["land", "sea", "plains", "hills", "mountains", "forest", "desert", "marsh", "tundra", "jungle", "river", "eraseRiver", "smooth"];
+  const GW = 1000, GH = 510;          // analysis grid = world basemap data units
+  const RES = 2;                      // painted raster cells per data unit
+  const RW = GW * RES, RH = GH * RES;
+  const HMIN = -8000, HMAX = 9000;
+
+  // painted cover values (0 = climate decides)
+  const COVER = ["auto", "plains", "forest", "desert", "marsh", "tundra", "jungle"];
+  const COVER_CLASSES = ["plains", "forest", "desert", "marsh", "tundra", "jungle"]; // analysis classes
+
+  const RELIEF_BRUSHES = ["land", "sea", "plains", "hills", "mountains", "peaks", "ridge", "valley", "raise", "lower", "smooth"];
+  const COVER_BRUSHES = ["autoCover", "meadow", "forest", "desert", "marsh", "tundra", "jungle"];
+  const WATER_BRUSHES = ["river", "eraseRiver"];
+  const BRUSHES = RELIEF_BRUSHES.concat(COVER_BRUSHES, WATER_BRUSHES);
+  const COVER_OF_BRUSH = { autoCover: 0, meadow: 1, forest: 2, desert: 3, marsh: 4, tundra: 5, jungle: 6 };
+  const LINE_BRUSHES = { ridge: 1, valley: 1, river: 1 };
   const BRUSH_SWATCH = {
-    land: "#b9c282", sea: "#4a7aa8", plains: "#c9cf95", hills: "#b09a6c", mountains: "#8c7e70",
-    forest: "#5f9150", desert: "#e2cc8e", marsh: "#849c76", tundra: "#cdd4c8", jungle: "#3f7f4a",
-    river: "#3f77b3", eraseRiver: "#c65a5a", smooth: "#9aa3ad"
+    land: "#b9c282", sea: "#4a7aa8", plains: "#c9cf95", hills: "#b09a6c", mountains: "#8c7e70", peaks: "#eef1f3",
+    ridge: "#7a6b5c", valley: "#9dbb86", raise: "#c2a878", lower: "#7d9fb8", smooth: "#9aa3ad",
+    autoCover: "#a8b98a", meadow: "#b9c47f", forest: "#5f9150", desert: "#e2cc8e", marsh: "#849c76", tundra: "#cdd4c8", jungle: "#3f7f4a",
+    river: "#3f77b3", eraseRiver: "#c65a5a"
   };
 
   const World = (window.World = {
-    GW, GH, RS, COVER, BRUSHES, BRUSH_SWATCH,
-    elev: null, cover: null, rgb: null, hs: null,
-    canvas: null, ctx: null,
-    encElev: undefined, encCover: undefined,
+    GW, GH, RES, RW, RH, COVER, COVER_CLASSES, BRUSHES, RELIEF_BRUSHES, COVER_BRUSHES, WATER_BRUSHES, BRUSH_SWATCH,
+    height: null, cover: null, canvas: null, ctx: null,
+    hydro: null,          // latest worker result (see onHydro)
+    rasterRev: 0,         // bumps on every raster change
     penSeen: false, renderRev: 0
   });
 
   World.newWorldData = function () {
-    return { w: GW, h: GH, elev: null, cover: null, rivers: [], scaleKm: 5, cellSize: 18,
-      seed: (Math.random() * 1e9) | 0, rev: 0, genRev: null };
+    return {
+      version: 2, rivers: [], riverNames: {}, scaleKm: 5, cellSize: 18,
+      seed: (Math.random() * 1e9) | 0, rev: 0, genRev: null,
+      seaLevel: 0,
+      climate: { latTop: 70, latBottom: -10, tEquator: 27, tPole: -28 },
+      autoRivers: true, riverThreshold: 60,
+      provinceOpts: { mountains: "sides", riversAsBorders: false, citySeeds: true },
+      rasters: null
+    };
   };
 
   World.active = function () {
@@ -40,17 +64,11 @@
     const def = p && window.BASEMAPS[p.basemapId];
     return !!(p && p.world && def && def.kind === "world");
   };
+  const W0 = () => App.project.world;
+  const sea = () => (+W0().seaLevel || 0);
 
   // ---------------- small utils ----------------
   const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
-  function mulberry32(a) {
-    return function () {
-      a |= 0; a = (a + 0x6d2b79f5) | 0;
-      let t = Math.imul(a ^ (a >>> 15), 1 | a);
-      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-    };
-  }
   function hash2(x, y, s) {
     let h = Math.imul(x | 0, 374761393) ^ Math.imul(y | 0, 668265263) ^ Math.imul(s | 0, 2246822519);
     h = Math.imul(h ^ (h >>> 13), 1274126177);
@@ -68,29 +86,24 @@
     for (let i = 0; i < oct; i++) { t += amp * vnoise(x * f, y * f, s + i * 131); norm += amp; amp *= 0.5; f *= 2; }
     return t / norm;
   }
+  const ridged = (x, y, s, oct) => 1 - Math.abs(fbm(x, y, s, oct) * 2 - 1);
+  const smoothstep = (a, b, x) => { const t = clamp((x - a) / (b - a), 0, 1); return t * t * (3 - 2 * t); };
   const hex = (h) => [parseInt(h.slice(1, 3), 16), parseInt(h.slice(3, 5), 16), parseInt(h.slice(5, 7), 16)];
-  const mix = (a, b, t) => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t];
+  const r2 = (v) => Math.round(v * 100) / 100;
 
-  // ---------------- raster encoding (RLE + varint + base64) ----------------
-  function rleEncode(arr) {
-    const out = [];
-    const n = arr.length;
-    let i = 0;
-    while (i < n) {
-      const v = arr[i];
-      let j = i + 1;
-      while (j < n && arr[j] === v) j++;
-      let run = j - i;
-      out.push(v);
-      while (run >= 128) { out.push((run & 127) | 128); run >>>= 7; }
-      out.push(run);
-      i = j;
-    }
-    const bytes = Uint8Array.from(out);
+  function b64FromBuffer(buf) {
+    const bytes = new Uint8Array(buf);
     let s = "";
     for (let k = 0; k < bytes.length; k += 0x8000) s += String.fromCharCode.apply(null, bytes.subarray(k, k + 0x8000));
     return btoa(s);
   }
+  function bufferFromB64(str) {
+    const bin = atob(str);
+    const out = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+    return out.buffer;
+  }
+  // v1 worlds stored categorical rasters as RLE + base64
   function rleDecode(b64, n) {
     const arr = new Uint8Array(n);
     if (!b64) return arr;
@@ -107,138 +120,267 @@
     return arr;
   }
 
-  // ---------------- sync project <-> in-memory rasters ----------------
+  // ---------------- buffers, loading, saving ----------------
   function ensureBuffers() {
-    if (!World.elev) World.elev = new Uint8Array(GW * GH);
-    if (!World.cover) World.cover = new Uint8Array(GW * GH);
-    if (!World.rgb) World.rgb = new Float32Array(GW * GH * 3);
-    if (!World.hs) World.hs = new Float32Array(GW * GH);
+    if (!World.height) World.height = new Int16Array(RW * RH).fill(-1500);
+    if (!World.cover) World.cover = new Uint8Array(RW * RH);
     if (!World.canvas) {
       const cv = document.createElement("canvas");
-      cv.width = GW * RS; cv.height = GH * RS;
+      cv.width = RW; cv.height = RH;
       cv.className = "world-canvas";
       World.canvas = cv;
       World.ctx = cv.getContext("2d");
     }
   }
-  // (re)decode the rasters when the project's encoded copy changed (load, undo, redo)
+
+  function ensureDefaults(w) {
+    const d = World.newWorldData();
+    for (const k in d) if (w[k] === undefined && k !== "rasters") w[k] = d[k];
+    w.climate = Object.assign({}, d.climate, w.climate || {});
+    w.provinceOpts = Object.assign({}, d.provinceOpts, w.provinceOpts || {});
+    if (!w.riverNames) w.riverNames = {};
+  }
+
+  // v1 (categorical 1000×510 elev + cover) → v2 heights, upsampled with natural noise
+  function migrateV1(w) {
+    const n1 = GW * GH;
+    const elev = rleDecode(w.elev, n1), cov = rleDecode(w.cover, n1);
+    const s = (w.seed | 0) || 7;
+    const H = World.height, C = World.cover;
+    for (let y = 0; y < RH; y++) {
+      for (let x = 0; x < RW; x++) {
+        const gx = x / RES, gy = y / RES;
+        const i1 = Math.min(GH - 1, (y / RES) | 0) * GW + Math.min(GW - 1, (x / RES) | 0);
+        const e = elev[i1];
+        const n = fbm(gx / 12, gy / 12, s, 3);
+        let h;
+        if (e === 0) h = -250 - 900 * n;
+        else if (e === 1) h = 60 + 260 * n;
+        else if (e === 2) h = 650 + 600 * ridged(gx / 9, gy / 9, s + 3, 3);
+        else h = 2000 + 2400 * ridged(gx / 7, gy / 7, s + 5, 4);
+        H[y * RW + x] = clamp(Math.round(h), HMIN, HMAX);
+        C[y * RW + x] = e === 0 ? 0 : (cov[i1] + 1);
+      }
+    }
+    // soften the blocky class borders
+    blur(0, 0, RW - 1, RH - 1, 2);
+    delete w.elev; delete w.cover; delete w.w; delete w.h;
+    w.version = 2;
+    ensureDefaults(w);
+    w.autoRivers = !(w.rivers && w.rivers.length); // keep a hand-drawn river network as it was
+  }
+
+  function blur(x0, y0, x1, y1, passes) {
+    const H = World.height;
+    for (let p = 0; p < passes; p++) {
+      for (let y = Math.max(1, y0); y <= Math.min(RH - 2, y1); y++) {
+        for (let x = Math.max(1, x0); x <= Math.min(RW - 2, x1); x++) {
+          const i = y * RW + x;
+          H[i] = (H[i] * 4 + H[i - 1] + H[i + 1] + H[i - RW] + H[i + RW]) / 8;
+        }
+      }
+    }
+  }
+
+  let loadedFor = null, settingsKey = "";
+  const keyOf = (w) => JSON.stringify([w.seaLevel, w.climate, w.autoRivers, w.riverThreshold]);
+  // bring the in-memory rasters in line with the open project (open, import, undo)
   World.sync = function (force) {
     if (!World.active()) return false;
-    const w = App.project.world;
+    const p = App.project, w = p.world;
     ensureBuffers();
-    if (!force && w.elev === World.encElev && w.cover === World.encCover) return false;
-    World.elev.set(rleDecode(w.elev, GW * GH));
-    World.cover.set(rleDecode(w.cover, GW * GH));
-    World.encElev = w.elev; World.encCover = w.cover;
-    World.renderAll();
-    return true;
-  };
-  function commitRasters() {
-    const e = rleEncode(World.elev), c = rleEncode(World.cover);
-    World.encElev = e; World.encCover = c;
-    Actions.mut((p) => { p.world.elev = e; p.world.cover = c; p.world.rev = (p.world.rev || 0) + 1; }, { undo: false });
-  }
-
-  // ---------------- terrain rendering ----------------
-  const PAL = {
-    deep: hex("#4a7aa8"), shallow: hex("#86b4d2"),
-    cover: [hex("#bcc486"), hex("#65965a"), hex("#e0c98c"), hex("#829b78"), hex("#cbd2c6"), hex("#43824c")],
-    hills: hex("#b39c6c"), mountain: hex("#8b7d6f"), snow: hex("#eceff1")
-  };
-  const HV = [-0.6, 0.25, 1.15, 2.7];
-
-  function updateDerived(x0, y0, x1, y1) {
-    const elev = World.elev, cover = World.cover, hs = World.hs, rgb = World.rgb;
-    // smoothed heights (3×3 box) — one cell wider than the colour region
-    const hx0 = clamp(x0 - 1, 0, GW - 1), hx1 = clamp(x1 + 1, 0, GW - 1);
-    const hy0 = clamp(y0 - 1, 0, GH - 1), hy1 = clamp(y1 + 1, 0, GH - 1);
-    for (let y = hy0; y <= hy1; y++) {
-      for (let x = hx0; x <= hx1; x++) {
-        let s = 0;
-        for (let dy = -1; dy <= 1; dy++) {
-          const yy = clamp(y + dy, 0, GH - 1) * GW;
-          for (let dx = -1; dx <= 1; dx++) s += HV[elev[yy + clamp(x + dx, 0, GW - 1)]];
-        }
-        hs[y * GW + x] = s / 9;
-      }
-    }
-    for (let y = y0; y <= y1; y++) {
-      for (let x = x0; x <= x1; x++) {
-        const i = y * GW + x;
-        const e = elev[i];
-        let col;
-        if (e === 0) {
-          let n = 0;
-          for (let dy = -2; dy <= 2; dy++) {
-            const yy = y + dy;
-            if (yy < 0 || yy >= GH) continue;
-            for (let dx = -2; dx <= 2; dx++) {
-              const xx = x + dx;
-              if (xx >= 0 && xx < GW && elev[yy * GW + xx] > 0) n++;
+    if (force || loadedFor !== p) {
+      loadedFor = p;
+      if (w.version !== 2) {
+        ensureBuffers();
+        World.height.fill(-1500); World.cover.fill(0);
+        migrateV1(w);
+      } else {
+        ensureDefaults(w);
+        const ras = w.rasters;
+        let ok = false;
+        if (ras && ras.w === RW && ras.h === RH) {
+          try {
+            const hb = typeof ras.height === "string" ? bufferFromB64(ras.height) : ras.height;
+            const cb = typeof ras.cover === "string" ? bufferFromB64(ras.cover) : ras.cover;
+            if (hb && hb.byteLength === RW * RH * 2 && cb && cb.byteLength === RW * RH) {
+              World.height.set(new Int16Array(hb));
+              World.cover.set(new Uint8Array(cb));
+              ok = true;
             }
-          }
-          col = mix(PAL.deep, PAL.shallow, Math.min(1, n / 8));
-        } else {
-          const cv = cover[i];
-          col = PAL.cover[cv] || PAL.cover[0];
-          if (e === 2) col = mix(col, PAL.hills, 0.45);
-          else if (e === 3) col = cv === 4 ? mix(PAL.mountain, PAL.snow, 0.7) : mix(col, PAL.mountain, 0.72);
-          const l = hs[y * GW + Math.max(0, x - 1)], r = hs[y * GW + Math.min(GW - 1, x + 1)];
-          const u = hs[Math.max(0, y - 1) * GW + x], d = hs[Math.min(GH - 1, y + 1) * GW + x];
-          const shade = clamp(1 + ((r - l) + (d - u)) * -0.22, 0.62, 1.3);
-          col = [col[0] * shade, col[1] * shade, col[2] * shade];
-          // thin darker rim along the coast
-          if ((x > 0 && elev[i - 1] === 0) || (x < GW - 1 && elev[i + 1] === 0) ||
-              (y > 0 && elev[i - GW] === 0) || (y < GH - 1 && elev[i + GW] === 0)) col = mix(col, [70, 80, 70], 0.28);
+          } catch (e) { console.warn("world rasters unreadable", e); }
         }
-        rgb[i * 3] = col[0]; rgb[i * 3 + 1] = col[1]; rgb[i * 3 + 2] = col[2];
+        if (!ok) { World.height.fill(-1500); World.cover.fill(0); }
       }
+      World.rasterRev++;
+      packedRev = ras0(w) ? World.rasterRev : -1;
+      World.hydro = null;
+      settingsKey = keyOf(w);
+      World.renderAll();
+      World.requestHydro(0);
+      return true;
     }
+    const k = keyOf(w);
+    if (k !== settingsKey) {
+      settingsKey = k;
+      World.renderAll();
+      World.requestHydro(150);
+    }
+    return false;
+  };
+  const ras0 = (w) => w.version === 2 && w.rasters && w.rasters.w === RW;
+
+  // copy the rasters into the project right before it is stored (core.js saveNow)
+  let packedRev = -1;
+  World.pack = function (p) {
+    if (!p || !p.world || p !== loadedFor || !World.height) return;
+    if (packedRev === World.rasterRev && p.world.rasters && typeof p.world.rasters.height !== "string") return;
+    p.world.rasters = { w: RW, h: RH, height: World.height.slice().buffer, cover: World.cover.slice().buffer };
+    packedRev = World.rasterRev;
+  };
+  // a JSON-safe copy of a project (rasters as base64) for files and localStorage
+  World.exportable = function (p) {
+    if (!p || !p.world) return p;
+    if (p === loadedFor) World.pack(p);
+    const ras = p.world.rasters;
+    const copy = Object.assign({}, p, { world: Object.assign({}, p.world) });
+    if (ras && typeof ras.height !== "string") {
+      copy.world.rasters = { w: ras.w, h: ras.h, height: b64FromBuffer(ras.height), cover: b64FromBuffer(ras.cover) };
+    }
+    return copy;
+  };
+  // the undo slice must not carry the rasters (they are big and have their own undo)
+  World.sliceWorld = function (w) {
+    if (!w) return null;
+    const copy = Object.assign({}, w);
+    delete copy.rasters;
+    return copy;
+  };
+
+  function changed(x0, y0, x1, y1) {
+    World.rasterRev++;
+    markDirty(x0, y0, x1, y1);
+    World.requestHydro(450);
+    if (App.project && App.project.world) App.project.world.rev = (App.project.world.rev || 0) + 1;
+    window.scheduleSave();
   }
 
-  function paintCanvas(x0, y0, x1, y1) {
-    const rgb = World.rgb, elev = World.elev, cover = World.cover;
-    const X0 = x0 * RS, Y0 = y0 * RS, w = (x1 - x0 + 1) * RS, h = (y1 - y0 + 1) * RS;
+  // ---------------- raster undo ----------------
+  function pushRasterUndo(x0, y0, x1, y1, hBefore, cBefore, extra) {
+    const w = x1 - x0 + 1, h = y1 - y0 + 1;
+    const hb = new Int16Array(w * h), ha = new Int16Array(w * h), cb = new Uint8Array(w * h), ca = new Uint8Array(w * h);
+    for (let y = 0; y < h; y++) {
+      const src = (y0 + y) * RW + x0;
+      hb.set(hBefore.subarray(src, src + w), y * w);
+      ha.set(World.height.subarray(src, src + w), y * w);
+      cb.set(cBefore.subarray(src, src + w), y * w);
+      ca.set(World.cover.subarray(src, src + w), y * w);
+    }
+    const project = App.project;
+    const apply = (hs, cs, rivers) => {
+      if (App.project !== project) return;
+      for (let y = 0; y < h; y++) {
+        World.height.set(hs.subarray(y * w, (y + 1) * w), (y0 + y) * RW + x0);
+        World.cover.set(cs.subarray(y * w, (y + 1) * w), (y0 + y) * RW + x0);
+      }
+      if (rivers) { const v = JSON.parse(rivers); project.world.rivers = v.rivers; project.world.riverNames = v.names; }
+      changed(x0, y0, x1, y1);
+    };
+    Actions.pushUndoEntry({
+      kind: "raster",
+      bytes: w * h * 6,
+      undo: () => apply(hb, cb, extra && extra.riversBefore),
+      redo: () => apply(ha, ca, extra && extra.riversAfter)
+    });
+  }
+
+  // ---------------- rendering ----------------
+  const BIOME_COLOR = [null, "#eef3f6", "#b9c0ae", "#5f8160", "#c9c2a3", "#d8c79c", "#b7c47e",
+    "#6e9a57", "#4d8a56", "#e4cc8e", "#cdbd78", "#7ea655", "#3f7d46", "#7f9c7b"].map((c) => (c ? hex(c) : null));
+  const COVER_COLOR = [null, "#b9c47f", "#638f53", "#e0c98c", "#809a76", "#c6cdc0", "#43824c"].map((c) => (c ? hex(c) : null));
+  const ROCK = hex("#8f8173"), SNOW = hex("#f3f6f8"), SHALLOW = hex("#90c1da"), MID = hex("#5d9bc5"), DEEP = hex("#35699a"), LAKE = hex("#78abd0");
+
+  function paintRect(x0, y0, x1, y1) {
+    ensureBuffers();
+    x0 = clamp(x0, 0, RW - 1); y0 = clamp(y0, 0, RH - 1); x1 = clamp(x1, 0, RW - 1); y1 = clamp(y1, 0, RH - 1);
+    const w = x1 - x0 + 1, h = y1 - y0 + 1;
+    if (w <= 0 || h <= 0) return;
     const img = World.ctx.createImageData(w, h);
     const data = img.data;
+    const Hh = World.height, C = World.cover;
+    const sl = sea();
+    const hy = World.hydro;
+    const cellM = ((+W0().scaleKm || 5) * 1000) / RES;
+    const zf = 5.5 / cellM; // exaggerated relief
     let o = 0;
-    for (let py = Y0; py < Y0 + h; py++) {
-      const gy = (py + 0.5) / RS - 0.5;
-      const yA = clamp(Math.floor(gy), 0, GH - 1), yB = clamp(yA + 1, 0, GH - 1), fy = clamp(gy - yA, 0, 1);
-      const cy = clamp((py / RS) | 0, 0, GH - 1);
-      for (let px = X0; px < X0 + w; px++) {
-        const gx = (px + 0.5) / RS - 0.5;
-        const xA = clamp(Math.floor(gx), 0, GW - 1), xB = clamp(xA + 1, 0, GW - 1), fx = clamp(gx - xA, 0, 1);
-        const a = (yA * GW + xA) * 3, b = (yA * GW + xB) * 3, c = (yB * GW + xA) * 3, d = (yB * GW + xB) * 3;
-        const ci = cy * GW + clamp((px / RS) | 0, 0, GW - 1);
-        const e = elev[ci];
-        let grain = (hash2(px, py, 7) - 0.5) * (e === 0 ? 5 : 12);
-        if (e > 0) {
-          const cv = cover[ci];
-          if (cv === 1 || cv === 5) grain -= vnoise(px * 0.45, py * 0.45, 3) > 0.62 ? 20 : 0;
-          if (e === 3) grain += (vnoise(px * 0.6, py * 0.25, 5) - 0.5) * 34;
-          else if (e === 2) grain += (vnoise(px * 0.35, py * 0.35, 9) - 0.5) * 16;
+    for (let y = y0; y <= y1; y++) {
+      const ym = y > 0 ? y - 1 : y, yp = y < RH - 1 ? y + 1 : y;
+      for (let x = x0; x <= x1; x++) {
+        const i = y * RW + x;
+        const hr = Hh[i] - sl;
+        const di = (y >> 1) * GW + (x >> 1);
+        let r, g, b;
+        const grain = (hash2(x, y, 7) - 0.5);
+        if (hr <= 0) {
+          const d = -hr;
+          const t1 = smoothstep(0, 350, d), t2 = smoothstep(350, 3500, d);
+          r = SHALLOW[0] + (MID[0] - SHALLOW[0]) * t1 + (DEEP[0] - MID[0]) * t2;
+          g = SHALLOW[1] + (MID[1] - SHALLOW[1]) * t1 + (DEEP[1] - MID[1]) * t2;
+          b = SHALLOW[2] + (MID[2] - SHALLOW[2]) * t1 + (DEEP[2] - MID[2]) * t2;
+          const k = grain * 4;
+          r += k; g += k; b += k;
+        } else if (hy && hy.lake[di]) {
+          r = LAKE[0]; g = LAKE[1]; b = LAKE[2];
+        } else {
+          const cv = C[i];
+          const bio = hy ? hy.biome[di] : 0;
+          let base = cv ? COVER_COLOR[cv] : (bio ? BIOME_COLOR[bio] : COVER_COLOR[1]);
+          r = base[0]; g = base[1]; b = base[2];
+          // bare rock with altitude
+          const rt = smoothstep(1100, 3400, hr) * 0.78;
+          r += (ROCK[0] - r) * rt; g += (ROCK[1] - g) * rt; b += (ROCK[2] - b) * rt;
+          // snow: cold enough at this height (climate), else a plain height snowline
+          let snow;
+          if (hy) {
+            const t = hy.temp[di] - 6.5 * (hr - Math.max(0, hy.hgrid ? hy.hgrid[di] : hr)) / 1000;
+            snow = 0.92 * smoothstep(-4, -11, t + (vnoise(x / 3, y / 3, 11) - 0.5) * 4);
+          } else {
+            snow = smoothstep(3800, 5200, hr + (vnoise(x / 3, y / 3, 11) - 0.5) * 600);
+          }
+          if (snow > 0) { r += (SNOW[0] - r) * snow; g += (SNOW[1] - g) * snow; b += (SNOW[2] - b) * snow; }
+          // Horn hillshade, light from the north-west
+          const xm = x > 0 ? x - 1 : x, xp = x < RW - 1 ? x + 1 : x;
+          const a1 = Hh[ym * RW + xm], a2 = Hh[ym * RW + x], a3 = Hh[ym * RW + xp];
+          const a4 = Hh[y * RW + xm], a6 = Hh[y * RW + xp];
+          const a7 = Hh[yp * RW + xm], a8 = Hh[yp * RW + x], a9 = Hh[yp * RW + xp];
+          const dzdx = ((a3 + 2 * a6 + a9) - (a1 + 2 * a4 + a7)) / 8 * zf;
+          const dzdy = ((a7 + 2 * a8 + a9) - (a1 + 2 * a2 + a3)) / 8 * zf;
+          const len = Math.sqrt(dzdx * dzdx + dzdy * dzdy + 1);
+          // light vector (-1, -1, 1.4) normalised
+          const lambert = (dzdx * 0.5 + dzdy * 0.5 + 0.7) / len;
+          const shade = clamp(0.35 + lambert * 0.95, 0.45, 1.3);
+          r *= shade; g *= shade; b *= shade;
+          // thin dark rim along coasts
+          if ((x > 0 && Hh[i - 1] <= sl) || (x < RW - 1 && Hh[i + 1] <= sl) || (y > 0 && Hh[i - RW] <= sl) || (y < RH - 1 && Hh[i + RW] <= sl)) {
+            r = r * 0.72 + 20; g = g * 0.72 + 22; b = b * 0.72 + 20;
+          }
+          const k = grain * (cv === 2 || cv === 6 || bio === 3 || bio === 7 || bio === 8 || bio === 11 || bio === 12 ? 18 : 9);
+          r += k; g += k; b += k;
         }
-        for (let k = 0; k < 3; k++) {
-          const top = rgb[a + k] + (rgb[b + k] - rgb[a + k]) * fx;
-          const bot = rgb[c + k] + (rgb[d + k] - rgb[c + k]) * fx;
-          data[o + k] = top + (bot - top) * fy + grain;
-        }
-        data[o + 3] = 255;
+        data[o] = r; data[o + 1] = g; data[o + 2] = b; data[o + 3] = 255;
         o += 4;
       }
     }
-    World.ctx.putImageData(img, X0, Y0);
+    World.ctx.putImageData(img, x0, y0);
   }
 
   World.renderAll = function () {
     ensureBuffers();
-    updateDerived(0, 0, GW - 1, GH - 1);
-    paintCanvas(0, 0, GW - 1, GH - 1);
+    // in horizontal bands so a long render never allocates one huge ImageData
+    for (let y = 0; y < RH; y += 256) paintRect(0, y, RW - 1, Math.min(RH - 1, y + 255));
     World.renderRev++;
   };
 
-  // dirty rectangle, flushed once per animation frame while painting
   let dirty = null, rafPending = false;
   function markDirty(x0, y0, x1, y1) {
     if (!dirty) dirty = [x0, y0, x1, y1];
@@ -248,62 +390,83 @@
   function flush() {
     rafPending = false;
     if (!dirty) return;
-    // colours depend on a 2-cell neighbourhood (shallows, shading, coast rim)
-    const x0 = clamp(dirty[0] - 3, 0, GW - 1), y0 = clamp(dirty[1] - 3, 0, GH - 1);
-    const x1 = clamp(dirty[2] + 3, 0, GW - 1), y1 = clamp(dirty[3] + 3, 0, GH - 1);
+    const d = dirty;
     dirty = null;
-    updateDerived(x0, y0, x1, y1);
-    paintCanvas(x0, y0, x1, y1);
+    paintRect(d[0] - 2, d[1] - 2, d[2] + 2, d[3] + 2);
+    World.renderRev++;
   }
 
   // ---------------- brushes ----------------
-  function dab(brush, cx, cy, r) {
-    const elev = World.elev, cover = World.cover;
-    const reach = r * 1.15 + 1;
-    const x0 = clamp(Math.floor(cx - reach), 0, GW - 1), x1 = clamp(Math.ceil(cx + reach), 0, GW - 1);
-    const y0 = clamp(Math.floor(cy - reach), 0, GH - 1), y1 = clamp(Math.ceil(cy + reach), 0, GH - 1);
-    const rough = App.ui.worldRough !== false;
-    const nf = 1 / Math.max(2.5, r * 0.45);
-    let src = null;
-    if (brush === "smooth") {
-      // majority filter reads from a snapshot so the dab is order-independent
-      src = { e: elev.slice(), c: cover.slice() };
+  // One stroke = one undoable change. The raster at stroke start is kept (base) and
+  // every cell takes the strongest weight any dab gave it, so dragging back and forth
+  // does not pile up — a stroke paints "up to" its target.
+  let stroke = null;
+  let baseH = null, baseC = null, weight = null;
+
+  function strokeBuffers() {
+    if (!baseH) { baseH = new Int16Array(RW * RH); baseC = new Uint8Array(RW * RH); weight = new Float32Array(RW * RH); }
+    baseH.set(World.height); baseC.set(World.cover);
+  }
+
+  function targetOf(brush, x, y, b, w, sl, salt) {
+    const gx = x / RES, gy = y / RES;
+    switch (brush) {
+      case "land": return Math.max(b, sl + 60 + 240 * fbm(gx / 14, gy / 14, salt, 3));
+      case "sea": return Math.min(b, sl - 120 - 900 * fbm(gx / 18, gy / 18, salt + 1, 3));
+      case "plains": return b <= sl ? b : sl + 60 + 200 * fbm(gx / 10, gy / 10, salt + 2, 3);
+      case "hills": return Math.max(b, sl + 500 + 950 * ridged(gx / 7, gy / 7, salt + 3, 3));
+      case "mountains": return Math.max(b, sl + 1700 + 2800 * Math.pow(ridged(gx / 6, gy / 6, salt + 4, 4), 1.3));
+      case "peaks": return Math.max(b, sl + 4000 + 4600 * Math.pow(ridged(gx / 5, gy / 5, salt + 5, 4), 1.6));
+      case "raise": return b + 420;
+      case "lower": return b - 420;
+      default: return b;
     }
+  }
+
+  function dab(brush, cx, cy, r, strength) {
+    const Hh = World.height, C = World.cover;
+    const reach = r * 1.2 + 1;
+    const x0 = clamp(Math.floor(cx - reach), 0, RW - 1), x1 = clamp(Math.ceil(cx + reach), 0, RW - 1);
+    const y0 = clamp(Math.floor(cy - reach), 0, RH - 1), y1 = clamp(Math.ceil(cy + reach), 0, RH - 1);
+    const rough = App.ui.worldRough !== false;
+    const nf = 1 / Math.max(3, r * 0.45);
+    const sl = sea();
+    const salt = ((W0().seed | 0) % 100000) + 17;
+    const coverVal = COVER_OF_BRUSH[brush];
     for (let y = y0; y <= y1; y++) {
       for (let x = x0; x <= x1; x++) {
         const dx = x + 0.5 - cx, dy = y + 0.5 - cy;
-        const lim = rough ? r * (0.82 + 0.36 * vnoise(x * nf, y * nf, 11)) : r;
-        if (dx * dx + dy * dy > lim * lim) continue;
-        const i = y * GW + x;
-        if (brush in ELEV_BRUSH) {
-          elev[i] = brush === "land" ? Math.max(1, elev[i]) : ELEV_BRUSH[brush];
-        } else if (brush === "sea") {
-          elev[i] = 0; cover[i] = 0;
-        } else if (brush in COVER_BRUSH) {
-          if (elev[i] === 0) continue;               // cover never creates land
-          cover[i] = COVER_BRUSH[brush];
-          if (brush === "plains") elev[i] = 1;       // plains also flatten hills / mountains
-        } else if (brush === "smooth") {
-          const eh = [0, 0, 0, 0], chh = [0, 0, 0, 0, 0, 0];
-          for (let oy = -1; oy <= 1; oy++) {
-            const yy = clamp(y + oy, 0, GH - 1) * GW;
-            for (let ox = -1; ox <= 1; ox++) {
-              const j = yy + clamp(x + ox, 0, GW - 1);
-              eh[src.e[j]]++; chh[src.c[j]]++;
-            }
-          }
-          const land = eh[1] + eh[2] + eh[3];
-          if (land >= 5) {
-            let be = 1; for (let k = 2; k < 4; k++) if (eh[k] > eh[be]) be = k;
-            elev[i] = be;
-            let bc = 0; for (let k = 1; k < 6; k++) if (chh[k] > chh[bc]) bc = k;
-            cover[i] = bc;
-          } else {
-            elev[i] = 0; cover[i] = 0;
-          }
+        let d = Math.sqrt(dx * dx + dy * dy) / r;
+        if (rough) d /= 0.8 + 0.4 * vnoise(x * nf, y * nf, 11);
+        if (d >= 1) continue;
+        const i = y * RW + x;
+        const wgt = strength * (1 - smoothstep(0.45, 1, d));
+        if (wgt <= weight[i]) continue;
+        weight[i] = wgt;
+        if (coverVal !== undefined) {
+          if (baseH[i] > sl && wgt > 0.3) C[i] = coverVal;
+          continue;
         }
+        const b = baseH[i];
+        let v;
+        if (brush === "smooth") {
+          if (x === 0 || y === 0 || x === RW - 1 || y === RH - 1) continue;
+          let sum = 0, n = 0;
+          for (let oy = -2; oy <= 2; oy++) for (let ox = -2; ox <= 2; ox++) {
+            const xx = x + ox, yy = y + oy;
+            if (xx < 0 || yy < 0 || xx >= RW || yy >= RH) continue;
+            sum += baseH[yy * RW + xx]; n++;
+          }
+          v = b + (sum / n - b) * wgt;
+        } else {
+          const t = targetOf(brush, x, y, b, wgt, sl, salt);
+          v = b + (t - b) * wgt;
+        }
+        Hh[i] = clamp(Math.round(v), HMIN, HMAX);
       }
     }
+    stroke.bbox[0] = Math.min(stroke.bbox[0], x0); stroke.bbox[1] = Math.min(stroke.bbox[1], y0);
+    stroke.bbox[2] = Math.max(stroke.bbox[2], x1); stroke.bbox[3] = Math.max(stroke.bbox[3], y1);
     markDirty(x0, y0, x1, y1);
   }
 
@@ -320,6 +483,7 @@
     if (pressure < pressureProbe.min) pressureProbe.min = pressure;
     if (pressure > pressureProbe.max) pressureProbe.max = pressure;
   }
+  // radius in DATA units (App.ui.worldSize); raster radius = × RES
   function brushRadius(pressure, pointerType, altitude) {
     const size = App.ui.worldSize || 12;
     let r = size;
@@ -327,29 +491,13 @@
       r = size * (0.2 + 0.95 * Math.pow(clamp(pressure || 0.5, 0, 1), 0.85));
     }
     if (pointerType === "pen" && App.ui.tiltSize && altitude != null) {
-      // a pen held flat (altitude → 0) paints broadly, like the side of a pencil lead
       r *= 0.7 + 1.1 * (1 - clamp(altitude / (Math.PI / 2), 0, 1));
     }
-    return Math.max(0.6, r);
+    return Math.max(0.5, r);
   }
   World.brushRadius = brushRadius;
+  const strengthOf = (brush) => (brush === "raise" || brush === "lower" || brush === "smooth" ? clamp(+App.ui.worldStrength || 0.6, 0.05, 1) : 1);
 
-  function riverTouches(rv, x, y, r) {
-    const pts = rv.pts;
-    for (let i = 0; i < pts.length - 1; i++) {
-      if (distToSeg(x, y, pts[i], pts[i + 1]) <= r) return true;
-    }
-    return pts.length === 1 && Math.hypot(pts[0][0] - x, pts[0][1] - y) <= r;
-  }
-  function distToSeg(x, y, a, b) {
-    const vx = b[0] - a[0], vy = b[1] - a[1];
-    const L = vx * vx + vy * vy;
-    let t = L ? ((x - a[0]) * vx + (y - a[1]) * vy) / L : 0;
-    t = clamp(t, 0, 1);
-    return Math.hypot(a[0] + vx * t - x, a[1] + vy * t - y);
-  }
-
-  let stroke = null;
   World.strokeActive = () => !!stroke;
   World.strokeStart = function (g, pressure, pointerType, altitude) {
     if (!World.active()) return;
@@ -357,151 +505,435 @@
     notePressure(pressure, pointerType);
     const brush = App.ui.worldBrush || "land";
     const r = brushRadius(pressure, pointerType, altitude);
-    if (brush === "river") {
-      stroke = { brush, pts: [g], pointerType };
-      return;
-    }
-    Actions.beginStroke();
-    stroke = { brush, last: g, lastR: r, pointerType, changed: false, pos: g };
-    if (brush === "eraseRiver") eraseRiversAt(g, r);
-    else { dab(brush, g[0], g[1], r); stroke.changed = true; }
+    strokeBuffers();
+    weight.fill(0);
+    stroke = { brush, pts: [g], lastR: r, pointerType, pos: g, last: g, bbox: [RW, RH, -1, -1], changed: false,
+      riversBefore: JSON.stringify({ rivers: W0().rivers || [], names: W0().riverNames || {} }), radius: r };
+    if (LINE_BRUSHES[brush]) return;
+    if (brush === "eraseRiver") { eraseRiversAt(g, r); return; }
+    dab(brush, g[0] * RES, g[1] * RES, r * RES, strengthOf(brush));
+    stroke.changed = true;
   };
   World.strokeMove = function (samples) {
     if (!stroke) return;
-    if (stroke.brush === "river") {
-      samples.forEach((s) => {
-        const last = stroke.pts[stroke.pts.length - 1];
-        if (Math.hypot(s.g[0] - last[0], s.g[1] - last[1]) > 0.6) stroke.pts.push(s.g);
-      });
-      return;
-    }
     const lag = clamp(+App.ui.worldStabilizer || 0, 0, 0.85);
-    samples.forEach((s) => {
-      notePressure(s.pressure, stroke.pointerType);
-      const r = brushRadius(s.pressure, stroke.pointerType, s.altitude);
-      if (stroke.brush === "eraseRiver") { eraseRiversAt(s.g, r); stroke.last = s.g; return; }
-      // stabilizer: the brush trails the pen, smoothing hand jitter
-      const target = s.final || !lag ? s.g : [stroke.pos[0] + (s.g[0] - stroke.pos[0]) * (1 - lag), stroke.pos[1] + (s.g[1] - stroke.pos[1]) * (1 - lag)];
+    samples.forEach((s0) => {
+      notePressure(s0.pressure, stroke.pointerType);
+      const target = s0.final || !lag ? s0.g : [stroke.pos[0] + (s0.g[0] - stroke.pos[0]) * (1 - lag), stroke.pos[1] + (s0.g[1] - stroke.pos[1]) * (1 - lag)];
       stroke.pos = target;
-      s = { g: target };
+      const r = brushRadius(s0.pressure, stroke.pointerType, s0.altitude);
+      if (LINE_BRUSHES[stroke.brush]) {
+        const last = stroke.pts[stroke.pts.length - 1];
+        if (Math.hypot(target[0] - last[0], target[1] - last[1]) > 0.6) { stroke.pts.push(target); stroke.radius = Math.max(stroke.radius, r); }
+        return;
+      }
+      if (stroke.brush === "eraseRiver") { eraseRiversAt(target, r); return; }
       const [lx, ly] = stroke.last;
-      const dist = Math.hypot(s.g[0] - lx, s.g[1] - ly);
-      const step = Math.max(0.5, Math.min(r, stroke.lastR) * 0.35);
+      const dist = Math.hypot(target[0] - lx, target[1] - ly);
+      const step = Math.max(0.35, Math.min(r, stroke.lastR) * 0.3);
       const n = Math.max(1, Math.ceil(dist / step));
       for (let k = 1; k <= n; k++) {
         const t = k / n;
-        dab(stroke.brush, lx + (s.g[0] - lx) * t, ly + (s.g[1] - ly) * t, stroke.lastR + (r - stroke.lastR) * t);
+        const rr = stroke.lastR + (r - stroke.lastR) * t;
+        dab(stroke.brush, (lx + (target[0] - lx) * t) * RES, (ly + (target[1] - ly) * t) * RES, rr * RES, strengthOf(stroke.brush));
       }
-      stroke.last = s.g; stroke.lastR = r; stroke.changed = true;
+      stroke.last = target; stroke.lastR = r; stroke.changed = true;
     });
   };
   World.strokePreview = function () {
-    return stroke && stroke.brush === "river" ? stroke.pts : null;
+    return stroke && LINE_BRUSHES[stroke.brush] ? stroke.pts : null;
   };
   // abandon the stroke in progress (a second finger arrived: it was a gesture)
   World.strokeCancel = function () {
     const s = stroke;
     stroke = null;
     if (!s) return;
-    if (s.brush === "river") { App.emit(); return; }
-    Actions.cancelStroke();
+    if (s.bbox[2] >= 0) {
+      const [x0, y0, x1, y1] = s.bbox;
+      for (let y = y0; y <= y1; y++) {
+        World.height.set(baseH.subarray(y * RW + x0, y * RW + x1 + 1), y * RW + x0);
+        World.cover.set(baseC.subarray(y * RW + x0, y * RW + x1 + 1), y * RW + x0);
+      }
+      markDirty(x0, y0, x1, y1);
+    }
+    const rb = JSON.parse(s.riversBefore);
+    App.project.world.rivers = rb.rivers;
+    App.project.world.riverNames = rb.names;
+    App.emit();
   };
   World.strokeEnd = function () {
     const s = stroke;
     stroke = null;
     if (!s) return;
-    if (s.brush === "river") { finishRiver(s.pts); return; }
-    if (s.changed) { flush(); commitRasters(); }
-    Actions.endStroke();
+    const w = W0();
+    if (s.brush === "river") finishRiver(s);
+    else if (s.brush === "ridge" || s.brush === "valley") finishLine(s);
+    const riversAfter = JSON.stringify({ rivers: w.rivers || [], names: w.riverNames || {} });
+    const riversChanged = riversAfter !== s.riversBefore;
+    if (s.bbox[2] < 0) {
+      if (riversChanged) {
+        const put = (json) => { const v = JSON.parse(json); w.rivers = v.rivers; w.riverNames = v.names; World.requestHydro(100); window.scheduleSave(); };
+        Actions.pushUndoEntry({ kind: "rivers", bytes: riversAfter.length * 2, undo: () => put(s.riversBefore), redo: () => put(riversAfter) });
+        World.requestHydro(100);
+        window.scheduleSave();
+      }
+      App.emit();
+      return;
+    }
+    flush();
+    const [x0, y0, x1, y1] = s.bbox;
+    pushRasterUndo(x0, y0, x1, y1, baseH, baseC, riversChanged ? { riversBefore: s.riversBefore, riversAfter } : null);
+    changed(x0, y0, x1, y1);
+    App.emit();
   };
 
   function eraseRiversAt(g, r) {
-    const rivers = App.project.world.rivers || [];
-    if (!rivers.some((rv) => riverTouches(rv, g[0], g[1], r))) return;
-    Actions.mut((p) => { p.world.rivers = p.world.rivers.filter((rv) => !riverTouches(rv, g[0], g[1], r)); }, { undo: false });
+    const rivers = W0().rivers || [];
+    const hit = (rv) => rv.pts.some((p, i) => i < rv.pts.length - 1 && TA.distToSeg(g[0], g[1], p, rv.pts[i + 1]) <= r);
+    if (!rivers.some(hit)) return;
+    W0().rivers = rivers.filter((rv) => !hit(rv));
+    App.emit();
   }
 
-  function chaikinOpen(pts, iter) {
-    let out = pts;
-    for (let it = 0; it < iter; it++) {
-      if (out.length < 3) break;
-      const nx = [out[0]];
-      for (let i = 0; i < out.length - 1; i++) {
-        const a = out[i], b = out[i + 1];
-        nx.push([a[0] * 0.75 + b[0] * 0.25, a[1] * 0.75 + b[1] * 0.25], [a[0] * 0.25 + b[0] * 0.75, a[1] * 0.25 + b[1] * 0.75]);
-      }
-      nx.push(out[out.length - 1]);
-      out = nx;
-    }
-    return out;
-  }
-  function rdp(pts, eps) {
-    if (pts.length < 3) return pts.slice();
-    const keep = new Uint8Array(pts.length);
-    keep[0] = keep[pts.length - 1] = 1;
-    const stack = [[0, pts.length - 1]];
-    while (stack.length) {
-      const [a, b] = stack.pop();
-      let best = -1, bd = eps;
-      for (let i = a + 1; i < b; i++) {
-        const d = distToSeg(pts[i][0], pts[i][1], pts[a], pts[b]);
-        if (d > bd) { bd = d; best = i; }
-      }
-      if (best > 0) { keep[best] = 1; stack.push([a, best], [best, b]); }
-    }
-    return pts.filter((_, i) => keep[i]);
-  }
-  const r2 = (v) => Math.round(v * 100) / 100;
-
-  function finishRiver(pts) {
+  function polylineLength(pts) {
     let len = 0;
     for (let i = 1; i < pts.length; i++) len += Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]);
-    if (pts.length < 2 || len < 3) { App.emit(); return; }
-    const smooth = rdp(chaikinOpen(pts, 2), 0.18).map((q) => [r2(q[0]), r2(q[1])]);
-    Actions.mut((p) => {
-      const rivers = p.world.rivers || (p.world.rivers = []);
-      const n = rivers.length + 1;
-      rivers.push({ id: window.uid(), name: t("world.riverDefault").replace("{n}", n), pts: smooth, width: 1 });
-    });
+    return len;
   }
 
-  // the brush that would paint what is under a grid point (finger long-press)
+  // distance from raster cell centre to a polyline in data units, with the position
+  // along it (0..1) — used by the line tools
+  function lineField(pts, radiusData, fn) {
+    const L = polylineLength(pts) || 1;
+    const cum = [0];
+    for (let i = 1; i < pts.length; i++) cum.push(cum[i - 1] + Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]));
+    const bx0 = Math.min(...pts.map((p) => p[0])) - radiusData, by0 = Math.min(...pts.map((p) => p[1])) - radiusData;
+    const bx1 = Math.max(...pts.map((p) => p[0])) + radiusData, by1 = Math.max(...pts.map((p) => p[1])) + radiusData;
+    const x0 = clamp(Math.floor(bx0 * RES), 0, RW - 1), x1 = clamp(Math.ceil(bx1 * RES), 0, RW - 1);
+    const y0 = clamp(Math.floor(by0 * RES), 0, RH - 1), y1 = clamp(Math.ceil(by1 * RES), 0, RH - 1);
+    for (let y = y0; y <= y1; y++) {
+      for (let x = x0; x <= x1; x++) {
+        const px = (x + 0.5) / RES, py = (y + 0.5) / RES;
+        let best = Infinity, along = 0;
+        for (let k = 0; k < pts.length - 1; k++) {
+          const a = pts[k], b = pts[k + 1];
+          const vx = b[0] - a[0], vy = b[1] - a[1];
+          const l2 = vx * vx + vy * vy;
+          let t = l2 ? ((px - a[0]) * vx + (py - a[1]) * vy) / l2 : 0;
+          t = clamp(t, 0, 1);
+          const d = Math.hypot(a[0] + vx * t - px, a[1] + vy * t - py);
+          if (d < best) { best = d; along = (cum[k] + Math.sqrt(l2) * t) / L; }
+        }
+        if (best <= radiusData) fn(y * RW + x, best / radiusData, along, x, y);
+      }
+    }
+    return [x0, y0, x1, y1];
+  }
+
+  function finishLine(s) {
+    if (s.pts.length < 2 || polylineLength(s.pts) < 2) return;
+    const pts = TA.rdp(TA.chaikin(s.pts, 2, false), 0.15);
+    const sl = sea();
+    const salt = ((W0().seed | 0) % 100000) + 41;
+    const Hh = World.height;
+    const radius = Math.max(2, s.radius);
+    let bbox;
+    if (s.brush === "ridge") {
+      // a crest along the line: high in the middle, spurs and notches from noise
+      bbox = lineField(pts, radius * 1.25, (i, dn, along, x, y) => {
+        const wob = (vnoise(x / (radius * 0.9), y / (radius * 0.9), salt) - 0.5) * 0.5;
+        const d = clamp(dn + wob * dn, 0, 1);
+        if (d >= 1) return;
+        const peak = 2600 + 3800 * Math.pow(ridged(along * 9, 0.5, salt + 1, 3), 1.4);
+        const profile = Math.pow(1 - d, 1.7);
+        const v = sl + peak * profile + 350 * (ridged(x / 5, y / 5, salt + 2, 3) - 0.5) * profile;
+        if (v > Hh[i]) Hh[i] = clamp(Math.round(v), HMIN, HMAX);
+      });
+    } else {
+      // a valley: pull the ground down toward a floor just above sea level
+      bbox = lineField(pts, radius, (i, d) => {
+        const floor = sl + 30;
+        if (Hh[i] <= floor) return;
+        const k = Math.pow(d, 1.3);
+        Hh[i] = Math.round(floor + (Hh[i] - floor) * (0.15 + 0.85 * k));
+      });
+    }
+    s.bbox = [Math.min(s.bbox[0], bbox[0]), Math.min(s.bbox[1], bbox[1]), Math.max(s.bbox[2], bbox[2]), Math.max(s.bbox[3], bbox[3])];
+  }
+
+  function finishRiver(s) {
+    const pts0 = s.pts;
+    if (pts0.length < 2 || polylineLength(pts0) < 3) return;
+    const pts = TA.rdp(TA.chaikin(pts0, 2, false), 0.18).map((q) => [r2(q[0]), r2(q[1])]);
+    const w = W0();
+    const n = (w.rivers || []).length + 1;
+    const name = t("world.riverDefault").replace("{n}", n);
+    w.rivers = (w.rivers || []).concat([{ id: window.uid(), name, pts, width: 1 }]);
+    // carve a bed that keeps falling from source to mouth, so the simulated flow follows it
+    const Hh = World.height, sl = sea();
+    const L = polylineLength(pts);
+    const samples = Math.max(2, Math.ceil(L * RES * 2));
+    const bed = new Float32Array(samples + 1);
+    let cur = Infinity;
+    const at = (tt) => {
+      let acc = 0;
+      for (let k = 1; k < pts.length; k++) {
+        const seg = Math.hypot(pts[k][0] - pts[k - 1][0], pts[k][1] - pts[k - 1][1]);
+        if (acc + seg >= tt * L) { const u = seg ? (tt * L - acc) / seg : 0; return [pts[k - 1][0] + (pts[k][0] - pts[k - 1][0]) * u, pts[k - 1][1] + (pts[k][1] - pts[k - 1][1]) * u]; }
+        acc += seg;
+      }
+      return pts[pts.length - 1];
+    };
+    for (let k = 0; k <= samples; k++) {
+      const p = at(k / samples);
+      const x = clamp(Math.floor(p[0] * RES), 0, RW - 1), y = clamp(Math.floor(p[1] * RES), 0, RH - 1);
+      cur = Math.min(cur - 2, Hh[y * RW + x] - 6);
+      bed[k] = cur;
+    }
+    const bbox = lineField(pts, 1.2, (i, d, along) => {
+      const target = bed[Math.round(along * samples)];
+      if (Hh[i] > target && Hh[i] > sl) Hh[i] = Math.max(Math.round(target + (Hh[i] - target) * d * 0.7), sl + 1);
+    });
+    s.bbox = [Math.min(s.bbox[0], bbox[0]), Math.min(s.bbox[1], bbox[1]), Math.max(s.bbox[2], bbox[2]), Math.max(s.bbox[3], bbox[3])];
+    // with simulated rivers on, the stroke names the river that forms along it
+    if (w.autoRivers) {
+      const mid = pts[Math.floor(pts.length * 0.6)];
+      w.riverNames = Object.assign({}, w.riverNames, { ["h" + Date.now().toString(36)]: { name, anchor: [r2(mid[0]), r2(mid[1])] } });
+    }
+  }
+
+  // the brush that would paint what is under a data point (finger long-press)
   World.pickBrush = function (g) {
-    if (!World.elev) return null;
-    const x = Math.floor(g[0]), y = Math.floor(g[1]);
-    if (x < 0 || y < 0 || x >= GW || y >= GH) return null;
-    const i = y * GW + x, e = World.elev[i];
-    if (e === 0) return "sea";
-    if (e === 3) return "mountains";
-    if (e === 2) return "hills";
-    return ["plains", "forest", "desert", "marsh", "tundra", "jungle"][World.cover[i]] || "plains";
+    if (!World.height) return null;
+    const x = clamp(Math.floor(g[0] * RES), 0, RW - 1), y = clamp(Math.floor(g[1] * RES), 0, RH - 1);
+    const i = y * RW + x;
+    const hr = World.height[i] - sea();
+    if (hr <= 0) return "sea";
+    if (World.cover[i]) return COVER_BRUSHES[World.cover[i]] || "meadow";
+    if (hr >= 3500) return "peaks";
+    if (hr >= 1500) return "mountains";
+    if (hr >= 500) return "hills";
+    return "plains";
+  };
+  World.heightAt = function (g) {
+    if (!World.height) return null;
+    const x = clamp(Math.floor(g[0] * RES), 0, RW - 1), y = clamp(Math.floor(g[1] * RES), 0, RH - 1);
+    return World.height[y * RW + x] - sea();
   };
 
-  World.renameRiver = function (id, name) {
-    Actions.mut((p) => { const rv = (p.world.rivers || []).find((r) => r.id === id); if (rv) rv.name = name; }, { undo: false });
-  };
-  World.deleteRiver = function (id) {
-    Actions.mut((p) => { p.world.rivers = (p.world.rivers || []).filter((r) => r.id !== id); });
-  };
   World.setWorld = function (patch, opts) {
     Actions.mut((p) => Object.assign(p.world, patch), Object.assign({ undo: false }, opts));
+    World.sync();
   };
 
-  // A river as a tapered ribbon polygon (thin at the source, wide at the mouth),
-  // projected to map coordinates. Grid units -> map units via proj.
+  // ---------------- whole-map operations ----------------
+  function wholeMapChange(fn) {
+    ensureBuffers();
+    const hb = World.height.slice(), cb = World.cover.slice();
+    const riversBefore = JSON.stringify({ rivers: W0().rivers || [], names: W0().riverNames || {} });
+    fn();
+    World.renderAll();
+    const riversAfter = JSON.stringify({ rivers: W0().rivers || [], names: W0().riverNames || {} });
+    pushRasterUndo(0, 0, RW - 1, RH - 1, hb, cb, riversAfter !== riversBefore ? { riversBefore, riversAfter } : null);
+    World.rasterRev++;
+    W0().rev = (W0().rev || 0) + 1;
+    World.requestHydro(50);
+    window.scheduleSave();
+    App.emit();
+  }
+
+  World.randomContinent = function () {
+    wholeMapChange(() => {
+      const s = (Math.random() * 1e6) | 0;
+      const Hh = World.height, C = World.cover;
+      const sl = sea();
+      for (let y = 0; y < RH; y++) {
+        for (let x = 0; x < RW; x++) {
+          const gx = x / RES, gy = y / RES;
+          const nx = gx / GW - 0.5, ny = (gy / GH - 0.5) * (GH / GW);
+          const fall = Math.sqrt(nx * nx * 1.3 + ny * ny * 4) * 1.9;
+          const base = fbm(gx / 170, gy / 170, s, 5) + 0.18 * fbm(gx / 45, gy / 45, s + 7, 3) - fall * 0.55;
+          const ridge = ridged(gx / 90, gy / 90, s + 3, 5);
+          let hgt;
+          if (base < 0.3) hgt = -150 - 3200 * smoothstep(0.3, -0.1, base);
+          else {
+            // ground rises steadily inland (no bowls that would all fill up as lakes)
+            const inland = smoothstep(0.3, 0.6, base);
+            hgt = 30 + 450 * inland + 120 * inland * fbm(gx / 40, gy / 40, s + 9, 2);
+            if (ridge > 0.9) hgt += 1600 + 4200 * Math.pow((ridge - 0.9) / 0.1, 2) * (0.5 + inland);
+            else if (ridge > 0.78) hgt += 1600 * smoothstep(0.78, 0.9, ridge) * (0.4 + inland);
+          }
+          Hh[y * RW + x] = clamp(Math.round(sl + hgt), HMIN, HMAX);
+          C[y * RW + x] = 0;
+        }
+      }
+    });
+  };
+  World.clearTerrain = function () {
+    wholeMapChange(() => {
+      World.height.fill(Math.round(sea() - 1500));
+      World.cover.fill(0);
+      W0().rivers = [];
+      W0().riverNames = {};
+    });
+  };
+
+  // ---------------- terrain worker ----------------
+  let worker = null, workerReady = null, hydroTimer = null, hydroRev = 0;
+  const pending = new Map(); // job rev -> resolve
+  function scriptUrl(part) {
+    const el = [...document.scripts].find((s) => s.src && s.src.indexOf(part) >= 0) ||
+      [...document.querySelectorAll("link[href]")].find((l) => l.href.indexOf(part) >= 0);
+    return el ? (el.src || el.href) : new URL("js/" + part, location.href).href;
+  }
+  function getWorker() {
+    if (workerReady) return workerReady;
+    workerReady = new Promise((resolve, reject) => {
+      try {
+        worker = new Worker(scriptUrl("terrain.worker.js"));
+      } catch (e) { reject(e); return; }
+      worker.onmessage = (ev) => {
+        const m = ev.data;
+        if (m.type === "ready") { resolve(worker); return; }
+        if (m.type === "error") { console.warn("terrain worker:", m.message); const p = pending.get(m.job + ":" + m.rev); if (p) { pending.delete(m.job + ":" + m.rev); p.reject(new Error(m.message)); } return; }
+        const p = pending.get(m.type + ":" + m.rev);
+        if (p) { pending.delete(m.type + ":" + m.rev); p.resolve(m); }
+      };
+      worker.onerror = (e) => { console.warn("terrain worker failed", e); reject(e); };
+      worker.postMessage({ type: "init", scripts: [scriptUrl("terrain-algos.js"), scriptUrl("topojson-server"), scriptUrl("topojson-client")] });
+    });
+    return workerReady;
+  }
+  function runJob(msg, transfer) {
+    return getWorker().then((wk) => new Promise((resolve, reject) => {
+      pending.set(msg.type + ":" + msg.rev, { resolve, reject });
+      wk.postMessage(msg, transfer || []);
+    }));
+  }
+
+  // data-grid heights (metres above sea level)
+  World.dataHeights = function () {
+    ensureBuffers();
+    const sl = sea();
+    const rel = new Float32Array(RW * RH);
+    const Hh = World.height;
+    for (let i = 0; i < rel.length; i++) rel[i] = Hh[i] - sl;
+    return TA.downsample(rel, RW, RH, RES, GW, GH);
+  };
+
+  World.requestHydro = function (delay) {
+    if (!World.active()) return;
+    clearTimeout(hydroTimer);
+    hydroTimer = setTimeout(() => { World.runHydro().catch((e) => console.warn(e)); }, delay == null ? 450 : delay);
+  };
+  World.runHydro = function () {
+    if (!World.active()) return Promise.resolve(null);
+    const project = App.project, w = project.world;
+    const rev = ++hydroRev;
+    const forRaster = World.rasterRev;
+    const heights = World.dataHeights();
+    const hgrid = heights.slice();
+    // hand-drawn rivers are already carved into the terrain; nothing else to send
+    return runJob({ type: "hydro", rev, W: GW, H: GH, heights: heights.buffer, climate: w.climate,
+      riverThreshold: +w.riverThreshold || 60 }, [heights.buffer]).then((m) => {
+      if (rev !== hydroRev || App.project !== project) return null; // superseded
+      const prev = World.hydro;
+      World.hydro = {
+        rev, rasterRev: forRaster, hgrid,
+        temp: new Float32Array(m.temp), prec: new Float32Array(m.prec), biome: new Uint8Array(m.biome),
+        lake: new Uint8Array(m.lake), basin: new Int32Array(m.basin), down: new Int32Array(m.down), acc: new Float32Array(m.acc),
+        rivers: m.rivers
+      };
+      riverGeomCache = null;
+      repaintClimateChanges(prev, World.hydro);
+      App.emit();
+      return World.hydro;
+    });
+  };
+  // repaint only the tiles whose biome, lake or snow picture changed
+  function repaintClimateChanges(prev, next) {
+    if (!prev) { World.renderAll(); return; }
+    const T = 16; // data cells per tile
+    for (let ty = 0; ty < GH; ty += T) {
+      for (let tx = 0; tx < GW; tx += T) {
+        let diff = false;
+        for (let y = ty; y < Math.min(GH, ty + T) && !diff; y++) {
+          for (let x = tx; x < Math.min(GW, tx + T); x++) {
+            const i = y * GW + x;
+            if (prev.biome[i] !== next.biome[i] || prev.lake[i] !== next.lake[i] || Math.abs(prev.temp[i] - next.temp[i]) > 1.5) { diff = true; break; }
+          }
+        }
+        if (diff) paintRect(tx * RES, ty * RES, (tx + T) * RES - 1, (ty + T) * RES - 1);
+      }
+    }
+    World.renderRev++;
+  }
+
+  // ---------------- rivers for display / cards ----------------
+  let riverGeomCache = null;
+  // [{ index, name, key, pts, widths, flux, order, … }] in data units
+  World.displayRivers = function () {
+    if (!World.active()) return [];
+    const w = W0();
+    if (!w.autoRivers) {
+      return (w.rivers || []).map((rv, index) => ({ index, hand: true, id: rv.id, name: rv.name, pts: rv.pts,
+        widths: rv.pts.map((_, k) => 0.2 + 0.8 * Math.pow(k / Math.max(1, rv.pts.length - 1), 0.8)) }));
+    }
+    const hy = World.hydro;
+    if (!hy) return [];
+    if (riverGeomCache && riverGeomCache.rev === hy.rev && riverGeomCache.names === w.riverNames) return riverGeomCache.list;
+    const thr = +w.riverThreshold || 60;
+    const list = hy.rivers.map((r, index) => {
+      let pts = r.cells.map((c) => [c % GW + 0.5, ((c / GW) | 0) + 0.5]);
+      if (r.mouth >= 0) pts.push([r.mouth % GW + 0.5, ((r.mouth / GW) | 0) + 0.5]);
+      const flux = r.cells.map((c) => hy.acc[c]);
+      if (r.mouth >= 0) flux.push(flux[flux.length - 1]);
+      // smooth with a gentle meander
+      const sm = TA.chaikin(pts, 2, false);
+      const fl = sm.map((_, k) => flux[Math.min(flux.length - 1, Math.round(k / Math.max(1, sm.length - 1) * (flux.length - 1)))]);
+      const widths = fl.map((f) => clamp(0.12 + 0.2 * Math.sqrt(f / thr), 0.12, 2.4));
+      return { index, pts: sm, widths, flux: r.flux, order: r.order, cells: r.cells, mouthType: r.mouthType, into: r.into, sourceType: r.sourceType, mouth: r.mouth };
+    });
+    // names: each named anchor labels the biggest river passing near it
+    Object.entries(w.riverNames || {}).forEach(([key, nm]) => {
+      if (!nm || !nm.anchor) return;
+      const ax = nm.anchor[0], ay = nm.anchor[1];
+      let best = null, bf = -1;
+      list.forEach((rv) => {
+        for (const c of rv.cells) {
+          const x = c % GW + 0.5, y = ((c / GW) | 0) + 0.5;
+          if (Math.abs(x - ax) <= 4 && Math.abs(y - ay) <= 4) { if (rv.flux > bf) { bf = rv.flux; best = rv; } break; }
+        }
+      });
+      if (best && !best.name) { best.name = nm.name; best.key = key; best.notes = nm.notes || ""; }
+    });
+    riverGeomCache = { rev: hy.rev, names: w.riverNames, list };
+    return list;
+  };
+
+  // nearest displayed river to a data point, within tol data units
+  World.riverAt = function (g, tol) {
+    let best = null, bd = tol;
+    World.displayRivers().forEach((rv) => {
+      const pts = rv.pts;
+      for (let k = 0; k < pts.length - 1; k++) {
+        const d = TA.distToSeg(g[0], g[1], pts[k], pts[k + 1]);
+        if (d < bd || (best && d <= bd + 0.01 && (rv.flux || 0) > (best.flux || 0))) { bd = d; best = rv; }
+      }
+    });
+    return best;
+  };
+
+  // tapered ribbon polygon in map coordinates
   World.riverPath = function (rv, proj) {
     const pts = rv.pts;
     if (!pts || pts.length < 2 || !proj) return "";
-    const cum = [0];
-    for (let i = 1; i < pts.length; i++) cum.push(cum[i - 1] + Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]));
-    const L = cum[cum.length - 1] || 1;
-    const wmul = rv.width || 1;
     const left = [], right = [];
     for (let i = 0; i < pts.length; i++) {
       const a = pts[Math.max(0, i - 1)], b = pts[Math.min(pts.length - 1, i + 1)];
       let tx = b[0] - a[0], ty = b[1] - a[1];
       const tl = Math.hypot(tx, ty) || 1; tx /= tl; ty /= tl;
-      const hw = (0.4 + 1.5 * Math.pow(cum[i] / L, 0.8)) * wmul * 0.5;
+      const hw = (rv.widths ? rv.widths[i] : 0.6) * 0.5;
       left.push(proj([pts[i][0] - ty * hw, pts[i][1] + tx * hw]));
       right.push(proj([pts[i][0] + ty * hw, pts[i][1] - tx * hw]));
     }
@@ -509,8 +941,27 @@
     return "M" + ring.map((q) => q[0].toFixed(2) + "," + q[1].toFixed(2)).join("L") + "Z";
   };
 
-  // Position the terrain canvas under the SVG so it tracks zoom / pan exactly:
-  // grid -> map (projection) -> view transform -> viewBox -> client pixels.
+  // name a simulated river (anchored near its middle so the name survives edits)
+  World.nameRiver = function (rv, name, notes) {
+    const w = W0();
+    const names = Object.assign({}, w.riverNames || {});
+    if (rv.key && names[rv.key]) {
+      names[rv.key] = Object.assign({}, names[rv.key], { name: name != null ? name : names[rv.key].name, notes: notes != null ? notes : names[rv.key].notes });
+    } else {
+      const c = rv.cells[Math.floor(rv.cells.length * 0.6)];
+      names["r" + Date.now().toString(36)] = { name: name || "", notes: notes || "", anchor: [c % GW + 0.5, ((c / GW) | 0) + 0.5] };
+    }
+    Actions.mut((p) => { p.world.riverNames = names; }, {});
+  };
+  World.renameRiver = function (id, name) {
+    Actions.mut((p) => { const rv = (p.world.rivers || []).find((r) => r.id === id); if (rv) rv.name = name; }, { undo: false });
+  };
+  World.deleteRiver = function (id) {
+    Actions.mut((p) => { p.world.rivers = (p.world.rivers || []).filter((r) => r.id !== id); });
+    World.requestHydro(100);
+  };
+
+  // ---------------- canvas placement ----------------
   World.place = function (svg, v) {
     const cv = World.canvas, host = cv && cv.parentNode;
     const proj = App.basemap && App.basemap.proj;
@@ -533,443 +984,100 @@
     return proj([1, 0])[0] - proj([0, 0])[0];
   };
 
-  // ---------------- starters ----------------
-  World.randomContinent = function () {
-    ensureBuffers();
-    Actions.beginStroke();
-    const s = (Math.random() * 1e6) | 0;
-    const elev = World.elev, cover = World.cover;
-    for (let y = 0; y < GH; y++) {
-      for (let x = 0; x < GW; x++) {
-        const nx = x / GW - 0.5, ny = (y / GH - 0.5) * (GH / GW);
-        const falloff = Math.sqrt(nx * nx * 1.3 + ny * ny * 4) * 1.9;
-        const h = fbm(x / 170, y / 170, s, 5) + 0.5 * fbm(x / 60, y / 60, s + 7, 3) * 0.35 - falloff * 0.55;
-        const i = y * GW + x;
-        if (h < 0.3) { elev[i] = 0; cover[i] = 0; continue; }
-        const ridge = 1 - Math.abs(fbm(x / 90, y / 90, s + 3, 4) * 2 - 1);
-        elev[i] = ridge > 0.93 && h > 0.37 ? 3 : ridge > 0.86 && h > 0.34 ? 2 : 1;
-        const lat = Math.abs(y / GH - 0.5) * 2 + (fbm(x / 50, y / 50, s + 9, 3) - 0.5) * 0.25;
-        const moist = fbm(x / 120, y / 120, s + 21, 4);
-        cover[i] = lat > 0.82 ? 4 : moist > 0.56 ? (lat < 0.3 ? 5 : 1) : moist < 0.36 && lat < 0.55 ? 2 : moist > 0.5 && elev[i] === 1 && fbm(x / 40, y / 40, s + 5, 2) > 0.64 ? 3 : 0;
-      }
-    }
-    World.renderAll();
-    commitRasters();
-    Actions.endStroke();
-  };
-  World.clearTerrain = function () {
-    ensureBuffers();
-    Actions.beginStroke();
-    World.elev.fill(0); World.cover.fill(0);
-    World.renderAll();
-    commitRasters();
-    Actions.mut((p) => { p.world.rivers = []; }, { undo: false });
-    Actions.endStroke();
-  };
-
-  // ---------------- polygon helpers ----------------
-  function ringArea(r) {
-    let a = 0;
-    for (let i = 0, j = r.length - 1; i < r.length; j = i++) a += (r[j][0] + r[i][0]) * (r[j][1] - r[i][1]);
-    return a / 2;
-  }
-  function chaikinClosed(r) {
-    const out = [];
-    const n = r.length - (r.length > 1 && r[0][0] === r[r.length - 1][0] && r[0][1] === r[r.length - 1][1] ? 1 : 0);
-    for (let i = 0; i < n; i++) {
-      const a = r[i], b = r[(i + 1) % n];
-      out.push([a[0] * 0.75 + b[0] * 0.25, a[1] * 0.75 + b[1] * 0.25], [a[0] * 0.25 + b[0] * 0.75, a[1] * 0.25 + b[1] * 0.75]);
-    }
-    return out;
-  }
-  function closeRing(r) {
-    if (!r.length) return r;
-    const a = r[0], b = r[r.length - 1];
-    return a[0] === b[0] && a[1] === b[1] ? r : r.concat([[a[0], a[1]]]);
-  }
-  // Sutherland–Hodgman against an axis-aligned rectangle (per ring)
-  function clipRingRect(ring, x0, y0, x1, y1) {
-    let pts = ring;
-    const edges = [
-      (p) => p[0] >= x0, (p) => p[0] <= x1, (p) => p[1] >= y0, (p) => p[1] <= y1
-    ];
-    const inter = [
-      (a, b) => [x0, a[1] + (b[1] - a[1]) * (x0 - a[0]) / (b[0] - a[0])],
-      (a, b) => [x1, a[1] + (b[1] - a[1]) * (x1 - a[0]) / (b[0] - a[0])],
-      (a, b) => [a[0] + (b[0] - a[0]) * (y0 - a[1]) / (b[1] - a[1]), y0],
-      (a, b) => [a[0] + (b[0] - a[0]) * (y1 - a[1]) / (b[1] - a[1]), y1]
-    ];
-    for (let e = 0; e < 4; e++) {
-      const inside = edges[e], cut = inter[e];
-      const out = [];
-      for (let i = 0; i < pts.length; i++) {
-        const cur = pts[i], prev = pts[(i + pts.length - 1) % pts.length];
-        const ci = inside(cur), pi = inside(prev);
-        if (ci) { if (!pi) out.push(cut(prev, cur)); out.push(cur); }
-        else if (pi) out.push(cut(prev, cur));
-      }
-      pts = out;
-      if (!pts.length) break;
-    }
-    return pts;
-  }
-  function inPoly(poly, x, y) {
-    if (!d3.polygonContains(poly[0], [x, y])) return false;
-    for (let h = 1; h < poly.length; h++) if (d3.polygonContains(poly[h], [x, y])) return false;
-    return true;
-  }
-  function geomPolys(g) {
-    if (!g) return [];
-    if (g.type === "Polygon") return [g.coordinates];
-    if (g.type === "MultiPolygon") return g.coordinates;
-    return [];
-  }
-
-  // Exact even-odd scanline rasterization of features onto the grid (pixel
-  // centres). Returns Int32Array of feature index per cell, -1 = none.
-  function rasterize(features) {
-    const out = new Int32Array(GW * GH).fill(-1);
-    features.forEach((f, idx) => {
-      const edges = [];
-      let ymin = Infinity, ymax = -Infinity;
-      geomPolys(f.geometry).forEach((poly) => poly.forEach((ring) => {
-        for (let i = 0; i < ring.length - 1; i++) {
-          const a = ring[i], b = ring[i + 1];
-          if (a[1] === b[1]) continue;
-          edges.push(a[0], a[1], b[0], b[1]);
-          if (a[1] < ymin) ymin = a[1]; if (a[1] > ymax) ymax = a[1];
-          if (b[1] < ymin) ymin = b[1]; if (b[1] > ymax) ymax = b[1];
-        }
-      }));
-      if (!edges.length) return;
-      const ya = clamp(Math.floor(ymin - 0.5), 0, GH - 1), yb = clamp(Math.ceil(ymax), 0, GH - 1);
-      const xs = [];
-      for (let y = ya; y <= yb; y++) {
-        const sy = y + 0.5;
-        xs.length = 0;
-        for (let e = 0; e < edges.length; e += 4) {
-          const y0 = edges[e + 1], y1 = edges[e + 3];
-          if ((y0 <= sy && y1 > sy) || (y1 <= sy && y0 > sy)) {
-            xs.push(edges[e] + (sy - y0) * (edges[e + 2] - edges[e]) / (y1 - y0));
-          }
-        }
-        if (xs.length < 2) continue;
-        xs.sort((p, q) => p - q);
-        const row = y * GW;
-        for (let k = 0; k + 1 < xs.length; k += 2) {
-          const xa = clamp(Math.ceil(xs[k] - 0.5), 0, GW), xb = clamp(Math.floor(xs[k + 1] - 0.5), -1, GW - 1);
-          for (let x = xa; x <= xb; x++) out[row + x] = idx;
-        }
-      }
-    });
-    return out;
-  }
-
-  // connected components of cells where pred(i) holds; 4- or 8-connected
-  function components(pred, eight) {
+  // ---------------- data grid for analysis (atlas, province properties) ----------------
+  let dgCache = null;
+  World.dataGrid = function () {
+    const hy = World.hydro;
+    const key = World.rasterRev + ":" + (hy ? hy.rev : 0) + ":" + sea();
+    if (dgCache && dgCache.key === key) return dgCache;
+    const h = hy && hy.rasterRev === World.rasterRev ? hy.hgrid : World.dataHeights();
     const N = GW * GH;
-    const comp = new Int32Array(N).fill(-1);
-    const list = [];
-    const queue = new Int32Array(N);
-    for (let s = 0; s < N; s++) {
-      if (comp[s] !== -1 || !pred(s)) continue;
-      const id = list.length;
-      const c = { id, area: 0, sx: 0, sy: 0, sxx: 0, syy: 0, sxy: 0, minx: GW, miny: GH, maxx: 0, maxy: 0, edge: false };
-      list.push(c);
-      let qh = 0, qt = 0;
-      queue[qt++] = s; comp[s] = id;
-      while (qh < qt) {
-        const i = queue[qh++];
-        const x = i % GW, y = (i / GW) | 0;
-        c.area++; c.sx += x + 0.5; c.sy += y + 0.5;
-        c.sxx += (x + 0.5) * (x + 0.5); c.syy += (y + 0.5) * (y + 0.5); c.sxy += (x + 0.5) * (y + 0.5);
-        if (x < c.minx) c.minx = x; if (x > c.maxx) c.maxx = x;
-        if (y < c.miny) c.miny = y; if (y > c.maxy) c.maxy = y;
-        if (x === 0 || y === 0 || x === GW - 1 || y === GH - 1) c.edge = true;
-        for (let dy = -1; dy <= 1; dy++) {
-          for (let dx = -1; dx <= 1; dx++) {
-            if (!dx && !dy) continue;
-            if (!eight && dx && dy) continue;
-            const xx = x + dx, yy = y + dy;
-            if (xx < 0 || yy < 0 || xx >= GW || yy >= GH) continue;
-            const j = yy * GW + xx;
-            if (comp[j] === -1 && pred(j)) { comp[j] = id; queue[qt++] = j; }
-          }
-        }
-      }
-    }
-    return { comp, list };
-  }
-
-  // ---------------- analysis (shared by generation and the atlas) ----------------
-  function analyze(features, rivers) {
-    const elev = World.elev, cover = World.cover;
-    const cellOf = rasterize(features);
-    const cells = features.map(() => ({ n: 0, land: 0, sx: 0, sy: 0, elevH: [0, 0, 0, 0], coverH: [0, 0, 0, 0, 0, 0],
-      waters: new Map(), nb: new Map(), lands: new Map(), ranges: new Map(), rivers: new Set() }));
-    const land = components((i) => elev[i] > 0, false);
-    const water = components((i) => elev[i] === 0, false);
-    // mountain ranges: peaks less than ~2 cells apart belong to one range
-    const near3 = new Uint8Array(GW * GH), tmp3 = new Uint8Array(GW * GH);
-    for (let y = 0; y < GH; y++) for (let x = 0; x < GW; x++) {
-      let hit = 0;
-      for (let d = -2; d <= 2 && !hit; d++) { const xx = x + d; if (xx >= 0 && xx < GW && elev[y * GW + xx] === 3) hit = 1; }
-      tmp3[y * GW + x] = hit;
-    }
-    for (let y = 0; y < GH; y++) for (let x = 0; x < GW; x++) {
-      let hit = 0;
-      for (let d = -2; d <= 2 && !hit; d++) { const yy = y + d; if (yy >= 0 && yy < GH && tmp3[yy * GW + x]) hit = 1; }
-      near3[y * GW + x] = hit;
-    }
-    const range = components((i) => near3[i] === 1, true);
-    range.list.forEach((c) => { c.area = 0; c.sx = c.sy = c.sxx = c.syy = c.sxy = 0; });
-    for (let i = 0; i < GW * GH; i++) {
-      const rc = range.comp[i];
-      if (rc < 0) continue;
-      if (elev[i] !== 3) { range.comp[i] = -1; continue; }
-      const c = range.list[rc], x = (i % GW) + 0.5, y = ((i / GW) | 0) + 0.5;
-      c.area++; c.sx += x; c.sy += y; c.sxx += x * x; c.syy += y * y; c.sxy += x * y;
-    }
-    land.list.forEach((c) => { c.cells = new Map(); });
-    water.list.forEach((c) => { c.cells = new Map(); c.kind = c.edge ? "ocean" : "lake"; });
-    range.list.forEach((c) => { c.cells = new Map(); });
-    const inc = (m, k, v) => m.set(k, (m.get(k) || 0) + (v || 1));
+    const band = new Uint8Array(N), coverClass = new Uint8Array(N);
+    const C = World.cover;
     for (let y = 0; y < GH; y++) {
       for (let x = 0; x < GW; x++) {
         const i = y * GW + x;
-        const c = cellOf[i];
-        if (c < 0) continue;
-        const cell = cells[c];
-        cell.n++;
-        if (x < GW - 1) { const c2 = cellOf[i + 1]; if (c2 >= 0 && c2 !== c) { inc(cell.nb, c2); inc(cells[c2].nb, c); } }
-        if (y < GH - 1) { const c2 = cellOf[i + GW]; if (c2 >= 0 && c2 !== c) { inc(cell.nb, c2); inc(cells[c2].nb, c); } }
-        if (elev[i] === 0) continue;
-        cell.land++; cell.sx += x + 0.5; cell.sy += y + 0.5;
-        cell.elevH[elev[i]]++; cell.coverH[cover[i]]++;
-        inc(cell.lands, land.comp[i]); inc(land.list[land.comp[i]].cells, c);
-        if (range.comp[i] >= 0) { inc(cell.ranges, range.comp[i]); inc(range.list[range.comp[i]].cells, c); }
-        // water within 2 cells in the 4 directions -> this cell touches that water body
-        for (let d = 1; d <= 2; d++) {
-          const nbrs = [x - d >= 0 ? i - d : -1, x + d < GW ? i + d : -1, y - d >= 0 ? i - d * GW : -1, y + d < GH ? i + d * GW : -1];
-          for (const j of nbrs) {
-            if (j >= 0 && elev[j] === 0) { const wc = water.comp[j]; inc(cell.waters, wc); inc(water.list[wc].cells, c); }
-          }
+        band[i] = TA.bandOf(h[i]);
+        // painted cover wins (most common in the block), else the biome's class
+        const counts = [0, 0, 0, 0, 0, 0, 0];
+        for (let dy = 0; dy < RES; dy++) for (let dx = 0; dx < RES; dx++) counts[C[(y * RES + dy) * RW + x * RES + dx]]++;
+        let best = 0;
+        for (let k = 1; k < 7; k++) if (counts[k] > counts[best]) best = k;
+        if (best > 0 && counts[best] >= 2) coverClass[i] = best - 1;
+        else {
+          const bio = hy ? hy.biome[i] : 0;
+          const cls = TA.BIOME_COVER[bio];
+          coverClass[i] = cls ? COVER_CLASSES.indexOf(cls) : 0;
         }
       }
     }
-    // rivers: ordered provinces along the line, source & mouth
-    const riverInfo = (rivers || []).map((rv) => {
-      const seq = [];
-      let len = 0;
-      const pts = rv.pts || [];
-      for (let k = 0; k < pts.length; k++) {
-        if (k) len += Math.hypot(pts[k][0] - pts[k - 1][0], pts[k][1] - pts[k - 1][1]);
-        const a = pts[k], b = pts[Math.min(pts.length - 1, k + 1)];
-        const segL = Math.hypot(b[0] - a[0], b[1] - a[1]);
-        const n = Math.max(1, Math.ceil(segL / 0.5));
-        for (let s = 0; s < n; s++) {
-          const x = clamp(Math.floor(a[0] + (b[0] - a[0]) * s / n), 0, GW - 1), y = clamp(Math.floor(a[1] + (b[1] - a[1]) * s / n), 0, GH - 1);
-          const c = cellOf[y * GW + x];
-          if (c >= 0 && elev[y * GW + x] > 0) {
-            if (seq[seq.length - 1] !== c) seq.push(c);
-            cells[c].rivers.add(rv.id);
-          }
-        }
-      }
-      const waterNear = (pt) => {
-        if (!pt) return -1;
-        for (let rr = 0; rr <= 3; rr++) {
-          for (let dy = -rr; dy <= rr; dy++) for (let dx = -rr; dx <= rr; dx++) {
-            const x = Math.floor(pt[0]) + dx, y = Math.floor(pt[1]) + dy;
-            if (x < 0 || y < 0 || x >= GW || y >= GH) continue;
-            if (elev[y * GW + x] === 0) return water.comp[y * GW + x];
-          }
-        }
-        return -1;
-      };
-      const uniq = seq.filter((c, i) => seq.indexOf(c) === i);
-      return { id: rv.id, name: rv.name, len, cells: uniq, mouthWater: waterNear(pts[pts.length - 1]), sourceWater: waterNear(pts[0]) };
-    });
-    return { cellOf, cells, lands: land.list, landComp: land.comp, waters: water.list, waterComp: water.comp, ranges: range.list, rangeComp: range.comp, rivers: riverInfo };
-  }
-
-  function cellTerrain(cell) {
-    const L = cell.land || 1;
-    if (cell.elevH[3] / L >= 0.4) return "mountain";
-    if ((cell.elevH[2] + cell.elevH[3]) / L >= 0.4) return "hills";
-    let best = 0;
-    for (let k = 1; k < 6; k++) if (cell.coverH[k] > cell.coverH[best]) best = k;
-    return COVER[best];
-  }
-
-  // ---------------- province generation ----------------
-  World.generate = function () {
-    if (!World.active()) return;
-    ensureBuffers();
-    const p = App.project;
-    const w = p.world;
-    const elev = World.elev, cover = World.cover;
-    const S = clamp(+w.cellSize || 18, 5, 60);
-    const rand = mulberry32((w.seed | 0) || 12345);
-
-    // 1) coastline polygons: contour of a lightly blurred land mask (padded so edge land closes)
-    const PW = GW + 2, PH = GH + 2;
-    const field = new Float64Array(PW * PH);
-    for (let y = 0; y < GH; y++) {
-      for (let x = 0; x < GW; x++) {
-        let nb = 0;
-        for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
-          if (!dx && !dy) continue;
-          const xx = x + dx, yy = y + dy;
-          if (xx >= 0 && yy >= 0 && xx < GW && yy < GH && elev[yy * GW + xx] > 0) nb++;
-        }
-        field[(y + 1) * PW + x + 1] = (elev[y * GW + x] > 0 ? 0.6 : 0) + 0.4 * nb / 8;
+    dgCache = { key, h, band, coverClass, lake: hy ? hy.lake : new Uint8Array(N), biome: hy ? hy.biome : null, temp: hy ? hy.temp : null, prec: hy ? hy.prec : null };
+    return dgCache;
+  };
+  World.sea = sea;
+  World.riverCellsOf = function (rv) {
+    // cells of a display river on the data grid (hand rivers are sampled)
+    if (rv.cells) return rv.cells;
+    const out = [];
+    for (let k = 0; k < rv.pts.length - 1; k++) {
+      const a = rv.pts[k], b = rv.pts[k + 1];
+      const n = Math.max(1, Math.ceil(Math.hypot(b[0] - a[0], b[1] - a[1]) * 2));
+      for (let s = 0; s < n; s++) {
+        const x = clamp(Math.floor(a[0] + (b[0] - a[0]) * s / n), 0, GW - 1), y = clamp(Math.floor(a[1] + (b[1] - a[1]) * s / n), 0, GH - 1);
+        const c = y * GW + x;
+        if (out[out.length - 1] !== c) out.push(c);
       }
     }
-    const contour = d3.contours().size([PW, PH]).thresholds([0.5])(field)[0];
-    // d3.contours puts sample (i, j) at point (i, j); our cell i is centred at i + 0.5
-    const OFF = -1 + 0.5;
-    const landPolys = [];
-    (contour ? contour.coordinates : []).forEach((poly) => {
-      const rings = [];
-      for (let ri = 0; ri < poly.length; ri++) {
-        const shifted = poly[ri].map((q) => [q[0] + OFF, q[1] + OFF]);
-        const ok = Math.abs(ringArea(shifted)) >= (ri === 0 ? 1.2 : 3);
-        const sm = ok ? rdp(closeRing(chaikinClosed(shifted)), 0.12) : [];
-        if (sm.length < 4) { if (ri === 0) break; continue; } // no exterior -> drop its holes too
-        rings.push(closeRing(sm.map((q) => [r2(q[0]), r2(q[1])])));
-      }
-      if (!rings.length) return;
-      let bx0 = Infinity, by0 = Infinity, bx1 = -Infinity, by1 = -Infinity;
-      rings[0].forEach((q) => { if (q[0] < bx0) bx0 = q[0]; if (q[0] > bx1) bx1 = q[0]; if (q[1] < by0) by0 = q[1]; if (q[1] > by1) by1 = q[1]; });
-      landPolys.push({ rings, bbox: [bx0, by0, bx1, by1], area: Math.abs(ringArea(rings[0])), seeds: [] });
-    });
-    if (!landPolys.length) { Actions.toast(t("world.noLand")); return; }
+    return out;
+  };
 
-    // 2) seeds: dart throwing with terrain-dependent spacing (big provinces in
-    //    mountains / deserts / tundra, small ones in fertile lowland)
-    const factorAt = (x, y) => {
-      const i = clamp(y | 0, 0, GH - 1) * GW + clamp(x | 0, 0, GW - 1);
-      const e = elev[i], c = cover[i];
-      let f = 1;
-      if (e === 3) f = 1.5; else if (e === 2) f = 1.15;
-      if (c === 2) f = Math.max(f, 1.6); else if (c === 4) f = Math.max(f, 1.4); else if (c === 3) f = Math.max(f, 1.15);
-      return f;
-    };
-    const step = S * 0.33;
-    const cand = [];
-    for (let y = step / 2; y < GH; y += step) {
-      for (let x = step / 2; x < GW; x += step) {
-        const jx = x + (rand() - 0.5) * step, jy = y + (rand() - 0.5) * step;
-        const i = clamp(jy | 0, 0, GH - 1) * GW + clamp(jx | 0, 0, GW - 1);
-        if (elev[i] > 0) cand.push([jx, jy]);
+  // ---------------- province generation (smart, in the worker) ----------------
+  World.generating = false;
+  World.generate = async function () {
+    if (!World.active() || World.generating) return;
+    World.generating = true;
+    App.emit();
+    try {
+      const project = App.project, w = project.world;
+      let hy = World.hydro;
+      if (!hy || hy.rasterRev !== World.rasterRev) hy = await World.runHydro();
+      if (!hy || App.project !== project) return;
+      const dg = World.dataGrid();
+      let anyLand = false;
+      for (let i = 0; i < dg.h.length; i++) if (dg.h[i] > 0) { anyLand = true; break; }
+      if (!anyLand) { Actions.toast(t("world.noLand")); return; }
+      const opts = Object.assign({}, w.provinceOpts);
+      const riverMask = new Uint8Array(GW * GH);
+      if (opts.riversAsBorders) {
+        World.displayRivers().forEach((rv) => { if (rv.hand || rv.order >= 3) World.riverCellsOf(rv).forEach((c) => { riverMask[c] = 1; }); });
       }
+      const seeds = opts.citySeeds && window.Objects ? Objects.citySeeds(project) : [];
+      const S = clamp(+w.cellSize || 18, 5, 60);
+      const heights = dg.h.slice();
+      const basin = hy.basin.slice();
+      const m = await runJob({ type: "provinces", rev: ++hydroRev, W: GW, H: GH, heights: heights.buffer, basin: basin.buffer,
+        riverMask: riverMask.buffer, target: S * S, seed: w.seed, seeds, opts }, [heights.buffer, basin.buffer, riverMask.buffer]);
+      if (App.project !== project) return;
+      applyGenerated(project, m);
+    } catch (e) {
+      console.error("province generation failed", e);
+      Actions.toast(t("world.generateFailed"));
+    } finally {
+      World.generating = false;
+      App.emit();
     }
-    for (let i = cand.length - 1; i > 0; i--) { const j = (rand() * (i + 1)) | 0; const tmp = cand[i]; cand[i] = cand[j]; cand[j] = tmp; }
-    const HC = S;
-    const hash = new Map();
-    const seeds = [];
-    cand.forEach((c) => {
-      const fc = factorAt(c[0], c[1]);
-      const hx = Math.floor(c[0] / HC), hy = Math.floor(c[1] / HC);
-      for (let oy = -2; oy <= 2; oy++) for (let ox = -2; ox <= 2; ox++) {
-        const b = hash.get((hx + ox) + "," + (hy + oy));
-        if (!b) continue;
-        for (const q of b) {
-          const need = (fc + q.f) * 0.5 * S * 0.92;
-          if ((q.x - c[0]) ** 2 + (q.y - c[1]) ** 2 < need * need) return;
-        }
-      }
-      const s = { x: c[0], y: c[1], f: fc };
-      seeds.push(s);
-      const key = hx + "," + hy;
-      if (!hash.has(key)) hash.set(key, []);
-      hash.get(key).push(s);
-    });
-    // each seed belongs to the landmass polygon that contains it
-    seeds.forEach((s) => {
-      for (const lp of landPolys) {
-        if (s.x < lp.bbox[0] || s.x > lp.bbox[2] || s.y < lp.bbox[1] || s.y > lp.bbox[3]) continue;
-        if (inPoly(lp.rings, s.x, s.y)) { lp.seeds.push([s.x, s.y]); return; }
-      }
-    });
+  };
 
-    // 3) relax (Lloyd, 2 passes), then push seeds off rivers so borders follow them
-    const rivers = w.rivers || [];
-    landPolys.forEach((lp) => {
-      if (lp.seeds.length < 3) return;
-      const bounds = [lp.bbox[0] - 1, lp.bbox[1] - 1, lp.bbox[2] + 1, lp.bbox[3] + 1];
-      for (let it = 0; it < 2; it++) {
-        const vor = d3.Delaunay.from(lp.seeds).voronoi(bounds);
-        lp.seeds = lp.seeds.map((s, i) => {
-          const cell = vor.cellPolygon(i);
-          if (!cell) return s;
-          const c = d3.polygonCentroid(cell);
-          return inPoly(lp.rings, c[0], c[1]) ? [s[0] * 0.3 + c[0] * 0.7, s[1] * 0.3 + c[1] * 0.7] : s;
-        });
-      }
-      if (!rivers.length) return;
-      lp.seeds = lp.seeds.map((s) => {
-        let best = null, bd = S * 0.42;
-        rivers.forEach((rv) => {
-          for (let k = 0; k < rv.pts.length - 1; k++) {
-            const d = distToSeg(s[0], s[1], rv.pts[k], rv.pts[k + 1]);
-            if (d < bd) { bd = d; best = [rv.pts[k], rv.pts[k + 1]]; }
-          }
-        });
-        if (!best) return s;
-        const [a, b] = best;
-        let nx = -(b[1] - a[1]), ny = b[0] - a[0];
-        const nl = Math.hypot(nx, ny) || 1; nx /= nl; ny /= nl;
-        const side = (s[0] - a[0]) * nx + (s[1] - a[1]) * ny >= 0 ? 1 : -1;
-        const push = S * 0.42 - bd;
-        const q = [s[0] + nx * side * push, s[1] + ny * side * push];
-        return inPoly(lp.rings, q[0], q[1]) ? q : s;
-      });
-    });
-
-    // 4) Voronoi per landmass, clipped to the coastline
-    const features = [];
-    const pushCell = (rings) => {
-      if (!rings || !rings.length) return;
-      const clean = rings.map((poly) => poly.map((ring) => closeRing(ring.map((q) => [r2(q[0]), r2(q[1])]))).filter((ring) => ring.length >= 4))
-        .filter((poly) => poly.length && Math.abs(ringArea(poly[0])) > 0.05);
-      if (!clean.length) return;
-      features.push({ type: "Feature", geometry: clean.length === 1 ? { type: "Polygon", coordinates: clean[0] } : { type: "MultiPolygon", coordinates: clean }, properties: {} });
-    };
-    landPolys.forEach((lp) => {
-      if (lp.seeds.length <= 1) { pushCell([lp.rings]); return; }
-      // bucket the coastline vertices so "cell fully inland" is a cheap test
-      const B = S;
-      const buckets = new Set();
-      lp.rings.forEach((ring) => ring.forEach((q) => buckets.add(Math.floor(q[0] / B) + "," + Math.floor(q[1] / B))));
-      const vor = d3.Delaunay.from(lp.seeds).voronoi([lp.bbox[0] - 2, lp.bbox[1] - 2, lp.bbox[2] + 2, lp.bbox[3] + 2]);
-      lp.seeds.forEach((s, i) => {
-        const cell = vor.cellPolygon(i);
-        if (!cell) return;
-        let cx0 = Infinity, cy0 = Infinity, cx1 = -Infinity, cy1 = -Infinity;
-        cell.forEach((q) => { if (q[0] < cx0) cx0 = q[0]; if (q[0] > cx1) cx1 = q[0]; if (q[1] < cy0) cy0 = q[1]; if (q[1] > cy1) cy1 = q[1]; });
-        let touchesCoast = false;
-        for (let by = Math.floor(cy0 / B); by <= Math.floor(cy1 / B) && !touchesCoast; by++) {
-          for (let bx = Math.floor(cx0 / B); bx <= Math.floor(cx1 / B); bx++) if (buckets.has(bx + "," + by)) { touchesCoast = true; break; }
-        }
-        if (!touchesCoast && cell.every((q) => inPoly(lp.rings, q[0], q[1]))) { pushCell([[cell]]); return; }
-        let res = null;
-        try {
-          const local = lp.rings.map((ring) => clipRingRect(ring.slice(0, -1), cx0 - 0.5, cy0 - 0.5, cx1 + 0.5, cy1 + 0.5))
-            .filter((ring) => ring.length >= 3).map(closeRing);
-          if (local.length) res = polygonClipping.intersection([cell], local);
-        } catch (e) {
-          try { res = polygonClipping.intersection([cell], lp.rings); } catch (e2) { res = null; console.warn("world: clip failed", e2); }
-        }
-        if (res && res.length) pushCell(res);
-      });
-    });
-
-    // number provinces reading-order (north-west first)
+  function applyGenerated(project, m) {
+    const features = m.geometries.map((g) => ({ type: "Feature", geometry: g, properties: {} }))
+      .filter((f) => f.geometry && f.geometry.coordinates && f.geometry.coordinates.length);
+    // number provinces in reading order (north-west first)
+    const S = clamp(+project.world.cellSize || 18, 5, 60);
     features.forEach((f) => {
-      const poly = geomPolys(f.geometry).sort((a, b) => Math.abs(ringArea(b[0])) - Math.abs(ringArea(a[0])))[0];
-      f._c = d3.polygonCentroid(poly[0]);
+      const polys = f.geometry.type === "Polygon" ? [f.geometry.coordinates] : f.geometry.coordinates;
+      let best = polys[0], ba = -1;
+      polys.forEach((poly) => { const a = Math.abs(d3.polygonArea(poly[0])); if (a > ba) { ba = a; best = poly; } });
+      f._c = d3.polygonCentroid(best[0]);
     });
     features.sort((a, b) => (Math.floor(a._c[1] / (S * 1.5)) - Math.floor(b._c[1] / (S * 1.5))) || (a._c[0] - b._c[0]));
     const prefix = t("world.provinceDefault");
@@ -979,417 +1087,21 @@
       delete f._c;
       f.properties = { id, name: prefix.replace("{n}", i + 1) };
     });
-
-    // 5) per-province terrain / coast from the rasters
-    const an = analyze(features, rivers);
+    const an = window.Atlas.analyze(features, World.displayRivers());
     features.forEach((f, i) => {
       const c = an.cells[i];
-      f.properties.terrain = cellTerrain(c);
+      f.properties.terrain = window.Atlas.cellTerrain(c);
       f.properties.coastal = [...c.waters.keys()].some((wc) => an.waters[wc].kind === "ocean");
     });
-
-    // 6) carry the political map over from the previous cut by pixel overlap.
-    //    Each new province takes the owner holding most of its area (a vote over
-    //    all old provinces it covers), copying the record of the biggest of them.
-    const oldFeats = (App.basemap.raw && App.basemap.raw.features) || [];
-    let pairs = null, bestNewForOld = null;
-    if (oldFeats.length) {
-      const oldR = rasterize(oldFeats);
-      const overlap = new Map();
-      for (let i = 0; i < GW * GH; i++) {
-        const n = an.cellOf[i], o = oldR[i];
-        if (n >= 0 && o >= 0) { const k = n * 1e6 + o; overlap.set(k, (overlap.get(k) || 0) + 1); }
-      }
-      pairs = [];
-      const bestNew = new Int32Array(oldFeats.length).fill(-1), bestNewV = new Float64Array(oldFeats.length);
-      overlap.forEach((v, k) => {
-        const n = Math.floor(k / 1e6), o = k - n * 1e6;
-        pairs.push([n, String(oldFeats[o].id), v]);
-        if (v > bestNewV[o]) { bestNewV[o] = v; bestNew[o] = n; }
-      });
-      bestNewForOld = {};
-      oldFeats.forEach((f, o) => { if (bestNew[o] >= 0) bestNewForOld[String(f.id)] = features[bestNew[o]].id; });
-    }
-    const remapRegions = (regions, groups) => {
-      const out = {};
-      if (!pairs) return out;
-      const effOf = (oid) => {
-        const src = regions[oid];
-        return src && src.group && groups && groups[src.group] ? groups[src.group] : src;
-      };
-      const votes = features.map(() => new Map());   // owner -> { area, best oid, best area }
-      pairs.forEach(([n, oid, v]) => {
-        const e = effOf(oid);
-        const owner = (e && e.owner) || "";
-        const m = votes[n];
-        const cur = m.get(owner) || { area: 0, oid: null, v: 0 };
-        cur.area += v;
-        if (v > cur.v) { cur.v = v; cur.oid = oid; }
-        m.set(owner, cur);
-      });
-      features.forEach((f, n) => {
-        let win = null, winOwner = "";
-        votes[n].forEach((c, owner) => { if (!win || c.area > win.area) { win = c; winOwner = owner; } });
-        if (!win || !winOwner) return;
-        const rec = JSON.parse(JSON.stringify(effOf(win.oid)));
-        delete rec.group; delete rec.members; delete rec.id;
-        const src = regions[win.oid];
-        rec.name = bestNewForOld[win.oid] === f.id && src && src.name ? src.name : null;
-        out[f.id] = rec;
-      });
-      return out;
-    };
-    const remapStates = (states) => {
-      for (const sid in states) {
-        const st = states[sid];
-        if (st.capitalRegion) st.capitalRegion = (bestNewForOld && bestNewForOld[st.capitalRegion]) || null;
-      }
-    };
-
-    const gj = { type: "FeatureCollection", features };
-    const p2 = App.project;
-    p2.regions = remapRegions(p2.regions || {}, p2.groups);
-    remapStates(p2.states || {});
-    Object.keys(p2.snapshots || {}).forEach((y) => {
-      const snap = p2.snapshots[y];
-      snap.regions = remapRegions(snap.regions || {}, snap.groups);
-      snap.groups = {};
-      remapStates(snap.states || {});
-    });
-    p2.groups = {};
-    p2.featLabels = {};
-    p2.regionGeomEdits = { removed: {}, features: {} };
-    p2.customGeo = gj;
-    p2.world.genRev = p2.world.rev || 0;
+    window.Atlas.remapPolitics(project, features, an.cellOf);
+    project.customGeo = { type: "FeatureCollection", features };
+    project.world.genRev = project.world.rev || 0;
     App.undoStack.length = 0;
     App.redoStack.length = 0;
     App.ui.selection = [];
     App.terrVersion++;
     window.scheduleSave();
     Actions.toast(t("world.generated").replace("{n}", features.length));
-    window.Geo.load(p2);
-  };
-
-  // ---------------- text atlas ----------------
-  const DIRS = {
-    ru: ["востоке", "северо-востоке", "севере", "северо-западе", "западе", "юго-западе", "юге", "юго-востоке"],
-    en: ["east", "north-east", "north", "north-west", "west", "south-west", "south", "south-east"]
-  };
-  const TERR = {
-    ru: { plains: "равнины", forest: "леса", desert: "пустыня", marsh: "болота", tundra: "тундра", jungle: "джунгли", hills: "холмы", mountain: "горы", lowland: "низменности" },
-    en: { plains: "plains", forest: "forest", desert: "desert", marsh: "marsh", tundra: "tundra", jungle: "jungle", hills: "hills", mountain: "mountains", lowland: "lowland" }
-  };
-  function dirWord(lang, dx, dy) {
-    const a = Math.atan2(-dy, dx);
-    const k = ((Math.round(a / (Math.PI / 4)) % 8) + 8) % 8;
-    return DIRS[lang][k];
+    window.Geo.load(project);
   }
-  function mapPosition(lang, x, y) {
-    const col = x < GW / 3 ? 0 : x > (2 * GW) / 3 ? 2 : 1;
-    const row = y < GH / 3 ? 0 : y > (2 * GH) / 3 ? 2 : 1;
-    const ru = [["северо-запад", "север", "северо-восток"], ["запад", "центр", "восток"], ["юго-запад", "юг", "юго-восток"]];
-    const en = [["north-west", "north", "north-east"], ["west", "centre", "east"], ["south-west", "south", "south-east"]];
-    return (lang === "ru" ? ru : en)[row][col];
-  }
-  function axisOf(c) {
-    const mx = c.sx / c.area, my = c.sy / c.area;
-    const cxx = c.sxx / c.area - mx * mx, cyy = c.syy / c.area - my * my, cxy = c.sxy / c.area - mx * my;
-    const tr = cxx + cyy, det = cxx * cyy - cxy * cxy;
-    const l1 = tr / 2 + Math.sqrt(Math.max(0, tr * tr / 4 - det));
-    const ang = 0.5 * Math.atan2(2 * cxy, cxx - cyy); // y down
-    return { len: Math.sqrt(12 * Math.max(0, l1)), ang };
-  }
-  function orientation(lang, ang) {
-    const deg = ang * 180 / Math.PI; // (-90, 90], y down: positive = right & down
-    const ru = lang === "ru";
-    if (Math.abs(deg) < 22.5) return ru ? "с запада на восток" : "west to east";
-    if (Math.abs(deg) > 67.5) return ru ? "с севера на юг" : "north to south";
-    return deg > 0 ? (ru ? "с северо-запада на юго-восток" : "north-west to south-east") : (ru ? "с юго-запада на северо-восток" : "south-west to north-east");
-  }
-
-  World.buildAtlas = function (opts) {
-    opts = opts || {};
-    const p = App.project, bm = App.basemap;
-    if (!World.active() || !bm || bm.status !== "ready") return "";
-    ensureBuffers();
-    const lang = App.ui.lang === "ru" ? "ru" : "en";
-    const ru = lang === "ru";
-    const w = p.world;
-    const km = +w.scaleKm || 5;
-    const fmt = (v) => Math.round(v).toLocaleString(ru ? "ru-RU" : "en-US");
-    const feats = (bm.raw && bm.raw.features) || [];
-    const an = analyze(feats, w.rivers || []);
-    const idx = {};
-    feats.forEach((f, i) => { idx[String(f.id)] = i; });
-    const eff = (id) => window.effRegion(p, id) || {};
-    const provName = (i) => {
-      const f = feats[i]; const id = String(f.id);
-      const r = p.regions[id];
-      return (r && r.name) || (f.properties && f.properties.name) || id;
-    };
-    const ownerOf = (i) => { const e = eff(String(feats[i].id)); return e.owner && p.states[e.owner] ? e.owner : null; };
-    const stName = (sid) => (sid ? p.states[sid].name : (ru ? "ничейные земли" : "unclaimed land"));
-    const cellC = (i) => { const c = an.cells[i]; return c.land ? [c.sx / c.land, c.sy / c.land] : [0, 0]; };
-    const terrainPct = (list) => {
-      const h = { plains: 0, forest: 0, desert: 0, marsh: 0, tundra: 0, jungle: 0, hills: 0, mountain: 0 };
-      let tot = 0;
-      list.forEach((i) => {
-        const c = an.cells[i];
-        tot += c.land;
-        h.mountain += c.elevH[3]; h.hills += c.elevH[2];
-        for (let k = 0; k < 6; k++) {
-          // cover of lowland only, so hills/mountains are not counted twice
-          h[COVER[k]] += c.coverH[k] * (c.land ? c.elevH[1] / c.land : 0);
-        }
-      });
-      if (!tot) return "";
-      return Object.keys(h).map((k) => [k, h[k] / tot]).filter((e) => e[1] >= 0.05).sort((a, b) => b[1] - a[1])
-        .map((e) => TERR[lang][e[0]] + " " + Math.round(e[1] * 100) + "%").join(", ");
-    };
-
-    // names from map labels: on water -> that sea/lake, on mountains -> range, on land -> landmass
-    const stateNames = new Set(Object.values(p.states).map((s) => s.name.trim().toLowerCase()));
-    const waterName = {}, rangeName = {}, landName = {};
-    (p.labels || []).forEach((l) => {
-      const g = World.mapToGrid([l.x, l.y]);
-      const x = Math.floor(g[0]), y = Math.floor(g[1]);
-      if (x < 0 || y < 0 || x >= GW || y >= GH || !l.text) return;
-      const i = y * GW + x;
-      if (World.elev[i] === 0) { if (!waterName[an.waterComp[i]]) waterName[an.waterComp[i]] = l.text; return; }
-      for (let dy = -3; dy <= 3; dy++) for (let dx = -3; dx <= 3; dx++) {
-        const xx = x + dx, yy = y + dy;
-        if (xx < 0 || yy < 0 || xx >= GW || yy >= GH) continue;
-        const rc = an.rangeComp[yy * GW + xx];
-        if (rc >= 0) { if (!rangeName[rc]) rangeName[rc] = l.text; return; }
-      }
-      if (stateNames.has(l.text.trim().toLowerCase())) return;
-      const lc = an.landComp[i];
-      if (!landName[lc]) landName[lc] = l.text;
-    });
-
-    const totalLand = an.lands.reduce((s, c) => s + c.area, 0) || 1;
-    const lands = an.lands.filter((c) => c.area >= 4).sort((a, b) => b.area - a.area);
-    const landLabel = {};
-    let li = 0, ii = 0;
-    lands.forEach((c) => {
-      const big = c.area >= totalLand * 0.08;
-      landLabel[c.id] = landName[c.id] || (big ? (ru ? "Материк " : "Continent ") + (++li) : (ru ? "Остров " : "Island ") + (++ii));
-    });
-    const waters = an.waters.filter((c) => c.area >= 6).sort((a, b) => b.area - a.area);
-    const waterLabel = {};
-    let oi = 0, lk = 0;
-    waters.forEach((c) => {
-      waterLabel[c.id] = waterName[c.id] || (c.kind === "ocean" ? (ru ? "Внешнее море " : "Open sea ") + (++oi) : (ru ? "Озеро " : "Lake ") + (++lk));
-    });
-    const ranges = an.ranges.filter((c) => c.area >= 20).sort((a, b) => b.area - a.area);
-    const rangeLabel = {};
-    ranges.forEach((c, i) => { rangeLabel[c.id] = rangeName[c.id] || (ru ? "Горы " : "Mountains ") + (i + 1); });
-
-    // states
-    const stateCells = {};
-    feats.forEach((f, i) => { const o = ownerOf(i); if (o) (stateCells[o] = stateCells[o] || []).push(i); });
-    const stateCentre = (sid) => {
-      const st = p.states[sid];
-      if (st.capitalRegion && idx[st.capitalRegion] != null) return cellC(idx[st.capitalRegion]);
-      let sx = 0, sy = 0, sw = 0;
-      stateCells[sid].forEach((i) => { const c = an.cells[i]; sx += c.sx; sy += c.sy; sw += c.land; });
-      return sw ? [sx / sw, sy / sw] : [0, 0];
-    };
-    const distTxt = (a, b) => {
-      const d = Math.hypot(a[0] - b[0], a[1] - b[1]) * km;
-      return ru ? `~${fmt(d)} км по прямой (≈${Math.max(1, Math.round(d / 25))} дн. пешком, ≈${Math.max(1, Math.round(d / 50))} дн. верхом)`
-        : `~${fmt(d)} km as the crow flies (≈${Math.max(1, Math.round(d / 25))} days on foot, ≈${Math.max(1, Math.round(d / 50))} days on horseback)`;
-    };
-    const listJoin = (arr) => arr.filter(Boolean).join(", ");
-
-    const L = [];
-    const title = p.name || (ru ? "Мир" : "World");
-    L.push(ru ? `# Атлас мира «${title}»` : `# World atlas: ${title}`);
-    L.push("");
-    if (ru) {
-      L.push(`Это текстовое описание карты вымышленного мира. Север сверху. Координаты (x, y) — километры от западного и северного края карты. Карта ${fmt(GW * km)} × ${fmt(GH * km)} км, суша ≈ ${fmt(totalLand * km * km)} км². Расстояния — по прямой, дни пути — грубая оценка (25 км/день пешком, 50 км/день верхом).`);
-      if (p.currentYear != null) L.push(`Политическая карта — на ${p.currentYear} год.`);
-      if (w.genRev != null && w.genRev !== w.rev) L.push("⚠ Рельеф менялся после нарезки провинций — границы провинций могут не совпадать с берегами.");
-    } else {
-      L.push(`This is a text description of a fictional world map. North is up. Coordinates (x, y) are kilometres from the map's west and north edges. The map is ${fmt(GW * km)} × ${fmt(GH * km)} km, land ≈ ${fmt(totalLand * km * km)} km². Distances are straight-line; travel days are rough (25 km/day on foot, 50 km/day riding).`);
-      if (p.currentYear != null) L.push(`Political map as of year ${p.currentYear}.`);
-      if (w.genRev != null && w.genRev !== w.rev) L.push("⚠ Terrain was edited after provinces were generated — province borders may not match coasts.");
-    }
-    L.push("");
-
-    // ---- geography ----
-    L.push(ru ? "## География" : "## Geography");
-    L.push("");
-    L.push(ru ? "### Материки и острова" : "### Landmasses");
-    lands.forEach((c) => {
-      const cx = c.sx / c.area, cy = c.sy / c.area;
-      const cellsHere = [...c.cells.keys()];
-      const owners = {};
-      cellsHere.forEach((ci) => { const o = ownerOf(ci); if (o) owners[o] = (owners[o] || 0) + c.cells.get(ci); });
-      const ownerList = Object.keys(owners).sort((a, b) => owners[b] - owners[a]).map((o) => p.states[o].name);
-      const rangesHere = ranges.filter((r) => an.landComp[Math.floor(r.sy / r.area) * GW + Math.floor(r.sx / r.area)] === c.id).map((r) => rangeLabel[r.id]);
-      const seas = waters.filter((wc) => cellsHere.some((ci) => an.cells[ci].waters.has(wc.id))).map((wc) => waterLabel[wc.id]);
-      L.push(ru
-        ? `- **${landLabel[c.id]}** — ${mapPosition(lang, cx, cy)} карты, центр (${fmt(cx * km)}, ${fmt(cy * km)}), ≈${fmt(c.area * km * km)} км², ${fmt((c.maxx - c.minx + 1) * km)} × ${fmt((c.maxy - c.miny + 1) * km)} км. ${cellsHere.length ? `Провинций: ${cellsHere.length}. Рельеф: ${terrainPct(cellsHere)}.` : ""}${ownerList.length ? ` Государства: ${listJoin(ownerList)}.` : ""}${rangesHere.length ? ` Горы: ${listJoin(rangesHere)}.` : ""}${seas.length ? ` Омывается: ${listJoin(seas)}.` : ""}`
-        : `- **${landLabel[c.id]}** — ${mapPosition(lang, cx, cy)} of the map, centre (${fmt(cx * km)}, ${fmt(cy * km)}), ≈${fmt(c.area * km * km)} km², ${fmt((c.maxx - c.minx + 1) * km)} × ${fmt((c.maxy - c.miny + 1) * km)} km. ${cellsHere.length ? `Provinces: ${cellsHere.length}. Terrain: ${terrainPct(cellsHere)}.` : ""}${ownerList.length ? ` States: ${listJoin(ownerList)}.` : ""}${rangesHere.length ? ` Mountains: ${listJoin(rangesHere)}.` : ""}${seas.length ? ` Coasts on: ${listJoin(seas)}.` : ""}`);
-    });
-    L.push("");
-    if (waters.length) {
-      L.push(ru ? "### Моря и озёра" : "### Seas and lakes");
-      waters.forEach((c) => {
-        const cellsHere = [...c.cells.keys()];
-        const owners = [...new Set(cellsHere.map(ownerOf).filter(Boolean))].map((o) => p.states[o].name);
-        const cx = c.sx / c.area, cy = c.sy / c.area;
-        const kind = c.kind === "ocean" ? (ru ? "море/океан (выходит к краю карты)" : "sea/ocean (reaches the map edge)") : (ru ? "озеро (внутреннее)" : "lake (landlocked)");
-        L.push(ru
-          ? `- **${waterLabel[c.id]}** — ${kind}, ${mapPosition(lang, cx, cy)} карты, ≈${fmt(c.area * km * km)} км².${owners.length ? ` Берега: ${listJoin(owners)}.` : ""}`
-          : `- **${waterLabel[c.id]}** — ${kind}, ${mapPosition(lang, cx, cy)} of the map, ≈${fmt(c.area * km * km)} km².${owners.length ? ` Shores: ${listJoin(owners)}.` : ""}`);
-      });
-      L.push("");
-    }
-    if (ranges.length) {
-      L.push(ru ? "### Горы" : "### Mountain ranges");
-      ranges.forEach((c) => {
-        const ax = axisOf(c);
-        const cx = c.sx / c.area, cy = c.sy / c.area;
-        const cellsHere = [...c.cells.keys()].sort((a, b) => c.cells.get(b) - c.cells.get(a));
-        const owners = [...new Set(cellsHere.map(ownerOf).filter(Boolean))].map((o) => p.states[o].name);
-        L.push(ru
-          ? `- **${rangeLabel[c.id]}** — ${mapPosition(lang, cx, cy)} карты, тянутся ${orientation(lang, ax.ang)} на ~${fmt(Math.max(ax.len, 1) * km)} км, центр (${fmt(cx * km)}, ${fmt(cy * km)}).${cellsHere.length ? ` Провинции: ${listJoin(cellsHere.slice(0, 12).map(provName))}${cellsHere.length > 12 ? " и др" : ""}.` : ""}${owners.length ? ` Государства: ${listJoin(owners)}.` : ""}`
-          : `- **${rangeLabel[c.id]}** — ${mapPosition(lang, cx, cy)} of the map, running ${orientation(lang, ax.ang)} for ~${fmt(Math.max(ax.len, 1) * km)} km, centre (${fmt(cx * km)}, ${fmt(cy * km)}).${cellsHere.length ? ` Provinces: ${listJoin(cellsHere.slice(0, 12).map(provName))}${cellsHere.length > 12 ? " etc" : ""}.` : ""}${owners.length ? ` States: ${listJoin(owners)}.` : ""}`);
-      });
-      L.push("");
-    }
-    if (an.rivers.length) {
-      L.push(ru ? "### Реки" : "### Rivers");
-      an.rivers.forEach((rv) => {
-        const path = rv.cells.map((i) => `${provName(i)} (${stName(ownerOf(i))})`);
-        const mouth = rv.mouthWater >= 0 ? (waterLabel[rv.mouthWater] || (ru ? "водоём" : "a body of water")) : null;
-        const src = rv.sourceWater >= 0 && rv.sourceWater !== rv.mouthWater ? waterLabel[rv.sourceWater] : null;
-        L.push(ru
-          ? `- **${rv.name}** — ~${fmt(rv.len * km)} км. ${src ? `Вытекает из: ${src}. ` : ""}${path.length ? `Течёт от истока к устью через: ${path.join(" → ")}. ` : ""}${mouth ? `Впадает в: ${mouth}.` : "Устье не у воды."}`
-          : `- **${rv.name}** — ~${fmt(rv.len * km)} km. ${src ? `Flows out of: ${src}. ` : ""}${path.length ? `From source to mouth through: ${path.join(" → ")}. ` : ""}${mouth ? `Mouth: ${mouth}.` : "Does not reach water."}`);
-      });
-      L.push("");
-    }
-
-    // ---- states ----
-    const neighborsOf = (list) => {
-      const own = new Set(list);
-      const out = {};
-      list.forEach((i) => an.cells[i].nb.forEach((cnt, j) => {
-        if (own.has(j)) return;
-        const o = ownerOf(j) || "__none";
-        out[o] = (out[o] || 0) + cnt;
-      }));
-      return out;
-    };
-    const sids = p.stateOrder.filter((sid) => p.states[sid] && stateCells[sid]);
-    if (sids.length) {
-      L.push(ru ? "## Государства" : "## States");
-      L.push("");
-      sids.forEach((sid) => {
-        const st = p.states[sid];
-        const list = stateCells[sid];
-        const area = list.reduce((s, i) => s + an.cells[i].land, 0);
-        const cen = stateCentre(sid);
-        L.push(`### ${st.name}`);
-        const facts = [];
-        const fld = (lab, v) => { if (v != null && String(v).trim()) facts.push(`${lab}: ${String(v).trim()}`); };
-        if (ru) {
-          fld("Форма правления", st.gov); fld("Идеология", st.ideology); fld("Культура", st.culture); fld("Религия", st.religion);
-          fld("Язык", st.language); fld("Население", st.population); fld("Экономика", st.economy); fld("Армия", st.army);
-          if (st.vassalOf && p.states[st.vassalOf]) facts.push(`Вассал: ${p.states[st.vassalOf].name}`);
-        } else {
-          fld("Government", st.gov); fld("Ideology", st.ideology); fld("Culture", st.culture); fld("Religion", st.religion);
-          fld("Language", st.language); fld("Population", st.population); fld("Economy", st.economy); fld("Army", st.army);
-          if (st.vassalOf && p.states[st.vassalOf]) facts.push(`Vassal of: ${p.states[st.vassalOf].name}`);
-        }
-        if (facts.length) L.push("- " + facts.join("; "));
-        const capName = st.capitalRegion && idx[st.capitalRegion] != null ? provName(idx[st.capitalRegion]) : null;
-        const capital = st.capital && capName && capName !== st.capital ? `${st.capital} (${capName})` : (st.capital || capName || "");
-        L.push(ru
-          ? `- Территория: ${list.length} пров., ≈${fmt(area * km * km)} км², ${mapPosition(lang, cen[0], cen[1])} карты, центр (${fmt(cen[0] * km)}, ${fmt(cen[1] * km)}).${capital ? ` Столица: ${capital}.` : ""}`
-          : `- Territory: ${list.length} provinces, ≈${fmt(area * km * km)} km², ${mapPosition(lang, cen[0], cen[1])} of the map, centre (${fmt(cen[0] * km)}, ${fmt(cen[1] * km)}).${capital ? ` Capital: ${capital}.` : ""}`);
-        const landsHere = [...new Set(list.map((i) => { const m = an.cells[i].lands; let b = -1, bv = 0; m.forEach((v, k) => { if (v > bv) { bv = v; b = k; } }); return b; }))]
-          .filter((k) => landLabel[k]).map((k) => landLabel[k]);
-        L.push(ru ? `- Рельеф: ${terrainPct(list)}.${landsHere.length ? ` Расположено на: ${listJoin(landsHere)}.` : ""}` : `- Terrain: ${terrainPct(list)}.${landsHere.length ? ` Located on: ${listJoin(landsHere)}.` : ""}`);
-        const coastWaters = new Map();
-        list.forEach((i) => an.cells[i].waters.forEach((v, wc) => { if (waterLabel[wc]) coastWaters.set(wc, (coastWaters.get(wc) || 0) + 1); }));
-        const coastCount = list.filter((i) => [...an.cells[i].waters.keys()].some((wc) => waterLabel[wc])).length;
-        if (coastWaters.size) {
-          L.push(ru ? `- Выход к воде: ${[...coastWaters.keys()].map((wc) => waterLabel[wc]).join(", ")} (прибрежных провинций: ${coastCount}).`
-            : `- Coast on: ${[...coastWaters.keys()].map((wc) => waterLabel[wc]).join(", ")} (${coastCount} coastal provinces).`);
-        } else {
-          L.push(ru ? "- Выхода к морю нет." : "- Landlocked.");
-        }
-        const rivers = (w.rivers || []).filter((rv) => list.some((i) => an.cells[i].rivers.has(rv.id))).map((rv) => rv.name);
-        const rng = ranges.filter((r) => list.some((i) => r.cells.has(i))).map((r) => rangeLabel[r.id]);
-        if (rivers.length || rng.length) {
-          L.push(ru ? `- ${rivers.length ? `Реки: ${listJoin(rivers)}. ` : ""}${rng.length ? `Горы: ${listJoin(rng)}.` : ""}`
-            : `- ${rivers.length ? `Rivers: ${listJoin(rivers)}. ` : ""}${rng.length ? `Mountains: ${listJoin(rng)}.` : ""}`);
-        }
-        const nb = neighborsOf(list);
-        const nbKeys = Object.keys(nb).sort((a, b) => nb[b] - nb[a]);
-        if (nbKeys.length) {
-          L.push(ru ? "- Сухопутные соседи:" : "- Land neighbours:");
-          nbKeys.forEach((o) => {
-            const border = fmt(nb[o] * 0.8 * km);
-            if (o === "__none") { L.push(ru ? `  - ничейные земли (граница ~${border} км)` : `  - unclaimed land (border ~${border} km)`); return; }
-            const oc = stateCentre(o);
-            L.push(ru
-              ? `  - ${p.states[o].name} — на ${dirWord(lang, oc[0] - cen[0], oc[1] - cen[1])}, общая граница ~${border} км; от столицы до столицы ${distTxt(cen, oc)}`
-              : `  - ${p.states[o].name} — to the ${dirWord(lang, oc[0] - cen[0], oc[1] - cen[1])}, shared border ~${border} km; capital to capital ${distTxt(cen, oc)}`);
-          });
-        } else {
-          L.push(ru ? "- Сухопутных соседей нет." : "- No land neighbours.");
-        }
-        const sea = new Set();
-        coastWaters.forEach((v, wc) => an.waters[wc].cells.forEach((cnt, ci) => { const o = ownerOf(ci); if (o && o !== sid && !nb[o]) sea.add(o); }));
-        if (sea.size) {
-          L.push(ru ? "- Соседи через воду:" : "- Across the water:");
-          [...sea].forEach((o) => {
-            const oc = stateCentre(o);
-            L.push(ru ? `  - ${p.states[o].name} — на ${dirWord(lang, oc[0] - cen[0], oc[1] - cen[1])}, ${distTxt(cen, oc)}`
-              : `  - ${p.states[o].name} — to the ${dirWord(lang, oc[0] - cen[0], oc[1] - cen[1])}, ${distTxt(cen, oc)}`);
-          });
-        }
-        if (st.notes && String(st.notes).trim()) L.push((ru ? "- Заметки: " : "- Notes: ") + String(st.notes).trim().replace(/\s+/g, " "));
-        L.push("");
-      });
-    }
-    const unowned = feats.map((f, i) => i).filter((i) => !ownerOf(i) && an.cells[i].land);
-    if (unowned.length && sids.length) {
-      L.push(ru ? `Ничейные земли: ${unowned.length} пров., ≈${fmt(unowned.reduce((s, i) => s + an.cells[i].land, 0) * km * km)} км².` : `Unclaimed land: ${unowned.length} provinces, ≈${fmt(unowned.reduce((s, i) => s + an.cells[i].land, 0) * km * km)} km².`);
-      L.push("");
-    }
-
-    // ---- provinces ----
-    if (opts.provinces !== false && feats.length) {
-      L.push(ru ? "## Провинции" : "## Provinces");
-      L.push(ru ? "Формат: название [id] — владелец; рельеф; центр (x, y) км; побережье; реки; соседи." : "Format: name [id] — owner; terrain; centre (x, y) km; coast; rivers; neighbours.");
-      L.push("");
-      feats.forEach((f, i) => {
-        const c = an.cells[i];
-        if (!c.land) return;
-        const cc = cellC(i);
-        const e = eff(String(f.id));
-        const parts = [stName(ownerOf(i))];
-        if (e.status && e.status !== "core" && ownerOf(i)) parts[0] += ` (${e.status})`;
-        parts.push(terrainPct([i]));
-        parts.push(`(${fmt(cc[0] * km)}, ${fmt(cc[1] * km)})`);
-        const wn = [...c.waters.keys()].filter((wc) => waterLabel[wc]).map((wc) => waterLabel[wc]);
-        if (wn.length) parts.push((ru ? "берег: " : "coast: ") + wn.join(", "));
-        const rn = (w.rivers || []).filter((rv) => c.rivers.has(rv.id)).map((rv) => rv.name);
-        if (rn.length) parts.push((ru ? "реки: " : "rivers: ") + rn.join(", "));
-        const extra = [e.culture, e.religion, e.language].filter((v) => v && String(v).trim());
-        if (extra.length) parts.push(extra.join(" / "));
-        const nbs = [...c.nb.keys()].map((j) => provName(j));
-        if (nbs.length) parts.push((ru ? "соседи: " : "neighbours: ") + nbs.join(", "));
-        L.push(`- ${provName(i)} [${f.id}] — ${parts.filter(Boolean).join("; ")}`);
-      });
-      L.push("");
-    }
-    return L.join("\n");
-  };
 })();

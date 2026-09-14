@@ -125,7 +125,9 @@
   ProjectStore.duplicate = function (id, newId, suffix) {
     return Promise.all([ProjectStore.load(id), ProjectStore.thumb(id)]).then(([p, thumb]) => {
       if (!p) return null;
-      const copy = JSON.parse(JSON.stringify(p));
+      // structured clone keeps binary data (custom-world rasters) intact
+      const copy = typeof structuredClone === "function" ? structuredClone(p)
+        : JSON.parse(JSON.stringify(window.World ? window.World.exportable(p) : p));
       copy.name = (copy.name || "") + suffix;
       return run(["projects", "summaries", "thumbs"], "readwrite", (s) => {
         s.projects.put(copy, newId);

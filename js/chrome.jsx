@@ -308,7 +308,8 @@ function LibraryModal() {
     const p = App.projectId === it.id && App.project ? App.project : await store.load(it.id);
     if (!p) return;
     const name = (p.name || "map").replace(/[^\w\u0400-\u04FF -]+/g, "").trim() || "map";
-    window.downloadBlob(new Blob([JSON.stringify(p, null, 1)], { type: "application/json" }), name + ".atlasforge.json");
+    const data = window.World ? World.exportable(p) : p;
+    window.downloadBlob(new Blob([JSON.stringify(data, null, 1)], { type: "application/json" }), name + ".atlasforge.json");
   });
   const trash = (it) => {
     if (!confirm(t("lib.trashAsk").replace("{name}", it.name || t("lib.untitled")))) return;

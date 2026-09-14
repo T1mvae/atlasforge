@@ -1436,6 +1436,29 @@ function MapView() {
         fillByOwner(g.rid);
         return;
       }
+      if ((tool === "select" || tool === "pan") && window.World && World.active()) {
+        // a river under the tap (generous finger tolerance) opens its card
+        var _k = view.current.k;
+        var _clientToMap13 = clientToMap(e),
+          _clientToMap14 = _slicedToArray(_clientToMap13, 2),
+          _mx6 = _clientToMap14[0],
+          _my6 = _clientToMap14[1];
+        var tolData = (g.finger || e.pointerType === "touch" ? 16 : 8) / Math.max(0.0001, _k * World.mapUnitsPerCell() * (svgRef.current.getScreenCTM().a || 1));
+        var rv = World.riverAt(World.mapToGrid([_mx6, _my6]), tolData);
+        if (rv) {
+          Actions.ui({
+            card: {
+              kind: "river",
+              index: rv.index
+            },
+            selection: []
+          });
+          return;
+        }
+        if (App.ui.card) Actions.ui({
+          card: null
+        });
+      }
       if (tool === "select" || tool === "pan") {
         if (App.ui.selectMode === "region") {
           var regId = g.regId || provRegionRef.current[g.rid];
@@ -2043,20 +2066,25 @@ function MapView() {
       strokeOpacity: "0.95",
       strokeLinejoin: "round"
     });
-  })), ready && worldOn && settings.showRivers !== false && (project.world.rivers || []).length > 0 && /*#__PURE__*/React.createElement("g", {
-    id: "world-rivers",
-    pointerEvents: "none"
-  }, project.world.rivers.map(function (rv) {
-    return /*#__PURE__*/React.createElement("path", {
-      key: "wr" + rv.id,
-      d: World.riverPath(rv, bm.proj),
-      fill: "#3f74a8",
-      stroke: "#3f74a8",
-      strokeWidth: "0.9",
-      strokeLinejoin: "round",
-      vectorEffect: "non-scaling-stroke"
-    });
-  })), physReady && phys.relief.length > 0 && /*#__PURE__*/React.createElement("g", {
+  })), ready && worldOn && settings.showRivers !== false && function () {
+    var list = World.displayRivers();
+    if (!list.length) return null;
+    var sel = App.ui.card && App.ui.card.kind === "river" ? App.ui.card.index : -1;
+    return /*#__PURE__*/React.createElement("g", {
+      id: "world-rivers",
+      pointerEvents: "none"
+    }, list.map(function (rv) {
+      return /*#__PURE__*/React.createElement("path", {
+        key: "wr" + rv.index,
+        d: World.riverPath(rv, bm.proj),
+        fill: rv.index === sel ? "#1f5fa8" : "#3f74a8",
+        stroke: rv.index === sel ? "#ffcf5a" : "#3f74a8",
+        strokeWidth: rv.index === sel ? 2 : 0.7,
+        strokeLinejoin: "round",
+        vectorEffect: "non-scaling-stroke"
+      });
+    }));
+  }(), physReady && phys.relief.length > 0 && /*#__PURE__*/React.createElement("g", {
     id: "phys-relief",
     pointerEvents: "none"
   }, phys.relief.map(function (f) {
@@ -2535,7 +2563,7 @@ function MapView() {
         tool: "select"
       });
     }
-  }, t("edit.cancel"))), worldOn && App.ui.tool === "world" && window.WorldPalette && /*#__PURE__*/React.createElement(WorldPalette, null), /*#__PURE__*/React.createElement("div", {
+  }, t("edit.cancel"))), worldOn && App.ui.tool === "world" && window.WorldPalette && /*#__PURE__*/React.createElement(WorldPalette, null), window.WorldCard && /*#__PURE__*/React.createElement(WorldCard, null), /*#__PURE__*/React.createElement("div", {
     className: "minimap",
     onPointerDown: onMinimapClick
   }, /*#__PURE__*/React.createElement("canvas", {

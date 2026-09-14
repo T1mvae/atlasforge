@@ -320,6 +320,7 @@ function MapView() {
   const worldLayerRef = useRef(null);   // custom world: host of the terrain canvas (under the SVG)
   const brushRef = useRef(null);        // custom world: brush outline following the pen
   const riverPrevRef = useRef(null);    // custom world: river stroke preview
+  const riverEditRef = useRef(null);    // custom world: new course while a river end is dragged
   const touches = useRef(new Map());    // active touch pointers (pinch zoom / two-finger pan)
   const tapRef = useRef(null);          // multi-finger tap recognizer: { t0, max, moved, starts }
   const longPressRef = useRef(null);    // finger long-press (eyedropper) timer
@@ -374,6 +375,12 @@ function MapView() {
     if (zoomRef.current) zoomRef.current.setAttribute("transform", `translate(${v.x},${v.y}) scale(${v.k})`);
     if (zoomTextRef.current) zoomTextRef.current.textContent = Math.round(v.k * 100) + "%";
     if (window.World && World.active()) World.place(svgRef.current, v);
+    const ends = svgRef.current && svgRef.current.querySelector("#river-ends");
+    if (ends) {
+      const ctm = svgRef.current.getScreenCTM();
+      const per = v.k * ((ctm && ctm.a) || 1); // screen px per map unit
+      for (const el of ends.querySelectorAll("[data-rpx]")) el.setAttribute("r", (+el.getAttribute("data-rpx") / per).toFixed(3));
+    }
     // places keep a readable size at every zoom (no React render per zoom step)
     const og = svgRef.current && svgRef.current.querySelector("#objects");
     if (og && App.project && App.project.objects && window.objectTransform) {
@@ -584,6 +591,12 @@ function MapView() {
         const g0 = gesture.current;
         const young = tap && now - tap.t0 < 350;
         if (g0 && g0.mode === "world") { try { svgRef.current.releasePointerCapture(g0.pointerId); } catch (err) {} young ? World.strokeCancel() : World.strokeEnd(); }
+        else if (g0 && g0.mode === "riverEnd") {
+          try { svgRef.current.releasePointerCapture(g0.pointerId); } catch (err) {}
+          World.endEditCancel();
+          if (riverEditRef.current) riverEditRef.current.style.display = "none";
+          App.emit();
+        }
         else if (g0 && g0.mode === "paint") { young ? Actions.cancelStroke() : Actions.endStroke(); }
         const [a, b] = [...touches.current.values()];
         gesture.current = { mode: "pinch", dist: Math.hypot(a[0] - b[0], a[1] - b[1]), mid: clientToViewbox({ clientX: (a[0] + b[0]) / 2, clientY: (a[1] + b[1]) / 2 }) };
@@ -602,6 +615,18 @@ function MapView() {
     // "pencil only" preference is on) a finger pans, pinches, taps to select and
     // long-presses to pick — it never paints ----
     const fingerNav = e.pointerType === "touch" && window.World && World.penSeen && App.ui.pencilOnly !== false;
+    // ---- the source / mouth handles of the river whose card is open ----
+    const endEl = e.target.closest ? e.target.closest("[data-river-end]") : null;
+    if (endEl && e.button === 0 && window.World && World.active() && App.ui.card && App.ui.card.kind === "river") {
+      const ctm = svgRef.current.getScreenCTM();
+      const tol = (e.pointerType === "touch" ? 18 : 12) / Math.max(0.0001, view.current.k * World.mapUnitsPerCell() * ((ctm && ctm.a) || 1));
+      if (World.endEditStart(App.ui.card.index, endEl.getAttribute("data-river-end"), World.mapToGrid(mapPt), tol)) {
+        gesture.current = { mode: "riverEnd", pointerId: e.pointerId, end: endEl.getAttribute("data-river-end") };
+        try { svgRef.current.setPointerCapture(e.pointerId); } catch (err) {}
+      }
+      e.stopPropagation();
+      return;
+    }
     // ---- places (cities, fortresses…) ----
     const objEl = e.target.closest ? e.target.closest("[data-object]") : null;
     const objId = objEl ? objEl.getAttribute("data-object") : null;
@@ -750,6 +775,22 @@ function MapView() {
         g.dist = dist; g.mid = mid;
         return;
       }
+    }
+    if (g && g.mode === "riverEnd") {
+      const evs = e.nativeEvent && e.nativeEvent.getCoalescedEvents ? e.nativeEvent.getCoalescedEvents() : null;
+      let prev = null;
+      (evs && evs.length ? evs : [e]).forEach((ev) => { prev = World.endEditMove(World.mapToGrid(clientToMap(ev))); });
+      const proj = App.basemap.proj;
+      if (prev && proj && riverEditRef.current) {
+        const m = prev.map((q) => proj(q));
+        riverEditRef.current.setAttribute("d", "M" + m.map((q) => q[0].toFixed(2) + "," + q[1].toFixed(2)).join("L"));
+        riverEditRef.current.style.display = "block";
+        // the dragged handle follows the end of the new course
+        const end = g.end === "source" ? m[0] : m[m.length - 1];
+        const ends = svgRef.current.querySelectorAll('#river-ends [data-river-end="' + g.end + '"] circle');
+        ends.forEach((el) => { el.setAttribute("cx", end[0]); el.setAttribute("cy", end[1]); });
+      }
+      return;
     }
     // custom world: brush outline + live stroke
     if (window.World && App.ui.tool === "world" && World.active()) {
@@ -934,6 +975,20 @@ function MapView() {
     const g = gesture.current;
     if (g && g.mode === "pinch") {
       if (touches.current.size < 2) gesture.current = null;
+      return;
+    }
+    if (g && g.mode === "riverEnd") {
+      if (e.type === "pointerleave" && svgRef.current && svgRef.current.hasPointerCapture && svgRef.current.hasPointerCapture(e.pointerId)) return;
+      gesture.current = null;
+      try { svgRef.current.releasePointerCapture(e.pointerId); } catch (err) {}
+      if (riverEditRef.current) riverEditRef.current.style.display = "none";
+      if (e.type === "pointerup") {
+        World.endEditMove(World.mapToGrid(clientToMap(e)));
+        World.endEditEnd();
+      } else {
+        World.endEditCancel();
+      }
+      App.emit();
       return;
     }
     if (g && g.mode === "world") {
@@ -1666,8 +1721,31 @@ function MapView() {
             <g data-export-skip="1" pointerEvents="none">
               <circle ref={brushRef} style={{ display: "none" }} fill="none" stroke="#ffffff" strokeOpacity="0.9" strokeWidth="1.2" vectorEffect="non-scaling-stroke"></circle>
               <path ref={riverPrevRef} style={{ display: "none" }} fill="none" stroke="#2f6fb0" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" vectorEffect="non-scaling-stroke"></path>
+              <path ref={riverEditRef} style={{ display: "none" }} fill="none" stroke="#ff9f2e" strokeWidth="3" strokeDasharray="7 4" strokeLinecap="round" strokeLinejoin="round" vectorEffect="non-scaling-stroke"></path>
             </g>
           )}
+          {/* ---- source (green) and mouth (blue) handles of the river whose card is open ---- */}
+          {ready && worldOn && App.ui.card && App.ui.card.kind === "river" && !World.preview && (() => {
+            const rv = (project.world.rivers || [])[App.ui.card.index];
+            if (!rv || !rv.pts || rv.pts.length < 2) return null;
+            const ctm = svgRef.current && svgRef.current.getScreenCTM();
+            const per = view.current.k * ((ctm && ctm.a) || 1);
+            const handle = (end, q, color) => {
+              const m = bm.proj(q);
+              return (
+                <g key={end} className="river-end" data-river-end={end}>
+                  <circle data-rpx="24" cx={m[0]} cy={m[1]} r={24 / per} fill="#000000" fillOpacity="0.001"></circle>
+                  <circle data-rpx="9" cx={m[0]} cy={m[1]} r={9 / per} fill={color} stroke="#ffffff" strokeWidth="2.5" vectorEffect="non-scaling-stroke"></circle>
+                </g>
+              );
+            };
+            return (
+              <g id="river-ends" data-export-skip="1">
+                {handle("source", rv.pts[0], "#3a9a5b")}
+                {handle("mouth", rv.pts[rv.pts.length - 1], "#1f5fa8")}
+              </g>
+            );
+          })()}
           <rect ref={marqueeRef} data-export-skip="1" style={{ display: "none" }} fill="rgba(61,123,196,0.15)" stroke="#3d7bc4" strokeWidth="1" vectorEffect="non-scaling-stroke"></rect>
           <path ref={rubberRef} data-export-skip="1" style={{ display: "none" }} fill="none" stroke="#ff9f2e" strokeOpacity="0.7" strokeWidth="1.2" strokeDasharray="4 3" vectorEffect="non-scaling-stroke" pointerEvents="none"></path>
         </g>

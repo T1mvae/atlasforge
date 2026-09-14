@@ -997,6 +997,23 @@
     if (Math.hypot(last[0] - pl[0], last[1] - pl[1]) > 1e-6) P.push([last[0], last[1]]);
     return P;
   };
+  // the first `along` units of a polyline (at least its first point)
+  TA.cutPolyline = function (pts, along) {
+    const out = [[pts[0][0], pts[0][1]]];
+    let acc = 0;
+    for (let k = 1; k < pts.length; k++) {
+      const a = pts[k - 1], b = pts[k];
+      const seg = Math.hypot(b[0] - a[0], b[1] - a[1]);
+      if (acc + seg >= along) {
+        const u = seg ? (along - acc) / seg : 0;
+        if (u > 1e-6) out.push([a[0] + (b[0] - a[0]) * u, a[1] + (b[1] - a[1]) * u]);
+        return out;
+      }
+      out.push([b[0], b[1]]);
+      acc += seg;
+    }
+    return out;
+  };
   // nearest point on polyline `q` to p, within tol: { d, point, along } or null
   function nearestOnPolyline(q, p, tol) {
     let best = null, acc = 0;
@@ -1097,8 +1114,8 @@
   //   fixRivers — drawn rivers run from source to mouth, reach water or another river,
   //               and get a bed that keeps falling (a gorge where they cross a ridge)
   //   lakes     — lakes where water collects in closed basins
-  //   addRivers — rivers and tributaries where the runoff concentrates; unnamed rivers
-  //               an earlier pass added are replaced
+  //   addRivers — rivers and tributaries where the runoff concentrates; rivers an earlier
+  //               pass added are replaced unless they were named, noted or adjusted
   //   biomes    — land cover from the climate, only where nothing is painted
   // input: { RW, RH, RES, GW, GH, height: ArrayBuffer (Int16, metres above datum),
   //   cover: ArrayBuffer (Uint8, js/world.js COVER), rivers: [{ id, name, pts, … }],
@@ -1272,7 +1289,7 @@
     // ---- 3. rivers the painter drew ----
     if (opts.addRivers) {
       const n0 = rivers.length;
-      rivers = rivers.filter((r) => !(r.auto && !r.name && !r.notes));
+      rivers = rivers.filter((r) => !(r.auto && !r.name && !r.notes && !r.manual)); // kept once the painter touched them
       report.replaced = n0 - rivers.length;
     }
     const SPU = 2 * RES; // bed samples per data unit

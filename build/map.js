@@ -456,6 +456,7 @@ function MapView() {
   var worldLayerRef = useRef(null); // custom world: host of the terrain canvas (under the SVG)
   var brushRef = useRef(null); // custom world: brush outline following the pen
   var riverPrevRef = useRef(null); // custom world: river stroke preview
+  var riverEditRef = useRef(null); // custom world: new course while a river end is dragged
   var touches = useRef(new Map()); // active touch pointers (pinch zoom / two-finger pan)
   var tapRef = useRef(null); // multi-finger tap recognizer: { t0, max, moved, starts }
   var longPressRef = useRef(null); // finger long-press (eyedropper) timer
@@ -514,21 +515,38 @@ function MapView() {
     if (zoomRef.current) zoomRef.current.setAttribute("transform", "translate(".concat(v.x, ",").concat(v.y, ") scale(").concat(v.k, ")"));
     if (zoomTextRef.current) zoomTextRef.current.textContent = Math.round(v.k * 100) + "%";
     if (window.World && World.active()) World.place(svgRef.current, v);
-    // places keep a readable size at every zoom (no React render per zoom step)
-    var og = svgRef.current && svgRef.current.querySelector("#objects");
-    if (og && App.project && App.project.objects && window.objectTransform) {
-      var _iterator2 = _createForOfIteratorHelper(og.children),
+    var ends = svgRef.current && svgRef.current.querySelector("#river-ends");
+    if (ends) {
+      var ctm = svgRef.current.getScreenCTM();
+      var per = v.k * (ctm && ctm.a || 1); // screen px per map unit
+      var _iterator2 = _createForOfIteratorHelper(ends.querySelectorAll("[data-rpx]")),
         _step2;
       try {
         for (_iterator2.s(); !(_step2 = _iterator2.n()).done;) {
           var el = _step2.value;
-          var o = App.project.objects[el.getAttribute("data-object")];
-          if (o) el.setAttribute("transform", objectTransform(o, v.k));
+          el.setAttribute("r", (+el.getAttribute("data-rpx") / per).toFixed(3));
         }
       } catch (err) {
         _iterator2.e(err);
       } finally {
         _iterator2.f();
+      }
+    }
+    // places keep a readable size at every zoom (no React render per zoom step)
+    var og = svgRef.current && svgRef.current.querySelector("#objects");
+    if (og && App.project && App.project.objects && window.objectTransform) {
+      var _iterator3 = _createForOfIteratorHelper(og.children),
+        _step3;
+      try {
+        for (_iterator3.s(); !(_step3 = _iterator3.n()).done;) {
+          var _el = _step3.value;
+          var o = App.project.objects[_el.getAttribute("data-object")];
+          if (o) _el.setAttribute("transform", objectTransform(o, v.k));
+        }
+      } catch (err) {
+        _iterator3.e(err);
+      } finally {
+        _iterator3.f();
       }
     }
     if (minimapVpRef.current) {
@@ -824,6 +842,13 @@ function MapView() {
             svgRef.current.releasePointerCapture(g0.pointerId);
           } catch (err) {}
           young ? World.strokeCancel() : World.strokeEnd();
+        } else if (g0 && g0.mode === "riverEnd") {
+          try {
+            svgRef.current.releasePointerCapture(g0.pointerId);
+          } catch (err) {}
+          World.endEditCancel();
+          if (riverEditRef.current) riverEditRef.current.style.display = "none";
+          App.emit();
         } else if (g0 && g0.mode === "paint") {
           young ? Actions.cancelStroke() : Actions.endStroke();
         }
@@ -859,6 +884,24 @@ function MapView() {
     // "pencil only" preference is on) a finger pans, pinches, taps to select and
     // long-presses to pick — it never paints ----
     var fingerNav = e.pointerType === "touch" && window.World && World.penSeen && App.ui.pencilOnly !== false;
+    // ---- the source / mouth handles of the river whose card is open ----
+    var endEl = e.target.closest ? e.target.closest("[data-river-end]") : null;
+    if (endEl && e.button === 0 && window.World && World.active() && App.ui.card && App.ui.card.kind === "river") {
+      var ctm = svgRef.current.getScreenCTM();
+      var tol = (e.pointerType === "touch" ? 18 : 12) / Math.max(0.0001, view.current.k * World.mapUnitsPerCell() * (ctm && ctm.a || 1));
+      if (World.endEditStart(App.ui.card.index, endEl.getAttribute("data-river-end"), World.mapToGrid(mapPt), tol)) {
+        gesture.current = {
+          mode: "riverEnd",
+          pointerId: e.pointerId,
+          end: endEl.getAttribute("data-river-end")
+        };
+        try {
+          svgRef.current.setPointerCapture(e.pointerId);
+        } catch (err) {}
+      }
+      e.stopPropagation();
+      return;
+    }
     // ---- places (cities, fortresses…) ----
     var objEl = e.target.closest ? e.target.closest("[data-object]") : null;
     var objId = objEl ? objEl.getAttribute("data-object") : null;
@@ -1115,6 +1158,31 @@ function MapView() {
         return;
       }
     }
+    if (g && g.mode === "riverEnd") {
+      var evs = e.nativeEvent && e.nativeEvent.getCoalescedEvents ? e.nativeEvent.getCoalescedEvents() : null;
+      var prev = null;
+      (evs && evs.length ? evs : [e]).forEach(function (ev) {
+        prev = World.endEditMove(World.mapToGrid(clientToMap(ev)));
+      });
+      var proj = App.basemap.proj;
+      if (prev && proj && riverEditRef.current) {
+        var m = prev.map(function (q) {
+          return proj(q);
+        });
+        riverEditRef.current.setAttribute("d", "M" + m.map(function (q) {
+          return q[0].toFixed(2) + "," + q[1].toFixed(2);
+        }).join("L"));
+        riverEditRef.current.style.display = "block";
+        // the dragged handle follows the end of the new course
+        var end = g.end === "source" ? m[0] : m[m.length - 1];
+        var ends = svgRef.current.querySelectorAll('#river-ends [data-river-end="' + g.end + '"] circle');
+        ends.forEach(function (el) {
+          el.setAttribute("cx", end[0]);
+          el.setAttribute("cy", end[1]);
+        });
+      }
+      return;
+    }
     // custom world: brush outline + live stroke
     if (window.World && App.ui.tool === "world" && World.active()) {
       var _clientToMap = clientToMap(e),
@@ -1130,8 +1198,8 @@ function MapView() {
         brushRef.current.style.display = hideBrush ? "none" : "block";
       }
       if (g && g.mode === "world") {
-        var evs = e.nativeEvent && e.nativeEvent.getCoalescedEvents ? e.nativeEvent.getCoalescedEvents() : null;
-        var list = evs && evs.length ? evs : [e];
+        var _evs = e.nativeEvent && e.nativeEvent.getCoalescedEvents ? e.nativeEvent.getCoalescedEvents() : null;
+        var list = _evs && _evs.length ? _evs : [e];
         World.strokeMove(list.map(function (ev) {
           return {
             g: World.mapToGrid(clientToMap(ev)),
@@ -1139,11 +1207,11 @@ function MapView() {
             altitude: ev.altitudeAngle
           };
         }));
-        var prev = World.strokePreview();
-        var proj = App.basemap.proj;
-        if (prev && riverPrevRef.current && proj) {
-          riverPrevRef.current.setAttribute("d", "M" + prev.map(function (q) {
-            var m = proj(q);
+        var _prev = World.strokePreview();
+        var _proj = App.basemap.proj;
+        if (_prev && riverPrevRef.current && _proj) {
+          riverPrevRef.current.setAttribute("d", "M" + _prev.map(function (q) {
+            var m = _proj(q);
             return m[0].toFixed(2) + "," + m[1].toFixed(2);
           }).join("L"));
           riverPrevRef.current.style.display = "block";
@@ -1389,6 +1457,22 @@ function MapView() {
     var g = gesture.current;
     if (g && g.mode === "pinch") {
       if (touches.current.size < 2) gesture.current = null;
+      return;
+    }
+    if (g && g.mode === "riverEnd") {
+      if (e.type === "pointerleave" && svgRef.current && svgRef.current.hasPointerCapture && svgRef.current.hasPointerCapture(e.pointerId)) return;
+      gesture.current = null;
+      try {
+        svgRef.current.releasePointerCapture(e.pointerId);
+      } catch (err) {}
+      if (riverEditRef.current) riverEditRef.current.style.display = "none";
+      if (e.type === "pointerup") {
+        World.endEditMove(World.mapToGrid(clientToMap(e)));
+        World.endEditEnd();
+      } else {
+        World.endEditCancel();
+      }
+      App.emit();
       return;
     }
     if (g && g.mode === "world") {
@@ -2552,7 +2636,52 @@ function MapView() {
     strokeLinecap: "round",
     strokeLinejoin: "round",
     vectorEffect: "non-scaling-stroke"
-  })), /*#__PURE__*/React.createElement("rect", {
+  }), /*#__PURE__*/React.createElement("path", {
+    ref: riverEditRef,
+    style: {
+      display: "none"
+    },
+    fill: "none",
+    stroke: "#ff9f2e",
+    strokeWidth: "3",
+    strokeDasharray: "7 4",
+    strokeLinecap: "round",
+    strokeLinejoin: "round",
+    vectorEffect: "non-scaling-stroke"
+  })), ready && worldOn && App.ui.card && App.ui.card.kind === "river" && !World.preview && function () {
+    var rv = (project.world.rivers || [])[App.ui.card.index];
+    if (!rv || !rv.pts || rv.pts.length < 2) return null;
+    var ctm = svgRef.current && svgRef.current.getScreenCTM();
+    var per = view.current.k * (ctm && ctm.a || 1);
+    var handle = function handle(end, q, color) {
+      var m = bm.proj(q);
+      return /*#__PURE__*/React.createElement("g", {
+        key: end,
+        className: "river-end",
+        "data-river-end": end
+      }, /*#__PURE__*/React.createElement("circle", {
+        "data-rpx": "24",
+        cx: m[0],
+        cy: m[1],
+        r: 24 / per,
+        fill: "#000000",
+        fillOpacity: "0.001"
+      }), /*#__PURE__*/React.createElement("circle", {
+        "data-rpx": "9",
+        cx: m[0],
+        cy: m[1],
+        r: 9 / per,
+        fill: color,
+        stroke: "#ffffff",
+        strokeWidth: "2.5",
+        vectorEffect: "non-scaling-stroke"
+      }));
+    };
+    return /*#__PURE__*/React.createElement("g", {
+      id: "river-ends",
+      "data-export-skip": "1"
+    }, handle("source", rv.pts[0], "#3a9a5b"), handle("mouth", rv.pts[rv.pts.length - 1], "#1f5fa8"));
+  }(), /*#__PURE__*/React.createElement("rect", {
     ref: marqueeRef,
     "data-export-skip": "1",
     style: {

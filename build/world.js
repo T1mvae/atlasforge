@@ -762,9 +762,43 @@ function CardRow(_ref3) {
     className: "card-v"
   }, v));
 }
-function RiverCard(_ref4) {
-  var index = _ref4.index;
+
+// a river parameter: automatic (computed from the drawing) or set by hand
+function RiverParam(_ref4) {
+  var label = _ref4.label,
+    value = _ref4.value,
+    autoLabel = _ref4.autoLabel,
+    options = _ref4.options,
+    _onChange = _ref4.onChange;
+  var manual = value != null;
+  return /*#__PURE__*/React.createElement("div", {
+    className: "card-row card-param"
+  }, /*#__PURE__*/React.createElement("span", {
+    className: "card-k"
+  }, label), /*#__PURE__*/React.createElement("span", {
+    className: "card-v"
+  }, /*#__PURE__*/React.createElement("select", {
+    className: "select card-select" + (manual ? " manual" : ""),
+    value: manual ? String(value) : "auto",
+    onChange: function onChange(e) {
+      return _onChange(e.target.value === "auto" ? null : e.target.value);
+    }
+  }, /*#__PURE__*/React.createElement("option", {
+    value: "auto"
+  }, t("card.auto").replace("{v}", autoLabel)), options.map(function (o) {
+    return /*#__PURE__*/React.createElement("option", {
+      key: String(o.value),
+      value: String(o.value)
+    }, o.label);
+  }))));
+}
+function RiverCard(_ref5) {
+  var index = _ref5.index;
   useStore();
+  var _React$useState3 = React.useState(false),
+    _React$useState4 = _slicedToArray(_React$useState3, 2),
+    help = _React$useState4[0],
+    setHelp = _React$useState4[1];
   var p = App.project;
   var w = p.world;
   var _worldAnalysis = worldAnalysis(),
@@ -815,6 +849,9 @@ function RiverCard(_ref4) {
     lastProv = ri && ri.cells.length ? ri.cells[ri.cells.length - 1] : -1;
   var uphill = srcH > 0 && mouthH > srcH + 50;
   var rec = (w.rivers || [])[rv.index] || {}; // live record: typing edits it in place
+  var man = rec.manual || {};
+  // fit the river into the part of the map the card leaves free (left of a docked card,
+  // above a bottom sheet), so its source and mouth handles can be reached
   var zoom = function zoom() {
     var proj = App.basemap.proj;
     var xs = rv.pts.map(function (q) {
@@ -823,8 +860,44 @@ function RiverCard(_ref4) {
       ys = rv.pts.map(function (q) {
         return q[1];
       });
-    MapAPI.zoomTo([proj([Math.min.apply(Math, _toConsumableArray(xs)) - 6, Math.min.apply(Math, _toConsumableArray(ys)) - 6]), proj([Math.max.apply(Math, _toConsumableArray(xs)) + 6, Math.max.apply(Math, _toConsumableArray(ys)) + 6])]);
+    var x0 = Math.min.apply(Math, _toConsumableArray(xs)) - 6,
+      x1 = Math.max.apply(Math, _toConsumableArray(xs)) + 6,
+      y0 = Math.min.apply(Math, _toConsumableArray(ys)) - 6,
+      y1 = Math.max.apply(Math, _toConsumableArray(ys)) + 6;
+    var docked = window.matchMedia && window.matchMedia("(min-width: 900px)").matches;
+    MapAPI.zoomTo(docked ? [proj([x0, y0]), proj([x1 + (x1 - x0) * 0.9, y1])] : [proj([x0, y0]), proj([x1, y1 + (y1 - y0) * 1.2])]);
   };
+  var minimized = !!App.ui.cardMin;
+  if (minimized) {
+    return /*#__PURE__*/React.createElement("div", {
+      className: "info-card minimized",
+      "data-export-skip": "1",
+      onPointerDown: function onPointerDown(e) {
+        return e.stopPropagation();
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      className: "card-head"
+    }, /*#__PURE__*/React.createElement("span", {
+      className: "card-kind"
+    }, "\u3030 ", rec.name || autoName || t("card.unnamedRiver")), /*#__PURE__*/React.createElement("span", {
+      className: "card-head-actions"
+    }, /*#__PURE__*/React.createElement("button", {
+      className: "btn icon card-min-btn",
+      title: t("card.expand"),
+      onClick: function onClick() {
+        return Actions.ui({
+          cardMin: false
+        });
+      }
+    }, "\u2303"), /*#__PURE__*/React.createElement("button", {
+      className: "btn icon",
+      onClick: function onClick() {
+        return Actions.ui({
+          card: null
+        });
+      }
+    }, "\u2715"))));
+  }
   return /*#__PURE__*/React.createElement("div", {
     className: "info-card",
     "data-export-skip": "1",
@@ -835,14 +908,24 @@ function RiverCard(_ref4) {
     className: "card-head"
   }, /*#__PURE__*/React.createElement("span", {
     className: "card-kind"
-  }, "\u3030 ", t("card.river")), /*#__PURE__*/React.createElement("button", {
+  }, "\u3030 ", t("card.river")), /*#__PURE__*/React.createElement("span", {
+    className: "card-head-actions"
+  }, /*#__PURE__*/React.createElement("button", {
+    className: "btn icon card-min-btn",
+    title: t("card.minimize"),
+    onClick: function onClick() {
+      return Actions.ui({
+        cardMin: true
+      });
+    }
+  }, "\u2304"), /*#__PURE__*/React.createElement("button", {
     className: "btn icon",
     onClick: function onClick() {
       return Actions.ui({
         card: null
       });
     }
-  }, "\u2715")), /*#__PURE__*/React.createElement("input", {
+  }, "\u2715"))), /*#__PURE__*/React.createElement("input", {
     className: "input card-title",
     value: rec.name || "",
     placeholder: autoName || t("card.unnamedRiver"),
@@ -857,22 +940,75 @@ function RiverCard(_ref4) {
   }), tributaries.length ? /*#__PURE__*/React.createElement(CardRow, {
     k: t("card.withTributaries"),
     v: "≈ " + fmtNum(rv.upLen * km) + " " + t("world.km")
-  }) : null, /*#__PURE__*/React.createElement(CardRow, {
-    k: t("card.order"),
-    v: rv.order
-  }), /*#__PURE__*/React.createElement(CardRow, {
-    k: t("card.size"),
-    v: t("card.size" + World.riverSize(rv, km))
-  }), /*#__PURE__*/React.createElement(CardRow, {
-    k: t("card.navigable"),
-    v: World.riverNavigable(rv, km) ? t("card.yes") : t("card.no")
-  }), /*#__PURE__*/React.createElement(CardRow, {
+  }) : null, /*#__PURE__*/React.createElement(RiverParam, {
+    label: t("card.size"),
+    value: man.size,
+    autoLabel: t("card.size" + rv.sizeAuto),
+    options: [0, 1, 2, 3].map(function (v) {
+      return {
+        value: v,
+        label: t("card.size" + v)
+      };
+    }),
+    onChange: function onChange(v) {
+      return World.setRiverManual(rv.id, {
+        size: v == null ? null : +v
+      });
+    }
+  }), /*#__PURE__*/React.createElement(RiverParam, {
+    label: t("card.order"),
+    value: man.order,
+    autoLabel: String(rv.orderAuto),
+    options: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(function (v) {
+      return {
+        value: v,
+        label: String(v)
+      };
+    }),
+    onChange: function onChange(v) {
+      return World.setRiverManual(rv.id, {
+        order: v == null ? null : +v
+      });
+    }
+  }), /*#__PURE__*/React.createElement(RiverParam, {
+    label: t("card.navigable"),
+    value: man.navigable,
+    autoLabel: rv.navigableAuto ? t("card.yes") : t("card.no"),
+    options: [{
+      value: true,
+      label: t("card.yes")
+    }, {
+      value: false,
+      label: t("card.no")
+    }],
+    onChange: function onChange(v) {
+      return World.setRiverManual(rv.id, {
+        navigable: v == null ? null : v === "true"
+      });
+    }
+  }), /*#__PURE__*/React.createElement("button", {
+    className: "card-help-toggle",
+    onClick: function onClick() {
+      return setHelp(!help);
+    }
+  }, help ? "▾ " : "ⓘ ", t("card.paramsHelp")), help && /*#__PURE__*/React.createElement("div", {
+    className: "card-help"
+  }, /*#__PURE__*/React.createElement("p", null, t("card.sizeHelp").replace("{a}", fmtNum(World.SIZE_KM[0])).replace("{b}", fmtNum(World.SIZE_KM[1])).replace("{c}", fmtNum(World.SIZE_KM[2]))), /*#__PURE__*/React.createElement("p", null, t("card.orderHelp")), /*#__PURE__*/React.createElement("p", null, t("card.navHelp"))), /*#__PURE__*/React.createElement(CardRow, {
     k: t("card.source"),
     v: [srcH > 0 ? fmtNum(srcH) + " " + t("world.m") : "", firstProv >= 0 ? provName(firstProv) : "", rv.sourceType === "lake" ? t("card.fromLake") : ""].filter(Boolean).join(" · ")
   }), /*#__PURE__*/React.createElement(CardRow, {
     k: t("card.mouth"),
     v: [mouthText, lastProv >= 0 ? provName(lastProv) : ""].filter(Boolean).join(" · ")
-  }), states.length ? /*#__PURE__*/React.createElement(CardRow, {
+  }), /*#__PURE__*/React.createElement("div", {
+    className: "card-ends"
+  }, /*#__PURE__*/React.createElement("span", {
+    className: "card-ends-text"
+  }, t("card.endsHint")), /*#__PURE__*/React.createElement("button", {
+    className: "btn outline",
+    onClick: function onClick() {
+      return World.reverseRiver(rv.id);
+    }
+  }, t("card.reverse"))), states.length ? /*#__PURE__*/React.createElement(CardRow, {
     k: t("card.states"),
     v: states.join(" → ")
   }) : null, tributaries.length ? /*#__PURE__*/React.createElement(CardRow, {
@@ -918,10 +1054,10 @@ function WorldCard() {
 }
 function AtlasModal() {
   useStore();
-  var _React$useState3 = React.useState(true),
-    _React$useState4 = _slicedToArray(_React$useState3, 2),
-    withProvinces = _React$useState4[0],
-    setWithProvinces = _React$useState4[1];
+  var _React$useState5 = React.useState(true),
+    _React$useState6 = _slicedToArray(_React$useState5, 2),
+    withProvinces = _React$useState6[0],
+    setWithProvinces = _React$useState6[1];
   // the atlas describes the climate too: make sure the analysis matches the map
   React.useEffect(function () {
     World.ensureAnalysis()["catch"](function (e) {
@@ -941,7 +1077,7 @@ function AtlasModal() {
   }, [withProvinces, App.ui.lang, hyRev]);
   var areaRef = React.useRef(null);
   var copy = /*#__PURE__*/function () {
-    var _ref5 = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee() {
+    var _ref6 = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee() {
       var _t;
       return _regenerator().w(function (_context) {
         while (1) switch (_context.p = _context.n) {
@@ -967,7 +1103,7 @@ function AtlasModal() {
       }, _callee, null, [[0, 2]]);
     }));
     return function copy() {
-      return _ref5.apply(this, arguments);
+      return _ref6.apply(this, arguments);
     };
   }();
   var save = function save() {

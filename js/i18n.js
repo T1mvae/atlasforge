@@ -687,7 +687,18 @@ window.I18N = {
     "world.geo.r.erosion": "Valleys cut into the mountains",
     "card.withTributaries": "With tributaries",
     "card.edge": "leaves the map",
-    "card.uphill": "Runs uphill — “Fix the geography” will turn it round or cut its bed."
+    "card.uphill": "Runs uphill — “Fix the geography” will turn it round or cut its bed.",
+    "card.auto": "Auto — {v}",
+    "card.paramsHelp": "What do these mean?",
+    "card.sizeHelp": "Size — how big the river is. “Auto” goes by its length together with all its tributaries: up to {a} km a stream, up to {b} km a river, up to {c} km a large river, longer — a great river. The size also sets how wide the river is drawn.",
+    "card.orderHelp": "Order (Strahler) — how branched the river network is: a stream without tributaries is order 1; where two rivers of the same order meet, the order below grows by one. “Auto” counts the tributaries you drew.",
+    "card.navHelp": "Navigable — whether ships can use the river. “Auto”: yes for a large or great river, or from order 4 up.",
+    "card.reverse": "⇅ Reverse the flow",
+    "card.reversedToast": "Source and mouth swapped",
+    "card.endsHint": "Green circle — source, blue — mouth. Drag a circle along the river to shorten it, sideways to draw a new course; release it on another river to make this one its tributary.",
+    "card.tooShort": "The river would be too short — nothing changed",
+    "card.minimize": "Minimize",
+    "card.expand": "Expand"
   },
   ru: {
     "app.title": "AtlasForge",
@@ -1248,7 +1259,7 @@ window.I18N = {
     "card.unnamed": "безымянный",
     "card.length": "Длина",
     "card.order": "Порядок реки",
-    "card.size": "Величина",
+    "card.size": "Размер",
     "card.size0": "ручей",
     "card.size1": "река",
     "card.size2": "крупная река",
@@ -1376,6 +1387,17 @@ window.I18N = {
     "world.geo.r.erosion": "В горах прорезаны долины",
     "card.withTributaries": "С притоками",
     "card.edge": "уходит за край карты",
-    "card.uphill": "Течёт в гору — «Поправить географию» развернёт реку или прорежет русло."
+    "card.uphill": "Течёт в гору — «Поправить географию» развернёт реку или прорежет русло.",
+    "card.auto": "Авто — {v}",
+    "card.paramsHelp": "Что это значит?",
+    "card.sizeHelp": "Размер — насколько река большая. «Авто» считает по длине вместе со всеми притоками: до {a} км — ручей, до {b} км — река, до {c} км — крупная река, длиннее — великая. От размера зависит толщина реки на карте.",
+    "card.orderHelp": "Порядок (по Стралеру) — как ветвится речная сеть: у ручья без притоков порядок 1; где сливаются две реки одного порядка, ниже по течению порядок на единицу больше. «Авто» считает по нарисованным притокам.",
+    "card.navHelp": "Судоходна — могут ли по реке ходить суда. «Авто»: да, если река крупная или великая или её порядок 4 и выше.",
+    "card.reverse": "⇅ Развернуть течение",
+    "card.reversedToast": "Исток и устье поменялись местами",
+    "card.endsHint": "Зелёный кружок — исток, синий — устье. Потяните кружок вдоль реки, чтобы укоротить её, или в сторону — чтобы провести новое русло. Отпустите устье на другой реке — и река станет её притоком.",
+    "card.tooShort": "Река получилась бы слишком короткой — ничего не изменено",
+    "card.minimize": "Свернуть",
+    "card.expand": "Развернуть карточку"
   }
 };

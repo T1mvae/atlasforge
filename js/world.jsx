@@ -402,8 +402,26 @@ function CardRow({ k, v }) {
   return <div className="card-row"><span className="card-k">{k}</span><span className="card-v">{v}</span></div>;
 }
 
+// a river parameter: automatic (computed from the drawing) or set by hand
+function RiverParam({ label, value, autoLabel, options, onChange }) {
+  const manual = value != null;
+  return (
+    <div className="card-row card-param">
+      <span className="card-k">{label}</span>
+      <span className="card-v">
+        <select className={"select card-select" + (manual ? " manual" : "")} value={manual ? String(value) : "auto"}
+          onChange={(e) => onChange(e.target.value === "auto" ? null : e.target.value)}>
+          <option value="auto">{t("card.auto").replace("{v}", autoLabel)}</option>
+          {options.map((o) => <option key={String(o.value)} value={String(o.value)}>{o.label}</option>)}
+        </select>
+      </span>
+    </div>
+  );
+}
+
 function RiverCard({ index }) {
   useStore();
+  const [help, setHelp] = React.useState(false);
   const p = App.project;
   const w = p.world;
   const { an, feats, rivers, names } = worldAnalysis();
@@ -429,26 +447,66 @@ function RiverCard({ index }) {
   const firstProv = ri && ri.cells.length ? ri.cells[0] : -1, lastProv = ri && ri.cells.length ? ri.cells[ri.cells.length - 1] : -1;
   const uphill = srcH > 0 && mouthH > srcH + 50;
   const rec = (w.rivers || [])[rv.index] || {}; // live record: typing edits it in place
+  const man = rec.manual || {};
+  // fit the river into the part of the map the card leaves free (left of a docked card,
+  // above a bottom sheet), so its source and mouth handles can be reached
   const zoom = () => {
     const proj = App.basemap.proj;
     const xs = rv.pts.map((q) => q[0]), ys = rv.pts.map((q) => q[1]);
-    MapAPI.zoomTo([proj([Math.min(...xs) - 6, Math.min(...ys) - 6]), proj([Math.max(...xs) + 6, Math.max(...ys) + 6])]);
+    const x0 = Math.min(...xs) - 6, x1 = Math.max(...xs) + 6, y0 = Math.min(...ys) - 6, y1 = Math.max(...ys) + 6;
+    const docked = window.matchMedia && window.matchMedia("(min-width: 900px)").matches;
+    MapAPI.zoomTo(docked ? [proj([x0, y0]), proj([x1 + (x1 - x0) * 0.9, y1])] : [proj([x0, y0]), proj([x1, y1 + (y1 - y0) * 1.2])]);
   };
+  const minimized = !!App.ui.cardMin;
+  if (minimized) {
+    return (
+      <div className="info-card minimized" data-export-skip="1" onPointerDown={(e) => e.stopPropagation()}>
+        <div className="card-head">
+          <span className="card-kind">〰 {rec.name || autoName || t("card.unnamedRiver")}</span>
+          <span className="card-head-actions">
+            <button className="btn icon card-min-btn" title={t("card.expand")} onClick={() => Actions.ui({ cardMin: false })}>⌃</button>
+            <button className="btn icon" onClick={() => Actions.ui({ card: null })}>✕</button>
+          </span>
+        </div>
+      </div>
+    );
+  }
   return (
     <div className="info-card" data-export-skip="1" onPointerDown={(e) => e.stopPropagation()}>
       <div className="card-head">
         <span className="card-kind">〰 {t("card.river")}</span>
-        <button className="btn icon" onClick={() => Actions.ui({ card: null })}>✕</button>
+        <span className="card-head-actions">
+          <button className="btn icon card-min-btn" title={t("card.minimize")} onClick={() => Actions.ui({ cardMin: true })}>⌄</button>
+          <button className="btn icon" onClick={() => Actions.ui({ card: null })}>✕</button>
+        </span>
       </div>
       <input className="input card-title" value={rec.name || ""} placeholder={autoName || t("card.unnamedRiver")} onChange={(e) => World.renameRiver(rv.id, e.target.value)}></input>
       <div className="card-grid">
         <CardRow k={t("card.length")} v={len ? "≈ " + fmtNum(len) + " " + t("world.km") : null}></CardRow>
         {tributaries.length ? <CardRow k={t("card.withTributaries")} v={"≈ " + fmtNum(rv.upLen * km) + " " + t("world.km")}></CardRow> : null}
-        <CardRow k={t("card.order")} v={rv.order}></CardRow>
-        <CardRow k={t("card.size")} v={t("card.size" + World.riverSize(rv, km))}></CardRow>
-        <CardRow k={t("card.navigable")} v={World.riverNavigable(rv, km) ? t("card.yes") : t("card.no")}></CardRow>
+        <RiverParam label={t("card.size")} value={man.size} autoLabel={t("card.size" + rv.sizeAuto)}
+          options={[0, 1, 2, 3].map((v) => ({ value: v, label: t("card.size" + v) }))}
+          onChange={(v) => World.setRiverManual(rv.id, { size: v == null ? null : +v })}></RiverParam>
+        <RiverParam label={t("card.order")} value={man.order} autoLabel={String(rv.orderAuto)}
+          options={[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((v) => ({ value: v, label: String(v) }))}
+          onChange={(v) => World.setRiverManual(rv.id, { order: v == null ? null : +v })}></RiverParam>
+        <RiverParam label={t("card.navigable")} value={man.navigable} autoLabel={rv.navigableAuto ? t("card.yes") : t("card.no")}
+          options={[{ value: true, label: t("card.yes") }, { value: false, label: t("card.no") }]}
+          onChange={(v) => World.setRiverManual(rv.id, { navigable: v == null ? null : v === "true" })}></RiverParam>
+        <button className="card-help-toggle" onClick={() => setHelp(!help)}>{help ? "▾ " : "ⓘ "}{t("card.paramsHelp")}</button>
+        {help && (
+          <div className="card-help">
+            <p>{t("card.sizeHelp").replace("{a}", fmtNum(World.SIZE_KM[0])).replace("{b}", fmtNum(World.SIZE_KM[1])).replace("{c}", fmtNum(World.SIZE_KM[2]))}</p>
+            <p>{t("card.orderHelp")}</p>
+            <p>{t("card.navHelp")}</p>
+          </div>
+        )}
         <CardRow k={t("card.source")} v={[srcH > 0 ? fmtNum(srcH) + " " + t("world.m") : "", firstProv >= 0 ? provName(firstProv) : "", rv.sourceType === "lake" ? t("card.fromLake") : ""].filter(Boolean).join(" · ")}></CardRow>
         <CardRow k={t("card.mouth")} v={[mouthText, lastProv >= 0 ? provName(lastProv) : ""].filter(Boolean).join(" · ")}></CardRow>
+        <div className="card-ends">
+          <span className="card-ends-text">{t("card.endsHint")}</span>
+          <button className="btn outline" onClick={() => World.reverseRiver(rv.id)}>{t("card.reverse")}</button>
+        </div>
         {states.length ? <CardRow k={t("card.states")} v={states.join(" → ")}></CardRow> : null}
         {tributaries.length ? <CardRow k={t("card.tributaries")} v={tributaries.map((r) => { const x = an.rivers.find((q) => q.rv === r); return r.name || (x ? names.riverLabel[x.k] : t("card.unnamed")); }).join(", ")}></CardRow> : null}
       </div>

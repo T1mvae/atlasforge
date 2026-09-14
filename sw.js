@@ -7,37 +7,37 @@
 //          template is opened (or via "download for offline"), then served cache-first.
 // A new version installs in the background and waits; the page asks the user to reload
 // (message "skipWaiting") so an edit in progress is never interrupted.
-const VERSION = "aa470002d0";
+const VERSION = "fb5875384a";
 const SHELL = "af-shell-" + VERSION;
 const DATA = "af-data-v1";
 const PRECACHE = [
   "./",
   "build/app.js?v=90de698567",
   "build/chrome.js?v=bc559c2332",
-  "build/map.js?v=3378b5925e",
+  "build/map.js?v=9b8a0dd246",
   "build/objects.js?v=b54b70c214",
   "build/panels.js?v=2ba1bf76ff",
-  "build/world.js?v=19c89759c1",
-  "css/editor.css?v=ec26812182",
+  "build/world.js?v=dbb19ff927",
+  "css/editor.css?v=e27342d0b4",
   "icons/apple-touch-icon.png",
   "icons/apple-touch-icon.png?v=953bc6d2b1",
   "icons/icon-192.png",
   "icons/icon-192.png?v=3be2bf771a",
   "icons/icon-512.png",
   "icons/icon-maskable-512.png",
-  "js/atlas.js?v=28c5d305e9",
+  "js/atlas.js?v=2acd69a7de",
   "js/core.js?v=f4feefe7b7",
   "js/edit.js?v=bfb1feadc3",
   "js/export.js?v=a19bfd7ccc",
   "js/geo.js?v=a68a71e50b",
-  "js/i18n.js?v=2bc66c522a",
+  "js/i18n.js?v=70b363f0f2",
   "js/objects.js?v=675e14a403",
   "js/pwa.js?v=9f35de276b",
   "js/regions.js?v=e79649b7ce",
   "js/storage.js?v=3b0efdbec5",
-  "js/terrain-algos.js?v=0170a1048d",
+  "js/terrain-algos.js?v=62cd3f9010",
   "js/terrain.worker.js?v=208023e6c4",
-  "js/world.js?v=272cb83d7e",
+  "js/world.js?v=f46d3c8e32",
   "manifest.webmanifest?v=10553cf767",
   "vendor/d3.min.js?v=69faba9d2f",
   "vendor/polygon-clipping.umd.min.js?v=6aa5a82c1d",

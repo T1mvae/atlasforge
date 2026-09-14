@@ -284,6 +284,34 @@
     window.scheduleSave();
   }
 
+  // ---------------- river list undo ----------------
+  const riversJSON = (w) => JSON.stringify({ rivers: w.rivers || [], names: w.riverNames || {} });
+  // one undo step for a change of the river list; a JSON-slice undo in between may have
+  // replaced project.world, so the entry writes into whatever world the project has then
+  function pushRiversUndo(before, after) {
+    const project = App.project;
+    const put = (json) => {
+      if (App.project !== project || !project.world) return;
+      const v = JSON.parse(json);
+      project.world.rivers = v.rivers;
+      project.world.riverNames = v.names;
+      window.scheduleSave();
+    };
+    Actions.pushUndoEntry({ kind: "rivers", bytes: after.length * 2, undo: () => put(before), redo: () => put(after) });
+  }
+  // replace the river list (always a new array, so caches keyed by it notice) as one step
+  function commitRivers(next) {
+    const w = W0();
+    const before = riversJSON(w);
+    w.rivers = next;
+    const after = riversJSON(w);
+    if (after === before) return false;
+    pushRiversUndo(before, after);
+    window.scheduleSave();
+    App.emit();
+    return true;
+  }
+
   // ---------------- raster undo ----------------
   function pushRasterUndo(x0, y0, x1, y1, hBefore, cBefore, extra) {
     const w = x1 - x0 + 1, h = y1 - y0 + 1;
@@ -587,8 +615,7 @@
     const riversChanged = riversAfter !== s.riversBefore;
     if (s.bbox[2] < 0) {
       if (riversChanged) {
-        const put = (json) => { const v = JSON.parse(json); w.rivers = v.rivers; w.riverNames = v.names; window.scheduleSave(); };
-        Actions.pushUndoEntry({ kind: "rivers", bytes: riversAfter.length * 2, undo: () => put(s.riversBefore), redo: () => put(riversAfter) });
+        pushRiversUndo(s.riversBefore, riversAfter);
         window.scheduleSave();
       }
       App.emit();
@@ -870,9 +897,16 @@
   // ---------------- rivers for display / cards ----------------
   // Every river is a drawn polyline (source → mouth). Their network — which river flows
   // into which, Strahler order, length with tributaries — follows from the drawing.
+  // size class from the length of the network above the mouth (km):
+  // 0 stream · 1 river · 2 large river · 3 great river
+  const SIZE_KM = [80, 400, 1500];
+  const sizeOfKm = (kmLen) => (kmLen < SIZE_KM[0] ? 0 : kmLen < SIZE_KM[1] ? 1 : kmLen < SIZE_KM[2] ? 2 : 3);
+  const SIZE_WIDTH = [0.45, 0.85, 1.45, 2.2]; // mouth width (data units) of a size set by hand
+  World.SIZE_KM = SIZE_KM;
   let netCache = null;
   function riverList(rivers) {
-    if (netCache && netCache.rivers === rivers && netCache.rasterRev === World.rasterRev && netCache.sea === sea()) return netCache.list;
+    const km = +W0().scaleKm || 5;
+    if (netCache && netCache.rivers === rivers && netCache.rasterRev === World.rasterRev && netCache.sea === sea() && netCache.km === km) return netCache.list;
     const net = TA.riverNetwork(rivers.map((rv) => rv.pts), 1.3);
     const list = rivers.map((rv, index) => {
       const pts = rv.pts;
@@ -880,9 +914,16 @@
       const src = pts[0], mouth = pts[pts.length - 1];
       const atEdge = mouth[0] <= 1 || mouth[1] <= 1 || mouth[0] >= GW - 1 || mouth[1] >= GH - 1;
       const mouthType = net.into[index] >= 0 ? "river" : waterNear(mouth, 1.2) ? "water" : atEdge ? "edge" : "land";
+      // parameters: computed from the drawing unless set by hand in the river card
+      const man = rv.manual || {};
+      const orderAuto = net.order[index], sizeAuto = sizeOfKm(up * km);
+      const order = man.order != null ? +man.order : orderAuto;
+      const size = man.size != null ? +man.size : sizeAuto;
+      const navigableAuto = order >= 4 || size >= 2;
+      const navigable = man.navigable != null ? !!man.navigable : navigableAuto;
       // wider downstream, and wider still below each tributary
       const joins = net.kids[index].map((c) => [net.joinAt[c], net.upLen[c]]).sort((a, b) => a[0] - b[0]);
-      const wMouth = clamp(0.3 + 0.09 * Math.sqrt(up), 0.3, 2.4);
+      const wMouth = man.size != null ? SIZE_WIDTH[size] : clamp(0.3 + 0.09 * Math.sqrt(up), 0.3, 2.4);
       let along = 0, j = 0, inflow = 0;
       const widths = pts.map((p, k) => {
         if (k) along += Math.hypot(p[0] - pts[k - 1][0], p[1] - pts[k - 1][1]);
@@ -891,12 +932,13 @@
       });
       return {
         index, hand: true, id: rv.id, auto: !!rv.auto, pts, widths,
-        into: net.into[index], order: net.order[index], len: net.len[index], upLen: up,
-        major: up >= 30 || net.order[index] >= 3,
+        into: net.into[index], len: net.len[index], upLen: up,
+        order, orderAuto, size, sizeAuto, navigable, navigableAuto,
+        major: size >= 2 || order >= 3, // borders between provinces, obstacles for roads
         mouthType, sourceType: waterNear(src, 1.2) ? "lake" : "spring"
       };
     });
-    netCache = { rivers, rasterRev: World.rasterRev, sea: sea(), list };
+    netCache = { rivers, rasterRev: World.rasterRev, sea: sea(), km, list };
     return list;
   }
   // [{ index, id, name, notes, pts, widths, into, order, upLen, major, … }] in data units
@@ -908,10 +950,9 @@
     return riverList(rivers).map((r) => Object.assign({}, r, { name: rivers[r.index].name, notes: rivers[r.index].notes || "" }));
   };
 
-  // size class 0 stream · 1 river · 2 large river · 3 great river, from the length of the
-  // whole network above the mouth; navigable when big enough
-  World.riverSize = (rv, km) => { const up = (rv.upLen || 0) * km; return up < 80 ? 0 : up < 400 ? 1 : up < 1500 ? 2 : 3; };
-  World.riverNavigable = (rv, km) => (rv.order || 0) >= 4 || (rv.upLen || 0) * km >= 500;
+  // size class and navigability of a displayed river (set by hand or computed)
+  World.riverSize = (rv, km) => (rv.size != null ? rv.size : sizeOfKm((rv.upLen || 0) * km));
+  World.riverNavigable = (rv, km) => (rv.navigable != null ? rv.navigable : (rv.order || 0) >= 4 || World.riverSize(rv, km) >= 2);
 
   // nearest displayed river to a data point, within tol data units
   World.riverAt = function (g, tol) {
@@ -950,15 +991,87 @@
     Actions.mut((p) => { const rv = (p.world.rivers || []).find((r) => r.id === id); if (rv) rv.notes = notes; }, { undo: false });
   };
   World.deleteRiver = function (id) {
-    const w = W0();
-    const before = JSON.stringify({ rivers: w.rivers || [], names: w.riverNames || {} });
-    w.rivers = (w.rivers || []).filter((r) => r.id !== id);
-    const after = JSON.stringify({ rivers: w.rivers, names: w.riverNames || {} });
-    const put = (json) => { const v = JSON.parse(json); w.rivers = v.rivers; w.riverNames = v.names; window.scheduleSave(); };
-    Actions.pushUndoEntry({ kind: "rivers", bytes: after.length * 2, undo: () => put(before), redo: () => put(after) });
     if (App.ui.card && App.ui.card.kind === "river") App.ui.card = null;
-    window.scheduleSave();
-    App.emit();
+    commitRivers((W0().rivers || []).filter((r) => r.id !== id));
+  };
+  // manual parameters of a river: { order, size, navigable }; null/undefined = automatic
+  World.setRiverManual = function (id, patch) {
+    commitRivers((W0().rivers || []).map((r) => {
+      if (r.id !== id) return r;
+      const manual = Object.assign({}, r.manual || {});
+      Object.keys(patch).forEach((k) => { if (patch[k] == null) delete manual[k]; else manual[k] = patch[k]; });
+      const out = Object.assign({}, r);
+      if (Object.keys(manual).length) out.manual = manual; else delete out.manual;
+      return out;
+    }));
+  };
+  // swap source and mouth
+  World.reverseRiver = function (id) {
+    if (commitRivers((W0().rivers || []).map((r) => (r.id === id ? Object.assign({}, r, { pts: r.pts.slice().reverse() }) : r)))) {
+      Actions.toast(t("card.reversedToast"));
+    }
+  };
+
+  // ---------------- moving a river's source or mouth ----------------
+  // Drag an end handle: along the river it slides (shortening the river, or giving back
+  // what was cut); pulled off the river it lays a new course behind the pen or finger.
+  // A mouth released on another river joins it.
+  let endEdit = null;
+  World.endEditActive = () => !!endEdit;
+  World.endEditStart = function (index, end, g, tol) {
+    const rv = (W0().rivers || [])[index];
+    if (!World.active() || World.preview || !rv || rv.pts.length < 2) return false;
+    const base = (end === "source" ? rv.pts.slice().reverse() : rv.pts).map((q) => [q[0], q[1]]);
+    const L = TA.polylineLength(base);
+    endEdit = { id: rv.id, end, base, L, cut: L, drawn: [], mode: "slide", tol: Math.max(0.6, tol || 1) };
+    return true;
+  };
+  World.endEditMove = function (g) {
+    const s = endEdit;
+    if (!s) return null;
+    const hit = TA.nearestOnPolyline(s.base, g, s.tol);
+    if (s.mode === "slide") {
+      if (hit) s.cut = hit.along;
+      else { s.mode = "draw"; s.drawn = [[g[0], g[1]]]; }
+    } else {
+      const cutPt = TA.cutPolyline(s.base, s.cut).pop();
+      if (hit && TA.polylineLength([cutPt].concat(s.drawn)) < s.tol * 3) { s.mode = "slide"; s.drawn = []; s.cut = hit.along; }
+      else {
+        const last = s.drawn[s.drawn.length - 1];
+        if (Math.hypot(g[0] - last[0], g[1] - last[1]) > 0.3) s.drawn.push([g[0], g[1]]);
+      }
+    }
+    return World.endEditPreview();
+  };
+  // the course as it would be (source → mouth)
+  World.endEditPreview = function () {
+    const s = endEdit;
+    if (!s) return null;
+    let pts = TA.cutPolyline(s.base, s.cut);
+    if (s.mode === "draw") pts = pts.concat(s.drawn);
+    return s.end === "source" ? pts.reverse() : pts;
+  };
+  World.endEditCancel = function () { endEdit = null; };
+  World.endEditEnd = function () {
+    const s = endEdit;
+    endEdit = null;
+    if (!s || !World.active()) return false;
+    let pts = TA.cutPolyline(s.base, s.cut);
+    if (s.mode === "draw" && s.drawn.length) {
+      const from = pts[pts.length - 1];
+      pts = pts.concat(TA.rdp(TA.chaikin([from].concat(s.drawn), 2, false), 0.15).slice(1));
+    } else if (s.L - s.cut < 0.05) {
+      return false; // a tap on the handle: nothing changed
+    }
+    if (pts.length < 2 || TA.polylineLength(pts) < 2) { Actions.toast(t("card.tooShort")); App.emit(); return false; }
+    const rivers = W0().rivers || [];
+    if (s.end === "mouth") {
+      const join = nearestRiverPoint(rivers.filter((r) => r.id !== s.id), pts[pts.length - 1], Math.max(1.2, s.tol));
+      if (join) pts[pts.length - 1] = join.point;
+    }
+    pts = pts.map((q) => [r2(q[0]), r2(q[1])]);
+    if (s.end === "source") pts.reverse();
+    return commitRivers(rivers.map((r) => (r.id === s.id ? Object.assign({}, r, { pts }) : r)));
   };
 
   // ---------------- canvas placement ----------------
@@ -1190,11 +1303,11 @@
         }
       }
     }
-    const riversBefore = JSON.stringify({ rivers: w.rivers || [], names: w.riverNames || {} });
+    const riversBefore = riversJSON(w);
     w.rivers = pv.rivers;
     if (pv.opts.addRivers) w.riverNames = {}; // names from the simulated-river days now sit on real rivers
     delete w.legacyAuto;
-    const riversAfter = JSON.stringify({ rivers: w.rivers, names: w.riverNames });
+    const riversAfter = riversJSON(w);
     const riversChanged = riversAfter !== riversBefore;
     if (x1 >= 0) {
       const hBefore = Hh.slice(), cBefore = C.slice();
@@ -1206,8 +1319,7 @@
       World.rasterRev++;
       w.rev = (w.rev || 0) + 1;
     } else if (riversChanged) {
-      const put = (json) => { const v = JSON.parse(json); w.rivers = v.rivers; w.riverNames = v.names; window.scheduleSave(); };
-      Actions.pushUndoEntry({ kind: "rivers", bytes: riversAfter.length * 2, undo: () => put(riversBefore), redo: () => put(riversAfter) });
+      pushRiversUndo(riversBefore, riversAfter);
     }
     World.preview = null;
     World.compare = false;

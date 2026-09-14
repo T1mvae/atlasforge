@@ -699,3 +699,33 @@ button, .chip, .state-row, .menu-item { touch-action: manipulation; }
 .geo-bar-busy { display: flex; align-items: center; gap: 12px; font-weight: 600; }
 .geo-bar-busy .spinner { width: 20px; height: 20px; border-width: 3px; }
 .card-warn { font-size: 12.5px; line-height: 1.35; color: var(--danger); background: rgba(220, 80, 60, 0.08); border-radius: 8px; padding: 6px 8px; }
+
+/* ---------- river card: parameters and ends ---------- */
+.card-param .card-v { display: flex; }
+.card-select { width: 100%; padding: 4px 8px; font-size: 13px; }
+.card-select.manual { border-color: var(--accent); background: var(--accent-soft); font-weight: 600; }
+.card-help-toggle {
+  align-self: flex-start; background: none; border: none; padding: 2px 0; cursor: pointer;
+  color: var(--accent); font: inherit; font-size: 12.5px;
+}
+.card-help { display: flex; flex-direction: column; gap: 6px; font-size: 12.5px; line-height: 1.4; color: var(--text-dim);
+  background: var(--panel-2); border-radius: 8px; padding: 8px 10px; }
+.card-help p { margin: 0; }
+.card-ends { display: flex; flex-direction: column; gap: 6px; margin-top: 2px; }
+.card-ends-text { font-size: 12px; line-height: 1.35; color: var(--text-dim); }
+.card-ends .btn { align-self: flex-start; }
+#river-ends .river-end { cursor: grab; touch-action: none; }
+@media (pointer: coarse) {
+  .card-select { padding: 8px 10px; font-size: 16px; }
+}
+.card-head-actions { display: flex; gap: 4px; }
+.info-card.minimized { padding: 6px 8px 6px 14px; gap: 0; }
+.info-card.minimized .card-kind { text-transform: none; font-size: 13px; letter-spacing: 0; color: var(--text); }
+/* wide screens: cards dock to the right of the map, leaving its middle free */
+@media (min-width: 900px) {
+  .info-card {
+    left: auto; right: 12px; top: 48px; bottom: auto; transform: none;
+    width: min(380px, calc(100% - 24px)); max-height: calc(100% - 200px);
+  }
+}
+.card-min-btn { font-size: 20px; line-height: 1; font-weight: 700; }

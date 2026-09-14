@@ -481,9 +481,12 @@
         const into = ri.rv.into >= 0 ? an.rivers.find((x) => x.rv.index === ri.rv.into) : null;
         const mouth = into ? N.riverLabel[into.k] : ri.mouthWater >= 0 ? (N.waterLabel[ri.mouthWater] || (ru ? "водоём" : "a body of water")) : null;
         const navigable = World.riverNavigable(ri.rv, km);
+        const size = World.riverSize(ri.rv, km);
+        const sizeWord = (ru ? ["ручей", "река", "крупная река", "великая река"] : ["stream", "river", "large river", "great river"])[size];
+        const withTribs = ri.rv.upLen && ri.rv.upLen > ri.len + 0.5 ? (ru ? ` (с притоками ~${fmt(ri.rv.upLen * km)} км)` : ` (~${fmt(ri.rv.upLen * km)} km with tributaries)`) : "";
         L.push(ru
-          ? `- **${N.riverLabel[ri.k]}** — ~${fmt(ri.len * km)} км${ri.rv.order ? `, порядок ${ri.rv.order}` : ""}${navigable ? ", судоходна" : ""}. ${ri.sourceHeight > 0 ? `Исток на высоте ${m(ri.sourceHeight)}. ` : ""}${path.length ? `От истока к устью: ${path.join(" → ")}. ` : ""}${mouth ? `Впадает в: ${mouth}.` : ""}`
-          : `- **${N.riverLabel[ri.k]}** — ~${fmt(ri.len * km)} km${ri.rv.order ? `, order ${ri.rv.order}` : ""}${navigable ? ", navigable" : ""}. ${ri.sourceHeight > 0 ? `Source at ${m(ri.sourceHeight)}. ` : ""}${path.length ? `Source to mouth: ${path.join(" → ")}. ` : ""}${mouth ? `Flows into: ${mouth}.` : ""}`);
+          ? `- **${N.riverLabel[ri.k]}** — ${sizeWord}, ~${fmt(ri.len * km)} км${withTribs}${ri.rv.order ? `, порядок ${ri.rv.order}` : ""}, ${navigable ? "судоходна" : "несудоходна"}. ${ri.sourceHeight > 0 ? `Исток на высоте ${m(ri.sourceHeight)}. ` : ""}${path.length ? `От истока к устью: ${path.join(" → ")}. ` : ""}${mouth ? `Впадает в: ${mouth}.` : ""}`
+          : `- **${N.riverLabel[ri.k]}** — ${sizeWord}, ~${fmt(ri.len * km)} km${withTribs}${ri.rv.order ? `, order ${ri.rv.order}` : ""}, ${navigable ? "navigable" : "not navigable"}. ${ri.sourceHeight > 0 ? `Source at ${m(ri.sourceHeight)}. ` : ""}${path.length ? `Source to mouth: ${path.join(" → ")}. ` : ""}${mouth ? `Flows into: ${mouth}.` : ""}`);
       });
       L.push("");
     }

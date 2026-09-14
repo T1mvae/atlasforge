@@ -73,6 +73,18 @@ var Icons = {
   }), /*#__PURE__*/React.createElement("path", {
     d: "M3 14 H13"
   })),
+  place: /*#__PURE__*/React.createElement("svg", {
+    width: "16",
+    height: "16",
+    viewBox: "0 0 16 16",
+    fill: "none",
+    stroke: "currentColor",
+    strokeWidth: "1.4"
+  }, /*#__PURE__*/React.createElement("path", {
+    d: "M2.5 14 V8 H4.5 V6.5 H6.5 V8 H7.5 V5 H9.5 V8 H10.5 V6.5 H12.5 V8 H13.5 V14 Z"
+  }), /*#__PURE__*/React.createElement("path", {
+    d: "M7.2 14 V11.5 H9.8 V14"
+  })),
   label: /*#__PURE__*/React.createElement("svg", {
     width: "16",
     height: "16",
@@ -155,7 +167,7 @@ var Icons = {
     stroke: "none"
   }))
 };
-var TOOLS = ["select", "paint", "fill", "erase", "label", "pan"];
+var TOOLS = ["select", "paint", "fill", "erase", "label", "place", "pan"];
 var GEOM_TOOLS = ["split", "draw"];
 function Toolbar() {
   useStore();

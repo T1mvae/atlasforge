@@ -165,6 +165,7 @@
       labels: [],
       // ---- places on the map: cities, fortresses, ports… (js/objects.js) ----
       objects: {},
+      roads: {},                                    // id -> { kind: road|trail|sea, from, to, pts (map coords), name }
       featLabels: {},                               // featureId -> { dx, dy, angle, size, hidden } (per-region name overrides)
       years: [],
       snapshots: {},
@@ -228,7 +229,7 @@
       autonomies: p.autonomies || {}, valueLists: p.valueLists || {}, catalogs: p.catalogs || {},
       // custom worlds: settings and rivers only — the rasters have their own diff entries
       world: window.World ? window.World.sliceWorld(p.world) : (p.world || null),
-      objects: p.objects || {}
+      objects: p.objects || {}, roads: p.roads || {}
     });
   }
   function applySlice(p, json) {

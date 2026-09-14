@@ -511,6 +511,23 @@ function MapView() {
     if (zoomRef.current) zoomRef.current.setAttribute("transform", "translate(".concat(v.x, ",").concat(v.y, ") scale(").concat(v.k, ")"));
     if (zoomTextRef.current) zoomTextRef.current.textContent = Math.round(v.k * 100) + "%";
     if (window.World && World.active()) World.place(svgRef.current, v);
+    // places keep a readable size at every zoom (no React render per zoom step)
+    var og = svgRef.current && svgRef.current.querySelector("#objects");
+    if (og && App.project && App.project.objects && window.objectTransform) {
+      var _iterator2 = _createForOfIteratorHelper(og.children),
+        _step2;
+      try {
+        for (_iterator2.s(); !(_step2 = _iterator2.n()).done;) {
+          var el = _step2.value;
+          var o = App.project.objects[el.getAttribute("data-object")];
+          if (o) el.setAttribute("transform", objectTransform(o, v.k));
+        }
+      } catch (err) {
+        _iterator2.e(err);
+      } finally {
+        _iterator2.f();
+      }
+    }
     if (minimapVpRef.current) {
       var mw = 168,
         mh = 88,
@@ -568,6 +585,11 @@ function MapView() {
       },
       viewK: function viewK() {
         return view.current.k;
+      },
+      // screen pixels per map unit at zoom 1 (the SVG viewBox scale)
+      pxPerUnit: function pxPerUnit() {
+        var m = svgRef.current && svgRef.current.getScreenCTM();
+        return m ? m.a : 1;
       },
       finishGeomDraw: finishGeomDraw
     };
@@ -834,6 +856,48 @@ function MapView() {
     // "pencil only" preference is on) a finger pans, pinches, taps to select and
     // long-presses to pick — it never paints ----
     var fingerNav = e.pointerType === "touch" && window.World && World.penSeen && App.ui.pencilOnly !== false;
+    // ---- places (cities, fortresses…) ----
+    var objEl = e.target.closest ? e.target.closest("[data-object]") : null;
+    var objId = objEl ? objEl.getAttribute("data-object") : null;
+    if (App.ui.roadFrom && e.button === 0) {
+      var rf = App.ui.roadFrom;
+      if (objId && objId !== rf.id) {
+        Actions.ui({
+          roadFrom: null
+        });
+        if (Actions.addRoad(rf.id, objId, rf.kind)) Actions.toast(t("obj.roadAdded"));
+        return;
+      }
+      if (objId) return;
+    }
+    var objTools = tool === "select" || tool === "place" || tool === "pan" || tool === "label";
+    if (objId && e.button === 0 && (objTools || fingerNav)) {
+      var o = App.project.objects[objId];
+      gesture.current = {
+        mode: "objdown",
+        id: objId,
+        vx: vx,
+        vy: vy,
+        start: mapPt,
+        orig: [o.x, o.y],
+        finger: e.pointerType === "touch"
+      };
+      try {
+        svgRef.current.setPointerCapture(e.pointerId);
+      } catch (err) {}
+      return;
+    }
+    if (tool === "place" && e.button === 0 && !fingerNav) {
+      var id = Actions.addObject(App.ui.placeType || "town", mapPt[0], mapPt[1]);
+      Actions.ui({
+        card: {
+          kind: "object",
+          id: id
+        },
+        selection: []
+      });
+      return;
+    }
     if (fingerNav) {
       gesture.current = {
         mode: "down",
@@ -1141,13 +1205,49 @@ function MapView() {
       rubberRef.current.style.display = "none";
     }
     if (!g) return;
+    if (g.mode === "objdown" || g.mode === "objdrag") {
+      var _clientToViewbox7 = clientToViewbox(e),
+        _clientToViewbox8 = _slicedToArray(_clientToViewbox7, 2),
+        vx = _clientToViewbox8[0],
+        vy = _clientToViewbox8[1];
+      if (g.mode === "objdown" && Math.hypot(vx - g.vx, vy - g.vy) > 5) {
+        if (g.finger) {
+          // a finger dragging from a place pans the map
+          gesture.current = {
+            mode: "panning",
+            vx: g.vx,
+            vy: g.vy,
+            lx: vx,
+            ly: vy,
+            panOk: true
+          };
+          svgRef.current.closest(".map-stage").classList.add("panning");
+          return;
+        }
+        g.mode = "objdrag";
+        Actions.beginStroke();
+      }
+      if (g.mode === "objdrag") {
+        var _clientToMap5 = clientToMap(e),
+          _clientToMap6 = _slicedToArray(_clientToMap5, 2),
+          _mx2 = _clientToMap6[0],
+          _my2 = _clientToMap6[1];
+        Actions.setObject(g.id, {
+          x: Math.round((g.orig[0] + _mx2 - g.start[0]) * 100) / 100,
+          y: Math.round((g.orig[1] + _my2 - g.start[1]) * 100) / 100
+        }, {
+          undo: false
+        });
+      }
+      return;
+    }
     if (g.mode === "bdmove" || g.mode === "bdresize") {
-      var _clientToMap5 = clientToMap(e),
-        _clientToMap6 = _slicedToArray(_clientToMap5, 2),
-        _mx2 = _clientToMap6[0],
-        _my2 = _clientToMap6[1];
-      var dx = _mx2 - g.start[0],
-        dy = _my2 - g.start[1];
+      var _clientToMap7 = clientToMap(e),
+        _clientToMap8 = _slicedToArray(_clientToMap7, 2),
+        _mx3 = _clientToMap8[0],
+        _my3 = _clientToMap8[1];
+      var dx = _mx3 - g.start[0],
+        dy = _my3 - g.start[1];
       if (g.mode === "bdmove") {
         Actions.setBackdrop({
           x: g.orig.x + dx,
@@ -1166,11 +1266,11 @@ function MapView() {
     if (g.mode === "vertex") {
       var sess = App.ui.geomEdit;
       if (sess && sess.rings[g.ri]) {
-        var _clientToMap7 = clientToMap(e),
-          _clientToMap8 = _slicedToArray(_clientToMap7, 2),
-          _mx3 = _clientToMap8[0],
-          _my3 = _clientToMap8[1];
-        var pt = window.GeomEdit ? GeomEdit.snap([_mx3, _my3], view.current.k) : [_mx3, _my3];
+        var _clientToMap9 = clientToMap(e),
+          _clientToMap0 = _slicedToArray(_clientToMap9, 2),
+          _mx4 = _clientToMap0[0],
+          _my4 = _clientToMap0[1];
+        var pt = window.GeomEdit ? GeomEdit.snap([_mx4, _my4], view.current.k) : [_mx4, _my4];
         // mutate in place: a shared vertex is the same object in the neighbour's ring
         var cur = sess.rings[g.ri].pts[g.vi];
         cur[0] = pt[0];
@@ -1186,14 +1286,14 @@ function MapView() {
       return;
     }
     if (g.mode === "label" && dragLabel.current) {
-      var _clientToMap9 = clientToMap(e),
-        _clientToMap0 = _slicedToArray(_clientToMap9, 2),
-        _mx4 = _clientToMap0[0],
-        _my4 = _clientToMap0[1];
+      var _clientToMap1 = clientToMap(e),
+        _clientToMap10 = _slicedToArray(_clientToMap1, 2),
+        _mx5 = _clientToMap10[0],
+        _my5 = _clientToMap10[1];
       var dl = dragLabel.current;
       dl.moved = true;
-      var _dx = _mx4 - dl.start[0],
-        _dy = _my4 - dl.start[1];
+      var _dx = _mx5 - dl.start[0],
+        _dy = _my5 - dl.start[1];
       if (dl.kind === "custom") {
         Actions.setLabel(dl.id, {
           x: dl.orig[0] + _dx,
@@ -1226,43 +1326,43 @@ function MapView() {
       return;
     }
     if (g.mode === "marquee") {
-      var _clientToViewbox7 = clientToViewbox(e),
-        _clientToViewbox8 = _slicedToArray(_clientToViewbox7, 2),
-        vx = _clientToViewbox8[0],
-        vy = _clientToViewbox8[1];
-      var _r2 = marqueeRef.current;
-      if (_r2) {
-        var _v = view.current;
-        var x = Math.min(g.x0, vx),
-          y = Math.min(g.y0, vy);
-        _r2.setAttribute("x", (x - _v.x) / _v.k);
-        _r2.setAttribute("y", (y - _v.y) / _v.k);
-        _r2.setAttribute("width", Math.abs(vx - g.x0) / _v.k);
-        _r2.setAttribute("height", Math.abs(vy - g.y0) / _v.k);
-        _r2.style.display = "block";
-        g.x1 = vx;
-        g.y1 = vy;
-      }
-      return;
-    }
-    if (g.mode === "down" || g.mode === "panning") {
       var _clientToViewbox9 = clientToViewbox(e),
         _clientToViewbox0 = _slicedToArray(_clientToViewbox9, 2),
         _vx = _clientToViewbox0[0],
         _vy = _clientToViewbox0[1];
-      var _dist = Math.hypot(_vx - g.vx, _vy - g.vy);
+      var _r2 = marqueeRef.current;
+      if (_r2) {
+        var _v = view.current;
+        var x = Math.min(g.x0, _vx),
+          y = Math.min(g.y0, _vy);
+        _r2.setAttribute("x", (x - _v.x) / _v.k);
+        _r2.setAttribute("y", (y - _v.y) / _v.k);
+        _r2.setAttribute("width", Math.abs(_vx - g.x0) / _v.k);
+        _r2.setAttribute("height", Math.abs(_vy - g.y0) / _v.k);
+        _r2.style.display = "block";
+        g.x1 = _vx;
+        g.y1 = _vy;
+      }
+      return;
+    }
+    if (g.mode === "down" || g.mode === "panning") {
+      var _clientToViewbox1 = clientToViewbox(e),
+        _clientToViewbox10 = _slicedToArray(_clientToViewbox1, 2),
+        _vx2 = _clientToViewbox10[0],
+        _vy2 = _clientToViewbox10[1];
+      var _dist = Math.hypot(_vx2 - g.vx, _vy2 - g.vy);
       if (g.mode === "down" && _dist > 4 && g.panOk) {
         g.mode = "panning";
-        g.lx = _vx;
-        g.ly = _vy;
+        g.lx = _vx2;
+        g.ly = _vy2;
         svgRef.current.closest(".map-stage").classList.add("panning");
       }
       if (g.mode === "panning") {
         var _g$lx, _g$ly;
         var _v2 = view.current;
-        setView(_v2.x + (_vx - ((_g$lx = g.lx) !== null && _g$lx !== void 0 ? _g$lx : g.vx)), _v2.y + (_vy - ((_g$ly = g.ly) !== null && _g$ly !== void 0 ? _g$ly : g.vy)), _v2.k);
-        g.lx = _vx;
-        g.ly = _vy;
+        setView(_v2.x + (_vx2 - ((_g$lx = g.lx) !== null && _g$lx !== void 0 ? _g$lx : g.vx)), _v2.y + (_vy2 - ((_g$ly = g.ly) !== null && _g$ly !== void 0 ? _g$ly : g.vy)), _v2.k);
+        g.lx = _vx2;
+        g.ly = _vy2;
       }
     }
   }, [clientToViewbox, clientToMap, paintRegion, setView]);
@@ -1307,6 +1407,26 @@ function MapView() {
     gesture.current = null;
     svgRef.current && svgRef.current.closest(".map-stage").classList.remove("panning");
     if (!g) return;
+    if (g.mode === "objdown") {
+      try {
+        svgRef.current.releasePointerCapture(e.pointerId);
+      } catch (err) {}
+      Actions.ui({
+        card: {
+          kind: "object",
+          id: g.id
+        },
+        selection: []
+      });
+      return;
+    }
+    if (g.mode === "objdrag") {
+      try {
+        svgRef.current.releasePointerCapture(e.pointerId);
+      } catch (err) {}
+      Actions.endStroke();
+      return;
+    }
     if (g.mode === "bdmove" || g.mode === "bdresize") {
       Actions.endStroke();
       return;
@@ -1328,10 +1448,10 @@ function MapView() {
       var k = view.current.k;
       if (e.type !== "pointerleave") {
         // the release point ends the stroke
-        var _clientToMap1 = clientToMap(e),
-          _clientToMap10 = _slicedToArray(_clientToMap1, 2),
-          mx = _clientToMap10[0],
-          my = _clientToMap10[1];
+        var _clientToMap11 = clientToMap(e),
+          _clientToMap12 = _slicedToArray(_clientToMap11, 2),
+          mx = _clientToMap12[0],
+          my = _clientToMap12[1];
         var prev = gd.pts[gd.pts.length - 1];
         var step = Math.hypot(prev[0] - mx, prev[1] - my);
         if (step > 0.5 / k) {
@@ -1419,11 +1539,11 @@ function MapView() {
     if (g.mode === "down") {
       var tool = g.tool;
       if (tool === "label") {
-        var _clientToMap11 = clientToMap(e),
-          _clientToMap12 = _slicedToArray(_clientToMap11, 2),
-          _mx5 = _clientToMap12[0],
-          _my5 = _clientToMap12[1];
-        var id = Actions.addLabel(_mx5, _my5);
+        var _clientToMap13 = clientToMap(e),
+          _clientToMap14 = _slicedToArray(_clientToMap13, 2),
+          _mx6 = _clientToMap14[0],
+          _my6 = _clientToMap14[1];
+        var id = Actions.addLabel(_mx6, _my6);
         Actions.ui({
           selLabel: id,
           panel: "region",
@@ -1439,12 +1559,12 @@ function MapView() {
       if ((tool === "select" || tool === "pan") && window.World && World.active()) {
         // a river under the tap (generous finger tolerance) opens its card
         var _k = view.current.k;
-        var _clientToMap13 = clientToMap(e),
-          _clientToMap14 = _slicedToArray(_clientToMap13, 2),
-          _mx6 = _clientToMap14[0],
-          _my6 = _clientToMap14[1];
+        var _clientToMap15 = clientToMap(e),
+          _clientToMap16 = _slicedToArray(_clientToMap15, 2),
+          _mx7 = _clientToMap16[0],
+          _my7 = _clientToMap16[1];
         var tolData = (g.finger || e.pointerType === "touch" ? 16 : 8) / Math.max(0.0001, _k * World.mapUnitsPerCell() * (svgRef.current.getScreenCTM().a || 1));
-        var rv = World.riverAt(World.mapToGrid([_mx6, _my6]), tolData);
+        var rv = World.riverAt(World.mapToGrid([_mx7, _my7]), tolData);
         if (rv) {
           Actions.ui({
             card: {
@@ -1909,7 +2029,7 @@ function MapView() {
     id: "land-clip"
   }, /*#__PURE__*/React.createElement("path", {
     d: bm.landPath
-  })), ready && bm.clips && bm.clips.map(function (sc) {
+  })), window.ObjectSymbols && /*#__PURE__*/React.createElement(ObjectSymbols, null), ready && bm.clips && bm.clips.map(function (sc) {
     return /*#__PURE__*/React.createElement("clipPath", {
       key: sc.id,
       id: sc.id
@@ -2171,7 +2291,10 @@ function MapView() {
         vectorEffect: "non-scaling-stroke"
       })
     );
-  })), /*#__PURE__*/React.createElement("g", {
+  })), ready && window.RoadsLayer && /*#__PURE__*/React.createElement(RoadsLayer, null), ready && window.ObjectsLayer && /*#__PURE__*/React.createElement(ObjectsLayer, {
+    k: view.current.k,
+    grabbable: App.ui.tool === "select" || App.ui.tool === "place"
+  }), /*#__PURE__*/React.createElement("g", {
     id: "overlay"
   }, ready && settings.showLabels && bm.features.map(function (f) {
     var r = regions[f.id];
@@ -2563,7 +2686,7 @@ function MapView() {
         tool: "select"
       });
     }
-  }, t("edit.cancel"))), worldOn && App.ui.tool === "world" && window.WorldPalette && /*#__PURE__*/React.createElement(WorldPalette, null), window.WorldCard && /*#__PURE__*/React.createElement(WorldCard, null), /*#__PURE__*/React.createElement("div", {
+  }, t("edit.cancel"))), worldOn && App.ui.tool === "world" && window.WorldPalette && /*#__PURE__*/React.createElement(WorldPalette, null), App.ui.tool === "place" && window.ObjectPalette && ready && /*#__PURE__*/React.createElement(ObjectPalette, null), window.RoadModeBar && /*#__PURE__*/React.createElement(RoadModeBar, null), window.WorldCard && /*#__PURE__*/React.createElement(WorldCard, null), /*#__PURE__*/React.createElement("div", {
     className: "minimap",
     onPointerDown: onMinimapClick
   }, /*#__PURE__*/React.createElement("canvas", {

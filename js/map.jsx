@@ -373,6 +373,14 @@ function MapView() {
     if (zoomRef.current) zoomRef.current.setAttribute("transform", `translate(${v.x},${v.y}) scale(${v.k})`);
     if (zoomTextRef.current) zoomTextRef.current.textContent = Math.round(v.k * 100) + "%";
     if (window.World && World.active()) World.place(svgRef.current, v);
+    // places keep a readable size at every zoom (no React render per zoom step)
+    const og = svgRef.current && svgRef.current.querySelector("#objects");
+    if (og && App.project && App.project.objects && window.objectTransform) {
+      for (const el of og.children) {
+        const o = App.project.objects[el.getAttribute("data-object")];
+        if (o) el.setAttribute("transform", objectTransform(o, v.k));
+      }
+    }
     if (minimapVpRef.current) {
       const mw = 168, mh = 88, sx = mw / MAP_W, sy = mh / MAP_H;
       const w = (MAP_W / v.k) * sx, h = (MAP_H / v.k) * sy;
@@ -409,6 +417,8 @@ function MapView() {
         setView(MAP_W / 2 - k * cx, MAP_H / 2 - k * cy, k);
       },
       viewK: () => view.current.k,
+      // screen pixels per map unit at zoom 1 (the SVG viewBox scale)
+      pxPerUnit: () => { const m = svgRef.current && svgRef.current.getScreenCTM(); return m ? m.a : 1; },
       finishGeomDraw
     };
     applyView();
@@ -591,6 +601,30 @@ function MapView() {
     // "pencil only" preference is on) a finger pans, pinches, taps to select and
     // long-presses to pick — it never paints ----
     const fingerNav = e.pointerType === "touch" && window.World && World.penSeen && App.ui.pencilOnly !== false;
+    // ---- places (cities, fortresses…) ----
+    const objEl = e.target.closest ? e.target.closest("[data-object]") : null;
+    const objId = objEl ? objEl.getAttribute("data-object") : null;
+    if (App.ui.roadFrom && e.button === 0) {
+      const rf = App.ui.roadFrom;
+      if (objId && objId !== rf.id) {
+        Actions.ui({ roadFrom: null });
+        if (Actions.addRoad(rf.id, objId, rf.kind)) Actions.toast(t("obj.roadAdded"));
+        return;
+      }
+      if (objId) return;
+    }
+    const objTools = tool === "select" || tool === "place" || tool === "pan" || tool === "label";
+    if (objId && e.button === 0 && (objTools || fingerNav)) {
+      const o = App.project.objects[objId];
+      gesture.current = { mode: "objdown", id: objId, vx, vy, start: mapPt, orig: [o.x, o.y], finger: e.pointerType === "touch" };
+      try { svgRef.current.setPointerCapture(e.pointerId); } catch (err) {}
+      return;
+    }
+    if (tool === "place" && e.button === 0 && !fingerNav) {
+      const id = Actions.addObject(App.ui.placeType || "town", mapPt[0], mapPt[1]);
+      Actions.ui({ card: { kind: "object", id }, selection: [] });
+      return;
+    }
     if (fingerNav) {
       gesture.current = { mode: "down", vx, vy, rid, regId, shift: false, tool: "select", panOk: true, finger: true };
       armLongPress(e, rid);
@@ -787,6 +821,23 @@ function MapView() {
       rubberRef.current.style.display = "none";
     }
     if (!g) return;
+    if (g.mode === "objdown" || g.mode === "objdrag") {
+      const [vx, vy] = clientToViewbox(e);
+      if (g.mode === "objdown" && Math.hypot(vx - g.vx, vy - g.vy) > 5) {
+        if (g.finger) { // a finger dragging from a place pans the map
+          gesture.current = { mode: "panning", vx: g.vx, vy: g.vy, lx: vx, ly: vy, panOk: true };
+          svgRef.current.closest(".map-stage").classList.add("panning");
+          return;
+        }
+        g.mode = "objdrag";
+        Actions.beginStroke();
+      }
+      if (g.mode === "objdrag") {
+        const [mx, my] = clientToMap(e);
+        Actions.setObject(g.id, { x: Math.round((g.orig[0] + mx - g.start[0]) * 100) / 100, y: Math.round((g.orig[1] + my - g.start[1]) * 100) / 100 }, { undo: false });
+      }
+      return;
+    }
     if (g.mode === "bdmove" || g.mode === "bdresize") {
       const [mx, my] = clientToMap(e);
       const dx = mx - g.start[0], dy = my - g.start[1];
@@ -896,6 +947,16 @@ function MapView() {
     gesture.current = null;
     svgRef.current && svgRef.current.closest(".map-stage").classList.remove("panning");
     if (!g) return;
+    if (g.mode === "objdown") {
+      try { svgRef.current.releasePointerCapture(e.pointerId); } catch (err) {}
+      Actions.ui({ card: { kind: "object", id: g.id }, selection: [] });
+      return;
+    }
+    if (g.mode === "objdrag") {
+      try { svgRef.current.releasePointerCapture(e.pointerId); } catch (err) {}
+      Actions.endStroke();
+      return;
+    }
     if (g.mode === "bdmove" || g.mode === "bdresize") { Actions.endStroke(); return; }
     if (g.mode === "vertex") { App.emit(); return; }
     if (g.mode === "freehand") {
@@ -1282,6 +1343,7 @@ function MapView() {
           {ready && bm.clipLand && bm.landPath && (
             <clipPath id="land-clip"><path d={bm.landPath}></path></clipPath>
           )}
+          {window.ObjectSymbols && <ObjectSymbols></ObjectSymbols>}
           {ready && bm.clips && bm.clips.map((sc) => (
             <clipPath key={sc.id} id={sc.id}><path d={sc.d}></path></clipPath>
           ))}
@@ -1459,6 +1521,8 @@ function MapView() {
               ))}
             </g>
           )}
+          {ready && window.RoadsLayer && <RoadsLayer></RoadsLayer>}
+          {ready && window.ObjectsLayer && <ObjectsLayer k={view.current.k} grabbable={App.ui.tool === "select" || App.ui.tool === "place"}></ObjectsLayer>}
           <g id="overlay">
             {ready && settings.showLabels && bm.features.map((f) => {
               const r = regions[f.id];
@@ -1663,6 +1727,8 @@ function MapView() {
       )}
 
       {worldOn && App.ui.tool === "world" && window.WorldPalette && <WorldPalette></WorldPalette>}
+      {App.ui.tool === "place" && window.ObjectPalette && ready && <ObjectPalette></ObjectPalette>}
+      {window.RoadModeBar && <RoadModeBar></RoadModeBar>}
       {window.WorldCard && <WorldCard></WorldCard>}
 
       <div className="minimap" onPointerDown={onMinimapClick}>

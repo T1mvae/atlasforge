@@ -4,6 +4,7 @@ const Icons = {
   paint: <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4"><path d="M10 2.5 L13.5 6 L7 12.5 L3.5 13 L4 9.5 Z"></path><path d="M4 9.5 L7 12.5"></path></svg>,
   fill: <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4"><path d="M7.5 2 L13 7.5 L7.5 13 L2.5 8 L8 2.5"></path><circle cx="13.2" cy="11.5" r="1.6" fill="currentColor" stroke="none"></circle></svg>,
   erase: <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4"><rect x="3" y="6.5" width="7" height="6" rx="1" transform="rotate(-35 6.5 9.5)"></rect><path d="M3 14 H13"></path></svg>,
+  place: <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4"><path d="M2.5 14 V8 H4.5 V6.5 H6.5 V8 H7.5 V5 H9.5 V8 H10.5 V6.5 H12.5 V8 H13.5 V14 Z"></path><path d="M7.2 14 V11.5 H9.8 V14"></path></svg>,
   label: <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6"><path d="M3.5 4.5 V3 H12.5 V4.5 M8 3 V13 M6 13 H10"></path></svg>,
   pan: <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4"><path d="M8 2 V14 M2 8 H14 M8 2 L6 4 M8 2 L10 4 M8 14 L6 12 M8 14 L10 12 M2 8 L4 6 M2 8 L4 10 M14 8 L12 6 M14 8 L12 10"></path></svg>,
   split: <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4"><path d="M3 13 L13 3"></path><circle cx="3" cy="13" r="1.4" fill="currentColor" stroke="none"></circle><circle cx="13" cy="3" r="1.4" fill="currentColor" stroke="none"></circle><path d="M5 5 L7.5 7.5 M11 11 L8.5 8.5" strokeDasharray="1.5 1.5"></path></svg>,
@@ -11,7 +12,7 @@ const Icons = {
   draw: <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4"><path d="M8 2.5 L13.5 6.5 L11.5 13 L4.5 13 L2.5 6.5 Z"></path><circle cx="8" cy="2.5" r="1.3" fill="currentColor" stroke="none"></circle><circle cx="13.5" cy="6.5" r="1.3" fill="currentColor" stroke="none"></circle></svg>
 };
 
-const TOOLS = ["select", "paint", "fill", "erase", "label", "pan"];
+const TOOLS = ["select", "paint", "fill", "erase", "label", "place", "pan"];
 const GEOM_TOOLS = ["split", "draw"];
 
 function Toolbar() {

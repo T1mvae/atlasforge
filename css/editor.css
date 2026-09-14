@@ -641,3 +641,27 @@ button, .chip, .state-row, .menu-item { touch-action: manipulation; }
 .card-v { flex: 1; color: var(--text); }
 .card-notes { min-height: 64px; }
 .card-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+
+/* ---------- places & roads ---------- */
+.obj-sym { fill: #f6efe0; stroke: #2e2418; stroke-width: 1.1; stroke-linejoin: round; stroke-linecap: round; paint-order: stroke; }
+.obj-sym .obj-accent { fill: #d6a93a; stroke: #2e2418; }
+.map-object.sel .obj-sym, .map-object.sel use { filter: drop-shadow(0 0 1.5px #ff9f2e) drop-shadow(0 0 1px #ff9f2e); }
+.map-object-label {
+  font-family: Georgia, "Times New Roman", serif; font-size: 7px; fill: #1f1a14; stroke: #f6efe0; stroke-width: 2.2px;
+  paint-order: stroke; user-select: none; pointer-events: none;
+}
+.map-object-label.big { font-size: 9px; font-weight: 700; }
+.obj-icon-svg { display: inline-block; vertical-align: middle; }
+.obj-icon-svg g { fill: none; stroke: currentColor; stroke-width: 1.2; stroke-linejoin: round; stroke-linecap: round; }
+.obj-icon-svg .obj-accent { fill: #d6a93a; stroke: #d6a93a; }
+.object-palette { width: 250px; }
+.obj-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; }
+.obj-grid.compact { grid-template-columns: repeat(9, 1fr); }
+.obj-type {
+  display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 6px 2px; min-height: 52px;
+  border: 1px solid var(--border); border-radius: 8px; background: var(--panel-2); color: var(--text);
+  font: inherit; font-size: 10.5px; cursor: pointer; text-align: center;
+}
+.obj-grid.compact .obj-type { min-height: 32px; padding: 4px 0; }
+.obj-type.on { border-color: var(--accent); background: var(--accent-soft); box-shadow: inset 0 0 0 1px var(--accent); }
+.card-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }

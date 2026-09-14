@@ -51,6 +51,18 @@ function AppRoot() {
         return;
       }
       if (k === "escape") {
+        if (App.ui.roadFrom) {
+          Actions.ui({
+            roadFrom: null
+          });
+          return;
+        }
+        if (App.ui.card) {
+          Actions.ui({
+            card: null
+          });
+          return;
+        }
         if (App.ui.geomDraw) {
           App.ui.geomDraw = null;
           Actions.ui({
@@ -88,6 +100,7 @@ function AppRoot() {
         g: "fill",
         e: "erase",
         t: "label",
+        c: "place",
         h: "pan"
       };
       if (tools[k]) {

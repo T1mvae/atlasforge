@@ -32,6 +32,8 @@ function AppRoot() {
         return;
       }
       if (k === "escape") {
+        if (App.ui.roadFrom) { Actions.ui({ roadFrom: null }); return; }
+        if (App.ui.card) { Actions.ui({ card: null }); return; }
         if (App.ui.geomDraw) { App.ui.geomDraw = null; Actions.ui({ tool: "select" }); return; }
         if (App.ui.geomEdit) { window.GeomEdit && GeomEdit.cancelEdit(); return; }
         if (App.ui.present) { Actions.ui({ present: false }); return; }
@@ -41,7 +43,7 @@ function AppRoot() {
         Actions.select([], false);
         return;
       }
-      const tools = { v: "select", b: "paint", g: "fill", e: "erase", t: "label", h: "pan" };
+      const tools = { v: "select", b: "paint", g: "fill", e: "erase", t: "label", c: "place", h: "pan" };
       if (tools[k]) { App.ui.geomDraw = null; Actions.ui({ tool: tools[k] }); return; }
       if (k === "w" && window.World && World.active()) { App.ui.geomDraw = null; Actions.ui({ tool: "world" }); return; }
       if (App.ui.tool === "world" && window.World && World.active() && (k === "[" || k === "]")) {

@@ -833,6 +833,313 @@ function worldAnalysis() {
   return wa;
 }
 
+// ---------- names by a rule for the selected provinces ----------
+var NAME_RULE_DEFAULT = {
+  starts: "",
+  samples: "",
+  endings: "",
+  length: "medium",
+  geography: true,
+  replaceAuto: true,
+  replaceManual: false
+};
+// what naming needs to know about a province: its area (landmass + drainage basin) and the
+// kind of place it is
+function nameItems(ids) {
+  var wa = worldAnalysis();
+  var idx = new Map(wa.feats.map(function (f, i) {
+    return [String(f.id), i];
+  }));
+  var items = ids.map(function (id) {
+    var i = idx.get(String(id));
+    var c = i != null ? wa.an.cells[i] : null;
+    var props = i != null && wa.feats[i].properties || {};
+    var land = -1,
+      bv = 0;
+    if (c) c.lands.forEach(function (v, k) {
+      if (v > bv) {
+        bv = v;
+        land = k;
+      }
+    });
+    var island = land >= 0 && wa.an.lands[land] && wa.an.lands[land].area < wa.names.totalLand * 0.08;
+    var terr = props.terrain;
+    var kind = terr === "mountain" ? "mountain" : island ? "island" : props.coastal ? "coast" : c && c.rivers.size ? "river" : terr === "forest" || terr === "taiga" || terr === "jungle" ? "forest" : terr === "marsh" ? "marsh" : terr === "desert" ? "desert" : terr === "hills" ? "hills" : null;
+    return {
+      id: id,
+      area: land + ":" + (props.basin != null ? props.basin : ""),
+      kind: kind,
+      x: c && c.land ? c.sx / c.land : 0,
+      y: c && c.land ? c.sy / c.land : 0
+    };
+  });
+  // area by area, each from north-west
+  var areaY = new Map();
+  items.forEach(function (it) {
+    if (!areaY.has(it.area) || it.y < areaY.get(it.area)) areaY.set(it.area, it.y);
+  });
+  return items.sort(function (a, b) {
+    return areaY.get(a.area) - areaY.get(b.area) || (a.area < b.area ? -1 : a.area > b.area ? 1 : 0) || a.y - b.y || a.x - b.x;
+  });
+}
+function NameRuleModal() {
+  useStore();
+  var p = App.project;
+  var _React$useState3 = React.useState(function () {
+      return Object.assign({}, NAME_RULE_DEFAULT, p && p.world && p.world.nameRule || {});
+    }),
+    _React$useState4 = _slicedToArray(_React$useState3, 2),
+    rule = _React$useState4[0],
+    setRule = _React$useState4[1];
+  var _React$useState5 = React.useState(1),
+    _React$useState6 = _slicedToArray(_React$useState5, 2),
+    seed = _React$useState6[0],
+    setSeed = _React$useState6[1];
+  var _React$useState7 = React.useState({}),
+    _React$useState8 = _slicedToArray(_React$useState7, 2),
+    fixed = _React$useState8[0],
+    setFixed = _React$useState8[1]; // id -> a name picked again for one province
+  var ids = App.ui.nameIds || [];
+  var lang = App.ui.lang === "ru" ? "ru" : "en";
+  var active = !!(p && World.active() && window.NameGen);
+  var recs = active ? ids.filter(function (id) {
+    return App.basemap.byId[id];
+  }).map(function (id) {
+    return {
+      id: id,
+      r: p.regions[id] || {},
+      f: App.basemap.byId[id]
+    };
+  }) : [];
+  var manual = recs.filter(function (x) {
+    return x.r.name && !x.r.nameAuto;
+  });
+  var auto = recs.filter(function (x) {
+    return x.r.name && x.r.nameAuto;
+  });
+  var targets = recs.filter(function (x) {
+    return !x.r.name || (x.r.nameAuto ? rule.replaceAuto : rule.replaceManual);
+  });
+  var targetKey = targets.map(function (x) {
+    return x.id;
+  }).join(",");
+  var items = React.useMemo(function () {
+    return active ? nameItems(targets.map(function (x) {
+      return x.id;
+    })) : [];
+  }, [active, targetKey, App.basemap]);
+  // names already on the map stay unique
+  var taken = React.useMemo(function () {
+    if (!active) return [];
+    var tset = new Set(targets.map(function (x) {
+      return x.id;
+    }));
+    var out = [];
+    Object.keys(p.regions).forEach(function (id) {
+      var r = p.regions[id];
+      if (r && r.name && !tset.has(id)) out.push(r.name);
+    });
+    Object.values(p.states).forEach(function (st) {
+      if (st.name) out.push(st.name);
+    });
+    return out;
+  }, [active, targetKey, App.version]);
+  var ruleKey = JSON.stringify([rule.starts, rule.samples, rule.endings, rule.length, rule.geography]);
+  var names = React.useMemo(function () {
+    return active ? NameGen.nameAll(rule, items, taken, {
+      seed: seed,
+      lang: lang
+    }) : {};
+  }, [active, ruleKey, items, taken, seed, lang]);
+  if (!active) return null;
+  var close = function close() {
+    return Actions.ui({
+      modal: null
+    });
+  };
+  var set = function set(patch) {
+    setRule(Object.assign({}, rule, patch));
+    setFixed({});
+  };
+  var nameOf = function nameOf(id) {
+    return fixed[id] || names[id];
+  };
+  var reroll = function reroll(id) {
+    var it = items.find(function (x) {
+      return x.id === id;
+    });
+    if (!it) return;
+    var others = taken.concat(items.map(function (x) {
+      return nameOf(x.id);
+    }).filter(Boolean));
+    var nm = NameGen.nameOne(rule, it, others, {
+      seed: NameGen.hash(id + ":" + seed + ":" + Object.keys(fixed).length + ":" + Date.now()),
+      lang: lang
+    });
+    if (nm) setFixed(Object.assign({}, fixed, _defineProperty({}, id, nm)));
+  };
+  var apply = function apply() {
+    var out = {};
+    targets.forEach(function (x) {
+      var nm = nameOf(x.id);
+      if (nm) out[x.id] = nm;
+    });
+    Actions.setRegionNames(out, {
+      auto: true,
+      rule: Object.assign({}, rule)
+    });
+    Actions.toast(t("names.done").replace("{n}", Object.keys(out).length));
+    close();
+  };
+  var oldName = function oldName(x) {
+    return x.r.name || x.f && x.f.name || x.id;
+  };
+  var kept = recs.length - targets.length;
+  return /*#__PURE__*/React.createElement("div", {
+    className: "modal-backdrop",
+    onClick: close
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "modal names-modal",
+    onClick: function onClick(e) {
+      return e.stopPropagation();
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "modal-head"
+  }, /*#__PURE__*/React.createElement("span", {
+    className: "modal-title"
+  }, t("names.title")), /*#__PURE__*/React.createElement("button", {
+    className: "btn icon",
+    onClick: close
+  }, "\u2715")), /*#__PURE__*/React.createElement("div", {
+    className: "modal-body"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "muted"
+  }, t("names.intro").replace("{n}", recs.length)), /*#__PURE__*/React.createElement("label", {
+    className: "wp-field"
+  }, /*#__PURE__*/React.createElement("span", null, t("names.starts")), /*#__PURE__*/React.createElement("input", {
+    className: "input",
+    value: rule.starts,
+    placeholder: t("names.startsPh"),
+    onChange: function onChange(e) {
+      return set({
+        starts: e.target.value
+      });
+    }
+  })), /*#__PURE__*/React.createElement("label", {
+    className: "wp-field"
+  }, /*#__PURE__*/React.createElement("span", null, t("names.samples")), /*#__PURE__*/React.createElement("input", {
+    className: "input",
+    value: rule.samples,
+    placeholder: t("names.samplesPh"),
+    onChange: function onChange(e) {
+      return set({
+        samples: e.target.value
+      });
+    }
+  }), /*#__PURE__*/React.createElement("span", {
+    className: "names-hint"
+  }, t("names.samplesHint"))), /*#__PURE__*/React.createElement("label", {
+    className: "wp-field"
+  }, /*#__PURE__*/React.createElement("span", null, t("names.endings")), /*#__PURE__*/React.createElement("input", {
+    className: "input",
+    value: rule.endings,
+    placeholder: t("names.endingsPh"),
+    onChange: function onChange(e) {
+      return set({
+        endings: e.target.value
+      });
+    }
+  })), /*#__PURE__*/React.createElement("div", {
+    className: "wp-field"
+  }, /*#__PURE__*/React.createElement("span", null, t("names.length")), /*#__PURE__*/React.createElement("div", {
+    className: "chip-row"
+  }, ["short", "medium", "long"].map(function (k) {
+    return /*#__PURE__*/React.createElement("button", {
+      key: k,
+      className: "chip" + (rule.length === k ? " on" : ""),
+      onClick: function onClick() {
+        return set({
+          length: k
+        });
+      }
+    }, t("names.length." + k));
+  }))), /*#__PURE__*/React.createElement("label", {
+    className: "check-row"
+  }, /*#__PURE__*/React.createElement("input", {
+    type: "checkbox",
+    checked: !!rule.geography,
+    onChange: function onChange(e) {
+      return set({
+        geography: e.target.checked
+      });
+    }
+  }), /*#__PURE__*/React.createElement("span", null, t("names.geography"), /*#__PURE__*/React.createElement("span", {
+    className: "names-hint"
+  }, " \u2014 ", t("names.geographyHint")))), auto.length > 0 && /*#__PURE__*/React.createElement("label", {
+    className: "check-row"
+  }, /*#__PURE__*/React.createElement("input", {
+    type: "checkbox",
+    checked: !!rule.replaceAuto,
+    onChange: function onChange(e) {
+      return set({
+        replaceAuto: e.target.checked
+      });
+    }
+  }), t("names.replaceAuto").replace("{n}", auto.length)), manual.length > 0 && /*#__PURE__*/React.createElement("label", {
+    className: "check-row"
+  }, /*#__PURE__*/React.createElement("input", {
+    type: "checkbox",
+    checked: !!rule.replaceManual,
+    onChange: function onChange(e) {
+      return set({
+        replaceManual: e.target.checked
+      });
+    }
+  }), /*#__PURE__*/React.createElement("span", {
+    className: rule.replaceManual ? "names-danger" : ""
+  }, t("names.replaceManual").replace("{n}", manual.length))), /*#__PURE__*/React.createElement("div", {
+    className: "names-summary"
+  }, t("names.summary").replace("{n}", targets.length), kept ? " " + t("names.kept").replace("{n}", kept) : ""), targets.length > 0 && /*#__PURE__*/React.createElement("div", {
+    className: "names-list"
+  }, items.map(function (it) {
+    var x = targets.find(function (y) {
+      return y.id === it.id;
+    });
+    return /*#__PURE__*/React.createElement("div", {
+      key: it.id,
+      className: "names-row"
+    }, /*#__PURE__*/React.createElement("span", {
+      className: "names-old"
+    }, oldName(x)), /*#__PURE__*/React.createElement("span", {
+      className: "names-arrow"
+    }, "\u2192"), /*#__PURE__*/React.createElement("b", {
+      className: "names-new"
+    }, nameOf(it.id) || "—"), /*#__PURE__*/React.createElement("button", {
+      className: "btn icon",
+      title: t("names.reroll"),
+      onClick: function onClick() {
+        return reroll(it.id);
+      }
+    }, "\u21BB"));
+  }))), /*#__PURE__*/React.createElement("div", {
+    className: "modal-foot"
+  }, /*#__PURE__*/React.createElement("button", {
+    className: "btn outline",
+    disabled: !targets.length,
+    onClick: function onClick() {
+      setSeed(seed + 1);
+      setFixed({});
+    }
+  }, t("names.another")), /*#__PURE__*/React.createElement("button", {
+    className: "btn outline",
+    onClick: close
+  }, t("modal.cancel")), /*#__PURE__*/React.createElement("button", {
+    className: "btn primary",
+    disabled: !targets.length,
+    onClick: apply
+  }, t("names.apply")))));
+}
+
 // where a province of a custom world lies, in one line (region panel)
 function ProvinceGeo(_ref3) {
   var id = _ref3.id;
@@ -896,10 +1203,10 @@ function RiverParam(_ref5) {
 function RiverCard(_ref6) {
   var index = _ref6.index;
   useStore();
-  var _React$useState3 = React.useState(false),
-    _React$useState4 = _slicedToArray(_React$useState3, 2),
-    help = _React$useState4[0],
-    setHelp = _React$useState4[1];
+  var _React$useState9 = React.useState(false),
+    _React$useState0 = _slicedToArray(_React$useState9, 2),
+    help = _React$useState0[0],
+    setHelp = _React$useState0[1];
   var p = App.project;
   var w = p.world;
   var _worldAnalysis = worldAnalysis(),
@@ -1155,10 +1462,10 @@ function WorldCard() {
 }
 function AtlasModal() {
   useStore();
-  var _React$useState5 = React.useState(true),
-    _React$useState6 = _slicedToArray(_React$useState5, 2),
-    withProvinces = _React$useState6[0],
-    setWithProvinces = _React$useState6[1];
+  var _React$useState1 = React.useState(true),
+    _React$useState10 = _slicedToArray(_React$useState1, 2),
+    withProvinces = _React$useState10[0],
+    setWithProvinces = _React$useState10[1];
   // the atlas describes the climate too: make sure the analysis matches the map
   React.useEffect(function () {
     World.ensureAnalysis()["catch"](function (e) {
@@ -1280,6 +1587,7 @@ Object.assign(window, {
   GeoSheet: GeoSheet,
   GeoBar: GeoBar,
   CutBar: CutBar,
-  ProvinceGeo: ProvinceGeo
+  ProvinceGeo: ProvinceGeo,
+  NameRuleModal: NameRuleModal
 });
 //# sourceMappingURL=world.js.map

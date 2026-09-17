@@ -91,6 +91,7 @@ function AppRoot() {
       {App.ui.modal === "library" && <LibraryModal></LibraryModal>}
       {App.ui.modal === "atlas" && window.AtlasModal && <AtlasModal></AtlasModal>}
       {App.ui.modal === "geo" && window.GeoSheet && <GeoSheet></GeoSheet>}
+      {App.ui.modal === "names" && window.NameRuleModal && <NameRuleModal></NameRuleModal>}
       <PwaBanner></PwaBanner>
       <Toast></Toast>
     </div>

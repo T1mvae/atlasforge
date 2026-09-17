@@ -952,7 +952,7 @@ function RegionTab() {
         </React.Fragment>
       ) : (
         <React.Fragment>
-          <TextField label={t("f.name")} value={r.name || ""} placeholder={f ? f.name : ""} onChange={(v) => setAll({ name: v || null })}></TextField>
+          <TextField label={t("f.name")} value={r.name || ""} placeholder={f ? f.name : ""} onChange={(v) => setAll({ name: v || null, nameAuto: null })}></TextField>
           {f && <div className="muted">{t("region.baseName")}: {f.name}{f.country ? " · " + f.country : ""}</div>}
           {f && window.ProvinceGeo && window.World && World.active() && <ProvinceGeo id={rid}></ProvinceGeo>}
           {f && (f.histArea || f.cultArea) && (
@@ -963,6 +963,9 @@ function RegionTab() {
             </div>
           )}
         </React.Fragment>
+      )}
+      {window.NameRuleModal && window.World && World.active() && (
+        <button className="btn outline" onClick={() => Actions.ui({ modal: "names", nameIds: sel.slice() })}>{t("names.button")}</button>
       )}
       <Field label={t("f.owner")}>
         <select className="select" value={commonOwner || ""} onChange={(e) => Actions.assign(sel, e.target.value || null)}>

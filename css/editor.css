@@ -697,6 +697,19 @@ button, .chip, .state-row, .menu-item { touch-action: manipulation; }
 .geo-bar-actions .geo-hold { margin-right: auto; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; touch-action: none; }
 .geo-bar-actions .geo-hold.on { background: var(--accent); color: #fff; border-color: var(--accent); }
 .geo-bar-busy { display: flex; align-items: center; gap: 12px; font-weight: 600; }
+/* names by a rule */
+.names-modal { width: min(560px, calc(100vw - 24px)); }
+.names-modal .modal-body { display: flex; flex-direction: column; gap: 10px; }
+.names-modal .input { width: 100%; }
+.names-hint { color: var(--text-dim); font-size: 12px; line-height: 1.35; font-weight: normal; }
+.names-danger { color: var(--danger); }
+.names-summary { font-size: 13px; font-weight: 600; }
+.names-list { display: flex; flex-direction: column; border: 1px solid var(--border); border-radius: 10px; max-height: 260px; overflow-y: auto; }
+.names-row { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr) auto; align-items: center; gap: 8px; padding: 4px 6px 4px 10px; font-size: 13px; }
+.names-row + .names-row { border-top: 1px solid var(--border); }
+.names-old { color: var(--text-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.names-arrow { color: var(--text-dim); }
+.names-new { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* province cut preview: new borders over dimmed old ones, what they follow */
 .world-why { image-rendering: pixelated; }
 .map-stage.cut-previewing #regions, .map-stage.cut-previewing .borders { opacity: 0.25; }

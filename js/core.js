@@ -610,6 +610,24 @@
     }, opts);
   };
 
+  // several provinces, each its own name, in one undo step. opts.auto marks names given by
+  // a rule, so a later rule may replace them while names typed by hand stay; opts.rule is
+  // remembered for the next time (custom worlds)
+  Actions.setRegionNames = function (names, opts) {
+    opts = opts || {};
+    Actions.mut((p) => {
+      Object.keys(names).forEach((rid) => {
+        const r0 = p.regions[rid];
+        if (r0 && r0.group && p.groups && p.groups[r0.group]) return;
+        const r = regionEntry(p, rid);
+        r.name = names[rid] || null;
+        if (opts.auto && r.name) r.nameAuto = 1; else delete r.nameAuto;
+        cleanupRegion(p, rid);
+      });
+      if (opts.rule && p.world) p.world.nameRule = opts.rule;
+    }, { terr: true });
+  };
+
   Actions.selectByMetadata = function (field, value) {
     const p = App.project;
     const rids = [];

@@ -444,6 +444,154 @@ function worldAnalysis() {
   return wa;
 }
 
+// ---------- names by a rule for the selected provinces ----------
+const NAME_RULE_DEFAULT = { starts: "", samples: "", endings: "", length: "medium", geography: true, replaceAuto: true, replaceManual: false };
+// what naming needs to know about a province: its area (landmass + drainage basin) and the
+// kind of place it is
+function nameItems(ids) {
+  const wa = worldAnalysis();
+  const idx = new Map(wa.feats.map((f, i) => [String(f.id), i]));
+  const items = ids.map((id) => {
+    const i = idx.get(String(id));
+    const c = i != null ? wa.an.cells[i] : null;
+    const props = (i != null && wa.feats[i].properties) || {};
+    let land = -1, bv = 0;
+    if (c) c.lands.forEach((v, k) => { if (v > bv) { bv = v; land = k; } });
+    const island = land >= 0 && wa.an.lands[land] && wa.an.lands[land].area < wa.names.totalLand * 0.08;
+    const terr = props.terrain;
+    const kind = terr === "mountain" ? "mountain" : island ? "island" : props.coastal ? "coast" : c && c.rivers.size ? "river"
+      : terr === "forest" || terr === "taiga" || terr === "jungle" ? "forest" : terr === "marsh" ? "marsh"
+      : terr === "desert" ? "desert" : terr === "hills" ? "hills" : null;
+    return { id, area: land + ":" + (props.basin != null ? props.basin : ""), kind,
+      x: c && c.land ? c.sx / c.land : 0, y: c && c.land ? c.sy / c.land : 0 };
+  });
+  // area by area, each from north-west
+  const areaY = new Map();
+  items.forEach((it) => { if (!areaY.has(it.area) || it.y < areaY.get(it.area)) areaY.set(it.area, it.y); });
+  return items.sort((a, b) => (areaY.get(a.area) - areaY.get(b.area)) || (a.area < b.area ? -1 : a.area > b.area ? 1 : 0) || (a.y - b.y) || (a.x - b.x));
+}
+
+function NameRuleModal() {
+  useStore();
+  const p = App.project;
+  const [rule, setRule] = React.useState(() => Object.assign({}, NAME_RULE_DEFAULT, (p && p.world && p.world.nameRule) || {}));
+  const [seed, setSeed] = React.useState(1);
+  const [fixed, setFixed] = React.useState({}); // id -> a name picked again for one province
+  const ids = App.ui.nameIds || [];
+  const lang = App.ui.lang === "ru" ? "ru" : "en";
+  const active = !!(p && World.active() && window.NameGen);
+  const recs = active ? ids.filter((id) => App.basemap.byId[id]).map((id) => ({ id, r: p.regions[id] || {}, f: App.basemap.byId[id] })) : [];
+  const manual = recs.filter((x) => x.r.name && !x.r.nameAuto);
+  const auto = recs.filter((x) => x.r.name && x.r.nameAuto);
+  const targets = recs.filter((x) => !x.r.name || (x.r.nameAuto ? rule.replaceAuto : rule.replaceManual));
+  const targetKey = targets.map((x) => x.id).join(",");
+  const items = React.useMemo(() => (active ? nameItems(targets.map((x) => x.id)) : []), [active, targetKey, App.basemap]);
+  // names already on the map stay unique
+  const taken = React.useMemo(() => {
+    if (!active) return [];
+    const tset = new Set(targets.map((x) => x.id));
+    const out = [];
+    Object.keys(p.regions).forEach((id) => { const r = p.regions[id]; if (r && r.name && !tset.has(id)) out.push(r.name); });
+    Object.values(p.states).forEach((st) => { if (st.name) out.push(st.name); });
+    return out;
+  }, [active, targetKey, App.version]);
+  const ruleKey = JSON.stringify([rule.starts, rule.samples, rule.endings, rule.length, rule.geography]);
+  const names = React.useMemo(() => (active ? NameGen.nameAll(rule, items, taken, { seed, lang }) : {}), [active, ruleKey, items, taken, seed, lang]);
+  if (!active) return null;
+  const close = () => Actions.ui({ modal: null });
+  const set = (patch) => { setRule(Object.assign({}, rule, patch)); setFixed({}); };
+  const nameOf = (id) => fixed[id] || names[id];
+  const reroll = (id) => {
+    const it = items.find((x) => x.id === id);
+    if (!it) return;
+    const others = taken.concat(items.map((x) => nameOf(x.id)).filter(Boolean));
+    const nm = NameGen.nameOne(rule, it, others, { seed: NameGen.hash(id + ":" + seed + ":" + Object.keys(fixed).length + ":" + Date.now()), lang });
+    if (nm) setFixed(Object.assign({}, fixed, { [id]: nm }));
+  };
+  const apply = () => {
+    const out = {};
+    targets.forEach((x) => { const nm = nameOf(x.id); if (nm) out[x.id] = nm; });
+    Actions.setRegionNames(out, { auto: true, rule: Object.assign({}, rule) });
+    Actions.toast(t("names.done").replace("{n}", Object.keys(out).length));
+    close();
+  };
+  const oldName = (x) => x.r.name || (x.f && x.f.name) || x.id;
+  const kept = recs.length - targets.length;
+  return (
+    <div className="modal-backdrop" onClick={close}>
+      <div className="modal names-modal" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-head">
+          <span className="modal-title">{t("names.title")}</span>
+          <button className="btn icon" onClick={close}>✕</button>
+        </div>
+        <div className="modal-body">
+          <div className="muted">{t("names.intro").replace("{n}", recs.length)}</div>
+          <label className="wp-field">
+            <span>{t("names.starts")}</span>
+            <input className="input" value={rule.starts} placeholder={t("names.startsPh")} onChange={(e) => set({ starts: e.target.value })}></input>
+          </label>
+          <label className="wp-field">
+            <span>{t("names.samples")}</span>
+            <input className="input" value={rule.samples} placeholder={t("names.samplesPh")} onChange={(e) => set({ samples: e.target.value })}></input>
+            <span className="names-hint">{t("names.samplesHint")}</span>
+          </label>
+          <label className="wp-field">
+            <span>{t("names.endings")}</span>
+            <input className="input" value={rule.endings} placeholder={t("names.endingsPh")} onChange={(e) => set({ endings: e.target.value })}></input>
+          </label>
+          <div className="wp-field">
+            <span>{t("names.length")}</span>
+            <div className="chip-row">
+              {["short", "medium", "long"].map((k) => (
+                <button key={k} className={"chip" + (rule.length === k ? " on" : "")} onClick={() => set({ length: k })}>{t("names.length." + k)}</button>
+              ))}
+            </div>
+          </div>
+          <label className="check-row">
+            <input type="checkbox" checked={!!rule.geography} onChange={(e) => set({ geography: e.target.checked })}></input>
+            <span>{t("names.geography")}<span className="names-hint"> — {t("names.geographyHint")}</span></span>
+          </label>
+          {auto.length > 0 && (
+            <label className="check-row">
+              <input type="checkbox" checked={!!rule.replaceAuto} onChange={(e) => set({ replaceAuto: e.target.checked })}></input>
+              {t("names.replaceAuto").replace("{n}", auto.length)}
+            </label>
+          )}
+          {manual.length > 0 && (
+            <label className="check-row">
+              <input type="checkbox" checked={!!rule.replaceManual} onChange={(e) => set({ replaceManual: e.target.checked })}></input>
+              <span className={rule.replaceManual ? "names-danger" : ""}>{t("names.replaceManual").replace("{n}", manual.length)}</span>
+            </label>
+          )}
+          <div className="names-summary">
+            {t("names.summary").replace("{n}", targets.length)}{kept ? " " + t("names.kept").replace("{n}", kept) : ""}
+          </div>
+          {targets.length > 0 && (
+            <div className="names-list">
+              {items.map((it) => {
+                const x = targets.find((y) => y.id === it.id);
+                return (
+                  <div key={it.id} className="names-row">
+                    <span className="names-old">{oldName(x)}</span>
+                    <span className="names-arrow">→</span>
+                    <b className="names-new">{nameOf(it.id) || "—"}</b>
+                    <button className="btn icon" title={t("names.reroll")} onClick={() => reroll(it.id)}>↻</button>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+        <div className="modal-foot">
+          <button className="btn outline" disabled={!targets.length} onClick={() => { setSeed(seed + 1); setFixed({}); }}>{t("names.another")}</button>
+          <button className="btn outline" onClick={close}>{t("modal.cancel")}</button>
+          <button className="btn primary" disabled={!targets.length} onClick={apply}>{t("names.apply")}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // where a province of a custom world lies, in one line (region panel)
 function ProvinceGeo({ id }) {
   if (!World.active() || !App.basemap.raw) return null;
@@ -632,4 +780,4 @@ function AtlasModal() {
   );
 }
 
-Object.assign(window, { WorldPalette, AtlasModal, WorldSizeRail, WorldCard, worldAnalysis, CardRow, fmtNum, GeoSheet, GeoBar, CutBar, ProvinceGeo });
+Object.assign(window, { WorldPalette, AtlasModal, WorldSizeRail, WorldCard, worldAnalysis, CardRow, fmtNum, GeoSheet, GeoBar, CutBar, ProvinceGeo, NameRuleModal });

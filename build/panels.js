@@ -2494,7 +2494,8 @@ function RegionTab() {
     placeholder: f ? f.name : "",
     onChange: function onChange(v) {
       return setAll({
-        name: v || null
+        name: v || null,
+        nameAuto: null
       });
     }
   }), f && /*#__PURE__*/React.createElement("div", {
@@ -2503,7 +2504,15 @@ function RegionTab() {
     id: rid
   }), f && (f.histArea || f.cultArea) && /*#__PURE__*/React.createElement("div", {
     className: "muted"
-  }, f.histArea ? t("region.histArea") + ": " + f.histArea : "", f.histArea && f.cultArea ? " · " : "", f.cultArea ? t("region.cultArea") + ": " + f.cultArea : "")), /*#__PURE__*/React.createElement(Field, {
+  }, f.histArea ? t("region.histArea") + ": " + f.histArea : "", f.histArea && f.cultArea ? " · " : "", f.cultArea ? t("region.cultArea") + ": " + f.cultArea : "")), window.NameRuleModal && window.World && World.active() && /*#__PURE__*/React.createElement("button", {
+    className: "btn outline",
+    onClick: function onClick() {
+      return Actions.ui({
+        modal: "names",
+        nameIds: sel.slice()
+      });
+    }
+  }, t("names.button")), /*#__PURE__*/React.createElement(Field, {
     label: t("f.owner")
   }, /*#__PURE__*/React.createElement("select", {
     className: "select",

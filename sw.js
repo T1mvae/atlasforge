@@ -7,7 +7,7 @@
 //          template is opened (or via "download for offline"), then served cache-first.
 // A new version installs in the background and waits; the page asks the user to reload
 // (message "skipWaiting") so an edit in progress is never interrupted.
-const VERSION = "94877b8e34";
+const VERSION = "e7af7f5314";
 const SHELL = "af-shell-" + VERSION;
 const DATA = "af-data-v1";
 const PRECACHE = [
@@ -17,7 +17,7 @@ const PRECACHE = [
   "build/map.js?v=69f36aa1f6",
   "build/objects.js?v=b54b70c214",
   "build/panels.js?v=f5a865a927",
-  "build/world.js?v=9abdc5c1d3",
+  "build/world.js?v=7ca647a643",
   "css/editor.css?v=741bd16019",
   "icons/apple-touch-icon.png",
   "icons/apple-touch-icon.png?v=953bc6d2b1",
@@ -25,12 +25,12 @@ const PRECACHE = [
   "icons/icon-192.png?v=3be2bf771a",
   "icons/icon-512.png",
   "icons/icon-maskable-512.png",
-  "js/atlas.js?v=cc52d09ade",
+  "js/atlas.js?v=cfd9003fa6",
   "js/core.js?v=36a0d3c188",
   "js/edit.js?v=bfb1feadc3",
   "js/export.js?v=a19bfd7ccc",
   "js/geo.js?v=a68a71e50b",
-  "js/i18n.js?v=295420d344",
+  "js/i18n.js?v=7eef78d42a",
   "js/names.js?v=bba4c0ceee",
   "js/objects.js?v=22d08189ad",
   "js/pwa.js?v=9f35de276b",

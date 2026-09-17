@@ -1462,10 +1462,7 @@ function WorldCard() {
 }
 function AtlasModal() {
   useStore();
-  var _React$useState1 = React.useState(true),
-    _React$useState10 = _slicedToArray(_React$useState1, 2),
-    withProvinces = _React$useState10[0],
-    setWithProvinces = _React$useState10[1];
+  var detail = ["overview", "areas", "provinces"].indexOf(App.ui.atlasDetail) >= 0 ? App.ui.atlasDetail : "areas";
   // the atlas describes the climate too: make sure the analysis matches the map
   React.useEffect(function () {
     World.ensureAnalysis()["catch"](function (e) {
@@ -1476,13 +1473,13 @@ function AtlasModal() {
   var text = React.useMemo(function () {
     try {
       return Atlas.build({
-        provinces: withProvinces
+        detail: detail
       });
     } catch (e) {
       console.error(e);
       return String(e);
     }
-  }, [withProvinces, App.ui.lang, hyRev]);
+  }, [detail, App.ui.lang, hyRev]);
   var areaRef = React.useRef(null);
   var copy = /*#__PURE__*/function () {
     var _ref7 = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee() {
@@ -1548,15 +1545,23 @@ function AtlasModal() {
     className: "modal-body"
   }, /*#__PURE__*/React.createElement("div", {
     className: "muted"
-  }, t("world.atlasDesc")), /*#__PURE__*/React.createElement("label", {
-    className: "check-row"
-  }, /*#__PURE__*/React.createElement("input", {
-    type: "checkbox",
-    checked: withProvinces,
-    onChange: function onChange(e) {
-      return setWithProvinces(e.target.checked);
-    }
-  }), t("world.atlasProvinces")), /*#__PURE__*/React.createElement("textarea", {
+  }, t("world.atlasDesc")), /*#__PURE__*/React.createElement("div", {
+    className: "wp-field"
+  }, /*#__PURE__*/React.createElement("span", null, t("world.atlasDetail")), /*#__PURE__*/React.createElement("div", {
+    className: "chip-row"
+  }, ["overview", "areas", "provinces"].map(function (k) {
+    return /*#__PURE__*/React.createElement("button", {
+      key: k,
+      className: "chip" + (detail === k ? " on" : ""),
+      onClick: function onClick() {
+        return Actions.setPref({
+          atlasDetail: k
+        });
+      }
+    }, t("world.atlasDetail." + k));
+  })), /*#__PURE__*/React.createElement("span", {
+    className: "names-hint"
+  }, t("world.atlasDetailHint." + detail))), /*#__PURE__*/React.createElement("textarea", {
     ref: areaRef,
     className: "atlas-text",
     readOnly: true,

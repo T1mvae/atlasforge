@@ -738,13 +738,13 @@ function WorldCard() {
 
 function AtlasModal() {
   useStore();
-  const [withProvinces, setWithProvinces] = React.useState(true);
+  const detail = ["overview", "areas", "provinces"].indexOf(App.ui.atlasDetail) >= 0 ? App.ui.atlasDetail : "areas";
   // the atlas describes the climate too: make sure the analysis matches the map
   React.useEffect(() => { World.ensureAnalysis().catch((e) => console.warn(e)); }, []);
   const hyRev = World.hydroFresh() ? World.hydro.rev : 0;
   const text = React.useMemo(() => {
-    try { return Atlas.build({ provinces: withProvinces }); } catch (e) { console.error(e); return String(e); }
-  }, [withProvinces, App.ui.lang, hyRev]);
+    try { return Atlas.build({ detail }); } catch (e) { console.error(e); return String(e); }
+  }, [detail, App.ui.lang, hyRev]);
   const areaRef = React.useRef(null);
   const copy = async () => {
     try { await navigator.clipboard.writeText(text); Actions.toast(t("world.copied")); }
@@ -764,10 +764,15 @@ function AtlasModal() {
         </div>
         <div className="modal-body">
           <div className="muted">{t("world.atlasDesc")}</div>
-          <label className="check-row">
-            <input type="checkbox" checked={withProvinces} onChange={(e) => setWithProvinces(e.target.checked)}></input>
-            {t("world.atlasProvinces")}
-          </label>
+          <div className="wp-field">
+            <span>{t("world.atlasDetail")}</span>
+            <div className="chip-row">
+              {["overview", "areas", "provinces"].map((k) => (
+                <button key={k} className={"chip" + (detail === k ? " on" : "")} onClick={() => Actions.setPref({ atlasDetail: k })}>{t("world.atlasDetail." + k)}</button>
+              ))}
+            </div>
+            <span className="names-hint">{t("world.atlasDetailHint." + detail)}</span>
+          </div>
           <textarea ref={areaRef} className="atlas-text" readOnly value={text}></textarea>
           <div className="muted" style={{ fontSize: 11 }}>{t("world.atlasSize").replace("{c}", text.length.toLocaleString()).replace("{t}", tokens.toLocaleString())}</div>
         </div>

@@ -397,7 +397,203 @@
     return parts.join(" · ");
   };
 
+  // ---------- areas: neighbouring provinces of one owner with shared geography ----------
+  // Greedy grouping over shared borders, strongest similarity first (same landmass only;
+  // same landform, drainage basin, coast and rivers pull together), about eight provinces
+  // an area; crumbs join the neighbour they share most border with, scattered islets of
+  // one owner become one area. Each area gets a kind (coast, mountains, river valley,
+  // islands, or its main terrain), the feature behind it and a descriptive name — or the
+  // text of a map label lying inside it.
+  const AREA_NOUN = {
+    ru: { coast: ["побережье", "n"], mountain: ["горы", "p"], hills: ["холмы", "p"], valley: ["долина", "f"], islands: ["острова", "p"],
+      island: ["остров", "m"], plains: ["равнины", "p"], forest: ["леса", "p"], desert: ["пустыни", "p"], marsh: ["болота", "p"],
+      tundra: ["тундра", "f"], jungle: ["джунгли", "p"], taiga: ["тайга", "f"], savanna: ["саванна", "f"], glacier: ["ледники", "p"] },
+    en: { coast: "coast", mountain: "mountains", hills: "hills", valley: "valley", islands: "islands", island: "island", plains: "plains",
+      forest: "forests", desert: "deserts", marsh: "marshes", tundra: "tundra", jungle: "jungle", taiga: "taiga", savanna: "savanna", glacier: "glaciers" }
+  };
+  const AREA_DIR = {
+    ru: {
+      m: ["Восточный", "Северо-восточный", "Северный", "Северо-западный", "Западный", "Юго-западный", "Южный", "Юго-восточный", "Центральный"],
+      f: ["Восточная", "Северо-восточная", "Северная", "Северо-западная", "Западная", "Юго-западная", "Южная", "Юго-восточная", "Центральная"],
+      n: ["Восточное", "Северо-восточное", "Северное", "Северо-западное", "Западное", "Юго-западное", "Южное", "Юго-восточное", "Центральное"],
+      p: ["Восточные", "Северо-восточные", "Северные", "Северо-западные", "Западные", "Юго-западные", "Южные", "Юго-восточные", "Центральные"]
+    },
+    en: ["Eastern", "North-eastern", "Northern", "North-western", "Western", "South-western", "Southern", "South-eastern", "Central"]
+  };
+  Atlas.areas = function (an, names, feats, ownerOf, lang, provNameOf) {
+    const ru = lang === "ru";
+    const p = App.project, W = GW(), H = GH();
+    provNameOf = provNameOf || ((i) => (feats[i].properties && feats[i].properties.name) || String(feats[i].id));
+    // "река Сольва", but not "река Река 3"
+    const riverWord = (label) => (/^(река|river)(\s|$)/i.test(label) ? label : (ru ? "река " : "river ") + label);
+    const cells = an.cells;
+    const top = (m, ok) => { let best = -1, bv = 0; m.forEach((v, k) => { if (v > bv && (!ok || ok(k))) { bv = v; best = k; } }); return best; };
+    const info = feats.map((f, i) => {
+      const c = cells[i];
+      if (!c.land) return null;
+      const props = f.properties || {};
+      const mount = (c.bandH[3] + c.bandH[4]) / c.land >= 0.4;
+      const water = top(c.waters, (k) => names.waterLabel[k]);
+      const river = [...c.rivers].map((k) => an.rivers[k]).filter((ri) => ri && (ri.rv.name || ri.rv.major || ri.len >= 25))
+        .sort((a, b) => (b.rv.upLen || 0) - (a.rv.upLen || 0))[0];
+      return { i, land: top(c.lands), mount, coast: water >= 0, water, river: river ? river.k : -1, basin: props.basin,
+        x: c.sx / c.land, y: c.sy / c.land, area: c.land };
+    });
+    const byOwner = new Map();
+    info.forEach((d) => { if (!d) return; const o = ownerOf(d.i) || ""; if (!byOwner.has(o)) byOwner.set(o, []); byOwner.get(o).push(d); });
+    // labels on land that name nothing else can name an area
+    const used = new Set([...Object.values(names.landLabel), ...Object.values(names.rangeLabel), ...Object.values(names.waterLabel),
+      ...Object.values(p.states).map((st) => st.name)].map((x) => String(x).trim().toLowerCase()));
+    const labelAt = new Map();
+    (p.labels || []).forEach((l) => {
+      if (!l.text || used.has(l.text.trim().toLowerCase())) return;
+      const g = window.World.mapToGrid([l.x, l.y]);
+      const x = Math.floor(g[0]), y = Math.floor(g[1]);
+      if (x < 0 || y < 0 || x >= W || y >= H) return;
+      const ci = an.cellOf[y * W + x];
+      if (ci >= 0 && !labelAt.has(ci)) labelAt.set(ci, l.text.trim());
+    });
+    const out = [];
+    byOwner.forEach((list, owner) => {
+      const n = list.length;
+      const pos = new Map(list.map((d, k) => [d.i, k]));
+      const parent = list.map((d, k) => k), size = list.map(() => 1);
+      const find = (k) => { while (parent[k] !== k) { parent[k] = parent[parent[k]]; k = parent[k]; } return k; };
+      const edges = [];
+      list.forEach((d, k) => cells[d.i].nb.forEach((len, j) => {
+        const k2 = pos.get(j);
+        if (k2 == null || k2 <= k) return;
+        const e = list[k2];
+        if (e.land !== d.land) return;
+        const wgt = len * (d.mount === e.mount ? 1.6 : 0.35) * (d.basin != null && d.basin === e.basin ? 2 : 1) *
+          (d.coast === e.coast ? 1.3 : 1) * (d.river >= 0 && d.river === e.river ? 1.4 : 1);
+        edges.push([wgt, k, k2, len]);
+      }));
+      edges.sort((a, b) => b[0] - a[0] || a[1] - b[1] || a[2] - b[2]);
+      const cap = n <= 6 ? n : Math.ceil(n / Math.max(1, Math.round(n / 8)) * 1.4);
+      edges.forEach(([, a, b]) => {
+        const ra = find(a), rb = find(b);
+        if (ra === rb || size[ra] + size[rb] > cap) return;
+        parent[rb] = ra; size[ra] += size[rb];
+      });
+      // crumbs (under three provinces) join the neighbouring area they share most border with
+      for (let round = 0; round < 3; round++) {
+        let moved = 0;
+        const border = new Map();
+        edges.forEach(([, a, b, len]) => {
+          const ra = find(a), rb = find(b);
+          if (ra === rb) return;
+          [[ra, rb], [rb, ra]].forEach(([x, y]) => { if (size[x] < 3) { const m = border.get(x) || new Map(); m.set(y, (m.get(y) || 0) + len); border.set(x, m); } });
+        });
+        border.forEach((m, x) => {
+          if (find(x) !== x || size[x] >= 3) return;
+          const y = find(top(m));
+          if (y === x || y < 0) return;
+          parent[x] = y; size[y] += size[x]; moved++;
+        });
+        if (!moved) break;
+      }
+      const groups = new Map();
+      list.forEach((d, k) => { const r = find(k); if (!groups.has(r)) groups.set(r, []); groups.get(r).push(d); });
+      let areas = [...groups.values()];
+      // scattered islets of one owner: one area
+      const bigLand = new Set(names.lands.filter((c) => c.area >= names.totalLand * 0.08).map((c) => c.id));
+      const isles = areas.filter((g) => g.length <= 2 && !bigLand.has(g[0].land));
+      if (isles.length >= 2) areas = areas.filter((g) => isles.indexOf(g) < 0).concat([[].concat(...isles)]);
+      // centre of the owner's land, and how far its areas lie from it
+      let sx = 0, sy = 0, sa = 0;
+      list.forEach((d) => { sx += d.x * d.area; sy += d.y * d.area; sa += d.area; });
+      const ocx = sx / sa, ocy = sy / sa, radius = Math.sqrt(sa / Math.PI);
+      const ownerLands = new Set(list.map((d) => d.land));
+      const drafts = areas.map((g) => {
+        let ax = 0, ay = 0, aa = 0;
+        g.forEach((d) => { ax += d.x * d.area; ay += d.y * d.area; aa += d.area; });
+        ax /= aa; ay /= aa;
+        const share = (fn) => g.filter(fn).length / g.length;
+        const lands = [...new Set(g.map((d) => d.land))];
+        const inArea = new Set(g.map((d) => d.i));
+        // an island area holds whole islands (a big island cut into areas is described like a mainland)
+        const isleArea = lands.every((L) => L >= 0 && !bigLand.has(L) && an.lands[L] && [...an.lands[L].cells.keys()].every((ci) => inArea.has(ci)));
+        const mostly = (key) => { const m = new Map(); g.forEach((d) => { const v = d[key]; if (v != null && v >= 0) m.set(v, (m.get(v) || 0) + d.area); }); return top(m); };
+        let land = 0;
+        const band = [0, 0, 0, 0, 0], cover = new Map();
+        g.forEach((d) => {
+          const c = cells[d.i];
+          land += c.land;
+          for (let k = 0; k < 5; k++) band[k] += c.bandH[k];
+          c.coverH.forEach((v, k) => cover.set(k, (cover.get(k) || 0) + v * (c.land ? c.bandH[1] / c.land : 0)));
+        });
+        let kind, feature = "";
+        if (isleArea) {
+          kind = lands.length > 1 ? "islands" : "island";
+          feature = lands.map((L) => names.landLabel[L]).filter(Boolean).slice(0, 3).join(", ");
+        } else if ((band[3] + band[4]) / land >= 0.4) {
+          kind = "mountain";
+          const rm = new Map();
+          g.forEach((d) => cells[d.i].ranges.forEach((v, rc) => { if (names.rangeLabel[rc]) rm.set(rc, (rm.get(rc) || 0) + v); }));
+          const rc = top(rm);
+          feature = rc >= 0 ? names.rangeLabel[rc] : "";
+        } else if (share((d) => d.coast) >= 0.6) {
+          kind = "coast";
+          const wc = mostly("water");
+          feature = wc >= 0 ? names.waterLabel[wc] : "";
+        } else if (share((d) => d.river >= 0) >= 0.4 && mostly("river") >= 0) {
+          kind = "valley";
+          feature = riverWord(names.riverLabel[mostly("river")]);
+        } else if ((band[2] + band[3] + band[4]) / land >= 0.45) {
+          kind = "hills";
+        } else {
+          const t = window.World.COVER_CLASSES[top(cover)] || "plains";
+          kind = AREA_NOUN.en[t] ? t : "plains";
+        }
+        const far = Math.hypot(ax - ocx, ay - ocy) > radius * 0.3 && areas.length > 1;
+        const dir = far ? ((Math.round(Math.atan2(-(ay - ocy), ax - ocx) / (Math.PI / 4)) % 8) + 8) % 8 : 8;
+        let base;
+        if (ru) { const [noun, gen] = AREA_NOUN.ru[kind]; base = AREA_DIR.ru[gen][dir] + " " + noun; }
+        else base = AREA_DIR.en[dir] + " " + AREA_NOUN.en[kind];
+        const label = g.map((d) => labelAt.get(d.i)).find(Boolean) || null;
+        // the land it lies on, when the owner holds more than one
+        const main = mostly("land");
+        const landName = ownerLands.size > 1 && !isleArea && main >= 0 ? names.landLabel[main] || "" : "";
+        const biggest = g.slice().sort((a, b) => b.area - a.area)[0];
+        return { owner, provinces: g.map((d) => d.i), kind, feature, name: label || base, label: !!label, base, landName,
+          biggest: biggest.i, river: mostly("river"), cx: ax, cy: ay, area: aa, lands };
+      });
+      // the same name twice for one owner: tell them apart by a river, a named province or
+      // the part they lie in, a number only as the last resort
+      const keyOf = (a) => a.name + "|" + a.feature + "|" + a.landName;
+      const dupGroups = () => {
+        const m = new Map();
+        drafts.forEach((a) => { const k = keyOf(a); if (!m.has(k)) m.set(k, []); m.get(k).push(a); });
+        return [...m.values()].filter((g) => g.length > 1);
+      };
+      dupGroups().forEach((g) => g.forEach((a) => {
+        if (a.feature) return;
+        if (a.river >= 0) a.feature = riverWord(names.riverLabel[a.river]);
+        else { const nm = provNameOf(a.biggest); if (nm && !Atlas.isDefaultName(nm)) a.feature = nm; }
+      }));
+      dupGroups().forEach((g) => {
+        let gx = 0, gy = 0;
+        g.forEach((a) => { gx += a.cx; gy += a.cy; });
+        gx /= g.length; gy /= g.length;
+        g.forEach((a) => {
+          const d = ((Math.round(Math.atan2(-(a.cy - gy), a.cx - gx) / (Math.PI / 2)) % 4) + 4) % 4;
+          const part = (ru ? ["восточная часть", "северная часть", "западная часть", "южная часть"] : ["eastern part", "northern part", "western part", "southern part"])[d];
+          a.feature = a.feature ? a.feature + ", " + part : part;
+        });
+      });
+      dupGroups().forEach((g) => g.forEach((a, k) => { a.name += " " + (k + 1); }));
+      drafts.sort((a, b) => b.area - a.area);
+      out.push(...drafts);
+    });
+    return out;
+  };
+  // "Провинция 12" / "Province 12": the name a cut gives, not a real one
+  Atlas.isDefaultName = (name) => /^(провинция|province)\s+\d+$/i.test(String(name || "").trim());
+
   // ---------- the atlas ----------
+  // opts.detail: "overview" (geography and states), "areas" (default: states by areas),
+  // "provinces" (areas with every province)
   Atlas.build = function (opts) {
     opts = opts || {};
     const World = window.World;
@@ -413,6 +609,7 @@
     const rivers = World.displayRivers();
     const an = Atlas.analyze(feats, rivers);
     const N = Atlas.names(an, lang);
+    const detail = opts.detail || (opts.provinces === false ? "overview" : "areas");
     const W = GW();
     const idx = {};
     feats.forEach((f, i) => { idx[String(f.id)] = i; });
@@ -477,10 +674,12 @@
     if (ru) {
       L.push(`Текстовое описание карты вымышленного мира. Север сверху. Координаты (x, y) — километры от западного и северного края. Карта ${fmt(GW() * km)} × ${fmt(GH() * km)} км, суша ≈ ${fmt(N.totalLand * km * km)} км². Верхний край карты на ${cl.latTop ?? 70}° широты, нижний на ${cl.latBottom ?? -10}°. Высоты — над уровнем моря. Расстояния — по прямой; дни пути — грубо (25 км/день пешком, 50 км/день верхом).`);
       if (p.currentYear != null) L.push(`Политическая карта — на ${p.currentYear} год.`);
+      if (detail !== "overview") L.push("Провинция — самая мелкая единица карты. Область — группа соседних провинций одного владельца с общей географией (побережье, горы, долина реки, равнины); названия областей описательные («Северное побережье»), если на карте нет своей подписи, а в скобках — море, горы или река, по которым область так названа.");
       if (w.genRev != null && w.genRev !== w.rev) L.push("⚠ Рельеф менялся после нарезки провинций — границы провинций могут не совпадать с берегами.");
     } else {
       L.push(`A text description of a fictional world map. North is up. Coordinates (x, y) are kilometres from the west and north edges. The map is ${fmt(GW() * km)} × ${fmt(GH() * km)} km, land ≈ ${fmt(N.totalLand * km * km)} km². The top edge lies at ${cl.latTop ?? 70}° latitude, the bottom at ${cl.latBottom ?? -10}°. Heights are above sea level. Distances are straight-line; travel days are rough (25 km/day on foot, 50 km/day riding).`);
       if (p.currentYear != null) L.push(`Political map as of year ${p.currentYear}.`);
+      if (detail !== "overview") L.push("A province is the smallest unit of the map. An area is a group of neighbouring provinces of one owner with shared geography (coast, mountains, river valley, plains); area names are descriptive (\"Northern coast\") unless the map has a label of its own, and the sea, range or river in brackets is what the area is named after.");
       if (w.genRev != null && w.genRev !== w.rev) L.push("⚠ Terrain was edited after provinces were generated — borders may not match coasts.");
     }
     L.push("");
@@ -566,6 +765,37 @@
       return out;
     };
     const sids = p.stateOrder.filter((sid) => p.states[sid] && stateCells[sid]);
+    const areas = detail === "overview" ? [] : Atlas.areas(an, N, feats, ownerOf, lang, provName);
+    const areaTitle = (a) => `**${a.name}**` + (a.label ? ` (${a.base.toLowerCase()}${a.feature ? ", " + a.feature : ""})` : a.feature ? ` (${a.feature})` : "");
+    const areaLine = (a) => {
+      const rv = bigRivers.filter((ri) => a.provinces.some((i) => an.cells[i].rivers.has(ri.k))).map((ri) => N.riverLabel[ri.k]);
+      // provinces by name (a default "Province 12" tells a reader nothing)
+      const real = detail === "provinces" ? [] : a.provinces.map(provName).filter((nm) => !Atlas.isDefaultName(nm));
+      const shown = real.slice(0, 14), rest = a.provinces.length - shown.length;
+      const provs = shown.length ? (ru ? ` Провинции: ${shown.join(", ")}${rest ? ` и ещё ${rest}` : ""}.` : ` Provinces: ${shown.join(", ")}${rest ? ` and ${rest} more` : ""}.`) : "";
+      return ru
+        ? `${areaTitle(a)} — ${a.landName ? a.landName + "; " : ""}${a.provinces.length} пров., ≈${fmt(a.area * km * km)} км², ${terrainPct(a.provinces)}${rv.length ? `; реки: ${listJoin(rv.slice(0, 4))}` : ""}; центр (${fmt(a.cx * km)}, ${fmt(a.cy * km)}).${provs}`
+        : `${areaTitle(a)} — ${a.landName ? a.landName + "; " : ""}${a.provinces.length} prov., ≈${fmt(a.area * km * km)} km², ${terrainPct(a.provinces)}${rv.length ? `; rivers: ${listJoin(rv.slice(0, 4))}` : ""}; centre (${fmt(a.cx * km)}, ${fmt(a.cy * km)}).${provs}`;
+    };
+    const provinceLine = (i) => {
+      const f = feats[i], c = an.cells[i];
+      const cc = cellC(i);
+      const e = eff(String(f.id));
+      const parts = [];
+      if (e.status && e.status !== "core" && ownerOf(i)) parts.push(e.status);
+      parts.push(terrainPct([i]));
+      parts.push(`${m(c.hsum / c.land)} / ${m(c.hmax)}`);
+      parts.push(`(${fmt(cc[0] * km)}, ${fmt(cc[1] * km)})`);
+      const wn = [...c.waters.keys()].filter((wc) => N.waterLabel[wc]).map((wc) => N.waterLabel[wc]);
+      if (wn.length) parts.push((ru ? "берег: " : "coast: ") + wn.join(", "));
+      const rn = bigRivers.filter((ri) => c.rivers.has(ri.k)).map((ri) => N.riverLabel[ri.k]);
+      if (rn.length) parts.push((ru ? "реки: " : "rivers: ") + rn.join(", "));
+      const extra = [e.culture, e.religion, e.language].filter((v) => v && String(v).trim());
+      if (extra.length) parts.push(extra.join(" / "));
+      const nbs = [...c.nb.keys()].map((j) => provName(j));
+      if (nbs.length) parts.push((ru ? "соседи: " : "neighbours: ") + nbs.join(", "));
+      return `${provName(i)} [${f.id}] — ${parts.filter(Boolean).join("; ")}`;
+    };
     if (sids.length) {
       L.push(ru ? "## Государства" : "## States");
       L.push("");
@@ -639,6 +869,13 @@
               : `  - ${p.states[o].name} — to the ${dirWord(lang, oc[0] - cen[0], oc[1] - cen[1])}, ${distTxt(cen, oc)}`);
           });
         }
+        if (detail === "areas") {
+          const mine = areas.filter((a) => a.owner === sid);
+          if (mine.length) {
+            L.push(ru ? `- Области (${mine.length}):` : `- Areas (${mine.length}):`);
+            mine.forEach((a) => L.push("  - " + areaLine(a)));
+          }
+        }
         objLines.filter((o) => o.owner === sid).slice(0, 40).forEach((o, k) => { if (!k) L.push(ru ? "- Города и места:" : "- Places:"); L.push("  - " + o.text); });
         if (st.notes && String(st.notes).trim()) L.push((ru ? "- Заметки: " : "- Notes: ") + String(st.notes).trim().replace(/\s+/g, " "));
         L.push("");
@@ -651,37 +888,31 @@
       L.push("");
     }
     const unowned = feats.map((f, i) => i).filter((i) => !ownerOf(i) && an.cells[i].land);
-    if (unowned.length && sids.length) {
-      L.push(ru ? `Ничейные земли: ${unowned.length} пров., ≈${fmt(unowned.reduce((s, i) => s + an.cells[i].land, 0) * km * km)} км².` : `Unclaimed land: ${unowned.length} provinces, ≈${fmt(unowned.reduce((s, i) => s + an.cells[i].land, 0) * km * km)} km².`);
-      L.push("");
+    const free = areas.filter((a) => !a.owner);
+    if (unowned.length) {
+      if (sids.length) L.push(ru ? `## Ничейные земли` : `## Unclaimed land`);
+      else if (detail !== "overview") L.push(ru ? "## Области" : "## Areas");
+      if (sids.length || detail !== "overview") {
+        L.push(ru ? `${unowned.length} пров., ≈${fmt(unowned.reduce((s2, i) => s2 + an.cells[i].land, 0) * km * km)} км².` : `${unowned.length} provinces, ≈${fmt(unowned.reduce((s2, i) => s2 + an.cells[i].land, 0) * km * km)} km².`);
+        if (detail === "areas") free.forEach((a) => L.push("- " + areaLine(a)));
+        L.push("");
+      }
     }
 
-    // ---- provinces ----
-    if (opts.provinces !== false && feats.length) {
-      L.push(ru ? "## Провинции" : "## Provinces");
-      L.push(ru ? "Формат: название [id] — владелец; рельеф; высота (средняя / максимум); центр (x, y) км; побережье; реки; соседи." : "Format: name [id] — owner; terrain; elevation (mean / max); centre (x, y) km; coast; rivers; neighbours.");
+    // ---- provinces, area by area ----
+    if (detail === "provinces" && feats.length) {
+      L.push(ru ? "## Провинции по областям" : "## Provinces by area");
+      L.push(ru ? "Формат: название [id] — рельеф; высота (средняя / максимум); центр (x, y) км; побережье; реки; соседи." : "Format: name [id] — terrain; elevation (mean / max); centre (x, y) km; coast; rivers; neighbours.");
       L.push("");
-      feats.forEach((f, i) => {
-        const c = an.cells[i];
-        if (!c.land) return;
-        const cc = cellC(i);
-        const e = eff(String(f.id));
-        const parts = [stName(ownerOf(i))];
-        if (e.status && e.status !== "core" && ownerOf(i)) parts[0] += ` (${e.status})`;
-        parts.push(terrainPct([i]));
-        parts.push(`${m(c.hsum / c.land)} / ${m(c.hmax)}`);
-        parts.push(`(${fmt(cc[0] * km)}, ${fmt(cc[1] * km)})`);
-        const wn = [...c.waters.keys()].filter((wc) => N.waterLabel[wc]).map((wc) => N.waterLabel[wc]);
-        if (wn.length) parts.push((ru ? "берег: " : "coast: ") + wn.join(", "));
-        const rn = bigRivers.filter((ri) => c.rivers.has(ri.k)).map((ri) => N.riverLabel[ri.k]);
-        if (rn.length) parts.push((ru ? "реки: " : "rivers: ") + rn.join(", "));
-        const extra = [e.culture, e.religion, e.language].filter((v) => v && String(v).trim());
-        if (extra.length) parts.push(extra.join(" / "));
-        const nbs = [...c.nb.keys()].map((j) => provName(j));
-        if (nbs.length) parts.push((ru ? "соседи: " : "neighbours: ") + nbs.join(", "));
-        L.push(`- ${provName(i)} [${f.id}] — ${parts.filter(Boolean).join("; ")}`);
+      sids.concat(free.length ? [""] : []).forEach((sid) => {
+        L.push("### " + (sid ? p.states[sid].name : (ru ? "Ничейные земли" : "Unclaimed land")));
+        areas.filter((a) => a.owner === sid).forEach((a) => {
+          L.push("#### " + areaTitle(a).replace(/\*\*/g, ""));
+          L.push(areaLine(a));
+          a.provinces.forEach((i) => L.push("- " + provinceLine(i)));
+          L.push("");
+        });
       });
-      L.push("");
     }
     return L.join("\n");
   };

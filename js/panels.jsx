@@ -954,6 +954,7 @@ function RegionTab() {
         <React.Fragment>
           <TextField label={t("f.name")} value={r.name || ""} placeholder={f ? f.name : ""} onChange={(v) => setAll({ name: v || null })}></TextField>
           {f && <div className="muted">{t("region.baseName")}: {f.name}{f.country ? " · " + f.country : ""}</div>}
+          {f && window.ProvinceGeo && window.World && World.active() && <ProvinceGeo id={rid}></ProvinceGeo>}
           {f && (f.histArea || f.cultArea) && (
             <div className="muted">
               {f.histArea ? t("region.histArea") + ": " + f.histArea : ""}

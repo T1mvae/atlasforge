@@ -1994,7 +1994,7 @@ function MapView() {
     }, name);
   };
   return /*#__PURE__*/React.createElement("div", {
-    className: "map-stage tool-" + App.ui.tool + (worldOn ? " world-mode" : ""),
+    className: "map-stage tool-" + App.ui.tool + (worldOn ? " world-mode" : "") + (worldOn && World.cutPreview ? " cut-previewing" : ""),
     "data-screen-label": "Map canvas",
     style: {
       background: settings.sea
@@ -2290,6 +2290,28 @@ function MapView() {
         strokeLinejoin: "round",
         vectorEffect: "non-scaling-stroke"
       });
+    }));
+  }(), ready && worldOn && World.cutPreview && function () {
+    var d = World.cutPreviewPath(bm.proj);
+    return /*#__PURE__*/React.createElement("g", {
+      id: "cut-preview",
+      "data-export-skip": "1",
+      pointerEvents: "none"
+    }, /*#__PURE__*/React.createElement("path", {
+      d: d,
+      fill: "none",
+      stroke: "#ffffff",
+      strokeOpacity: "0.85",
+      strokeWidth: "3.2",
+      strokeLinejoin: "round",
+      vectorEffect: "non-scaling-stroke"
+    }), /*#__PURE__*/React.createElement("path", {
+      d: d,
+      fill: "none",
+      stroke: "#b3261e",
+      strokeWidth: "1.4",
+      strokeLinejoin: "round",
+      vectorEffect: "non-scaling-stroke"
     }));
   }(), physReady && phys.relief.length > 0 && /*#__PURE__*/React.createElement("g", {
     id: "phys-relief",
@@ -2818,7 +2840,7 @@ function MapView() {
         tool: "select"
       });
     }
-  }, t("edit.cancel"))), worldOn && App.ui.tool === "world" && window.WorldPalette && /*#__PURE__*/React.createElement(WorldPalette, null), worldOn && (World.preview || World.geoBusy) && window.GeoBar && /*#__PURE__*/React.createElement(GeoBar, null), App.ui.tool === "place" && window.ObjectPalette && ready && /*#__PURE__*/React.createElement(ObjectPalette, null), window.RoadModeBar && /*#__PURE__*/React.createElement(RoadModeBar, null), window.WorldCard && /*#__PURE__*/React.createElement(WorldCard, null), /*#__PURE__*/React.createElement("div", {
+  }, t("edit.cancel"))), worldOn && App.ui.tool === "world" && window.WorldPalette && /*#__PURE__*/React.createElement(WorldPalette, null), worldOn && (World.preview || World.geoBusy) && window.GeoBar && /*#__PURE__*/React.createElement(GeoBar, null), worldOn && (World.cutPreview || World.generating) && window.CutBar && /*#__PURE__*/React.createElement(CutBar, null), App.ui.tool === "place" && window.ObjectPalette && ready && /*#__PURE__*/React.createElement(ObjectPalette, null), window.RoadModeBar && /*#__PURE__*/React.createElement(RoadModeBar, null), window.WorldCard && /*#__PURE__*/React.createElement(WorldCard, null), /*#__PURE__*/React.createElement("div", {
     className: "minimap",
     onPointerDown: onMinimapClick
   }, /*#__PURE__*/React.createElement("canvas", {

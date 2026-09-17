@@ -89,13 +89,9 @@ function WorldPalette() {
     });
   };
   var strengthBrush = brush === "raise" || brush === "lower" || brush === "smooth";
-  var busy = !!(World.preview || World.geoBusy);
+  var cutting = !!(World.cutPreview || World.generating);
+  var busy = !!(World.preview || World.geoBusy || cutting);
   var rivers = w.rivers || [];
-  var generate = function generate() {
-    if (hasProvinces && !confirm(t("world.regenAsk"))) return;
-    Actions.toast(t("world.generating"));
-    World.generate();
-  };
   if (collapsed) {
     return /*#__PURE__*/React.createElement("div", {
       className: "world-palette collapsed",
@@ -152,7 +148,7 @@ function WorldPalette() {
     }
   }, t("world.geo.button")), /*#__PURE__*/React.createElement("div", {
     className: "wp-note"
-  }, busy ? t("world.geo.previewing") : t("world.geo.hint")), !busy && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", {
+  }, cutting ? t("world.cut.previewing") : busy ? t("world.geo.previewing") : t("world.geo.hint")), !busy && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", {
     className: "wp-section"
   }, t("world.groupRelief")), /*#__PURE__*/React.createElement(BrushGrid, {
     list: World.RELIEF_BRUSHES,
@@ -290,10 +286,22 @@ function WorldPalette() {
         citySeeds: e.target.checked
       });
     }
-  }), t("world.citySeeds")), /*#__PURE__*/React.createElement("button", {
+  }), t("world.citySeeds")), /*#__PURE__*/React.createElement("label", {
+    className: "check-row wp-check"
+  }, /*#__PURE__*/React.createElement("input", {
+    type: "checkbox",
+    checked: !!po.joinIslets,
+    onChange: function onChange(e) {
+      return setPO({
+        joinIslets: e.target.checked
+      });
+    }
+  }), t("world.joinIslets")), /*#__PURE__*/React.createElement("button", {
     className: "btn " + (stale || !hasProvinces ? "primary" : "outline"),
     disabled: World.generating,
-    onClick: generate
+    onClick: function onClick() {
+      return World.generate();
+    }
   }, World.generating ? t("world.generating") : hasProvinces ? t("world.regenerate") : t("world.generate")), stale && /*#__PURE__*/React.createElement("div", {
     className: "wp-note"
   }, t("world.stale")), /*#__PURE__*/React.createElement("div", {
@@ -659,6 +667,78 @@ function GeoBar() {
   }, t("world.geo.apply"))));
 }
 
+// preview of a new province cut: what it did, what its borders follow, apply or discard
+function CutBar() {
+  useStore();
+  if (World.generating) {
+    return /*#__PURE__*/React.createElement("div", {
+      className: "geo-bar",
+      "data-export-skip": "1"
+    }, /*#__PURE__*/React.createElement("div", {
+      className: "geo-bar-busy"
+    }, /*#__PURE__*/React.createElement("div", {
+      className: "spinner"
+    }), /*#__PURE__*/React.createElement("span", null, t("world.generating"))));
+  }
+  var pv = World.cutPreview;
+  if (!pv) return null;
+  var r = pv.report || {};
+  var lines = [t("world.cut.r.count").replace("{n}", fmtNum(pv.count)) + (pv.before ? " " + t("world.cut.r.before").replace("{n}", fmtNum(pv.before)) : "")];
+  if (r.straits) lines.push(t("world.cut.r.straits").replace("{n}", r.straits));
+  if (r.isthmuses) lines.push(t("world.cut.r.isthmuses").replace("{n}", r.isthmuses));
+  if (r.crests) lines.push(t("world.cut.r.crests").replace("{n}", r.crests));
+  if (pv.opts.riversAsBorders) lines.push(t("world.cut.r.rivers"));
+  if (r.islets) lines.push(t("world.cut.r.islets").replace("{n}", r.islets));
+  var many = pv.expected > 0 && pv.count > pv.expected * 1.3 + 3;
+  return /*#__PURE__*/React.createElement("div", {
+    className: "geo-bar",
+    "data-export-skip": "1",
+    onPointerDown: function onPointerDown(e) {
+      return e.stopPropagation();
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "geo-bar-title"
+  }, t("world.cut.title")), /*#__PURE__*/React.createElement("ul", {
+    className: "geo-report"
+  }, lines.map(function (line, i) {
+    return /*#__PURE__*/React.createElement("li", {
+      key: i
+    }, line);
+  })), many && /*#__PURE__*/React.createElement("div", {
+    className: "geo-opt-warn"
+  }, t("world.cut.many")), /*#__PURE__*/React.createElement("label", {
+    className: "check-row cut-why-toggle"
+  }, /*#__PURE__*/React.createElement("input", {
+    type: "checkbox",
+    checked: World.cutWhy,
+    onChange: function onChange(e) {
+      return World.setCutWhy(e.target.checked);
+    }
+  }), t("world.cut.why")), World.cutWhy && /*#__PURE__*/React.createElement("div", {
+    className: "cut-legend"
+  }, ["strait", "isthmus", "river", "crest"].map(function (k, i) {
+    return /*#__PURE__*/React.createElement("span", {
+      key: k
+    }, /*#__PURE__*/React.createElement("i", {
+      style: {
+        background: World.WHY_COLORS[i + 1]
+      }
+    }), t("world.cut.why." + k));
+  })), /*#__PURE__*/React.createElement("div", {
+    className: "geo-bar-actions"
+  }, /*#__PURE__*/React.createElement("button", {
+    className: "btn outline",
+    onClick: function onClick() {
+      return World.cancelCut();
+    }
+  }, t("world.geo.discard")), /*#__PURE__*/React.createElement("button", {
+    className: "btn primary",
+    onClick: function onClick() {
+      return World.applyCut();
+    }
+  }, t("world.geo.apply"))));
+}
+
 // Procreate-style vertical brush-size rail on the left edge of the map: drag with a
 // thumb while the other hand draws (no keyboard shortcuts on an iPad)
 function WorldSizeRail() {
@@ -724,7 +804,9 @@ function WorldSizeRail() {
 var worldAnalysisCache = null;
 function worldAnalysis() {
   var riversRef = World.preview && !World.compare ? World.preview.rivers : App.project.world.rivers || [];
-  var key = App.basemap.count + ":" + (World.hydro ? World.hydro.rev : 0) + ":" + World.rasterRev + ":" + App.terrVersion + ":" + App.ui.lang;
+  // owners and names do not enter the analysis: political edits keep the cache (a geometry
+  // edit reloads the basemap, which does)
+  var key = App.basemap.count + ":" + (World.hydro ? World.hydro.rev : 0) + ":" + World.rasterRev + ":" + App.ui.lang;
   var c = worldAnalysisCache;
   if (!c || c.key !== key || c.bm !== App.basemap || c.riversRef !== riversRef) {
     var feats = App.basemap.raw && App.basemap.raw.features || [];
@@ -750,9 +832,28 @@ function worldAnalysis() {
   wa.names = Atlas.names(wa.an, App.ui.lang === "ru" ? "ru" : "en");
   return wa;
 }
-function CardRow(_ref3) {
-  var k = _ref3.k,
-    v = _ref3.v;
+
+// where a province of a custom world lies, in one line (region panel)
+function ProvinceGeo(_ref3) {
+  var id = _ref3.id;
+  if (!World.active() || !App.basemap.raw) return null;
+  var line = "";
+  try {
+    var wa = worldAnalysis();
+    var i = wa.feats.findIndex(function (f) {
+      return String(f.id) === String(id);
+    });
+    if (i >= 0) line = Atlas.provinceLine(wa.an, wa.names, i, App.ui.lang === "ru" ? "ru" : "en", wa.feats[i].properties);
+  } catch (e) {
+    console.warn(e);
+  }
+  return line ? /*#__PURE__*/React.createElement("div", {
+    className: "muted province-geo"
+  }, line) : null;
+}
+function CardRow(_ref4) {
+  var k = _ref4.k,
+    v = _ref4.v;
   if (v == null || v === "") return null;
   return /*#__PURE__*/React.createElement("div", {
     className: "card-row"
@@ -764,12 +865,12 @@ function CardRow(_ref3) {
 }
 
 // a river parameter: automatic (computed from the drawing) or set by hand
-function RiverParam(_ref4) {
-  var label = _ref4.label,
-    value = _ref4.value,
-    autoLabel = _ref4.autoLabel,
-    options = _ref4.options,
-    _onChange = _ref4.onChange;
+function RiverParam(_ref5) {
+  var label = _ref5.label,
+    value = _ref5.value,
+    autoLabel = _ref5.autoLabel,
+    options = _ref5.options,
+    _onChange = _ref5.onChange;
   var manual = value != null;
   return /*#__PURE__*/React.createElement("div", {
     className: "card-row card-param"
@@ -792,8 +893,8 @@ function RiverParam(_ref4) {
     }, o.label);
   }))));
 }
-function RiverCard(_ref5) {
-  var index = _ref5.index;
+function RiverCard(_ref6) {
+  var index = _ref6.index;
   useStore();
   var _React$useState3 = React.useState(false),
     _React$useState4 = _slicedToArray(_React$useState3, 2),
@@ -1077,7 +1178,7 @@ function AtlasModal() {
   }, [withProvinces, App.ui.lang, hyRev]);
   var areaRef = React.useRef(null);
   var copy = /*#__PURE__*/function () {
-    var _ref6 = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee() {
+    var _ref7 = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee() {
       var _t;
       return _regenerator().w(function (_context) {
         while (1) switch (_context.p = _context.n) {
@@ -1103,7 +1204,7 @@ function AtlasModal() {
       }, _callee, null, [[0, 2]]);
     }));
     return function copy() {
-      return _ref6.apply(this, arguments);
+      return _ref7.apply(this, arguments);
     };
   }();
   var save = function save() {
@@ -1177,6 +1278,8 @@ Object.assign(window, {
   CardRow: CardRow,
   fmtNum: fmtNum,
   GeoSheet: GeoSheet,
-  GeoBar: GeoBar
+  GeoBar: GeoBar,
+  CutBar: CutBar,
+  ProvinceGeo: ProvinceGeo
 });
 //# sourceMappingURL=world.js.map

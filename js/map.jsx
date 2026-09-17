@@ -1340,7 +1340,7 @@ function MapView() {
   };
 
   return (
-    <div className={"map-stage tool-" + App.ui.tool + (worldOn ? " world-mode" : "")} data-screen-label="Map canvas" style={{ background: settings.sea }}>
+    <div className={"map-stage tool-" + App.ui.tool + (worldOn ? " world-mode" : "") + (worldOn && World.cutPreview ? " cut-previewing" : "")} data-screen-label="Map canvas" style={{ background: settings.sea }}>
       {worldOn && <div className="world-layer" ref={worldLayerRef}></div>}
       {bm.status === "loading" && (
         <div className="map-loading">
@@ -1503,6 +1503,16 @@ function MapView() {
                     stroke={rv.index === sel ? "#ffcf5a" : "#3f74a8"} strokeWidth={rv.index === sel ? 2 : 0.7}
                     strokeLinejoin="round" vectorEffect="non-scaling-stroke"></path>
                 ))}
+              </g>
+            );
+          })()}
+          {/* ---- custom world: the borders of a province cut being previewed ---- */}
+          {ready && worldOn && World.cutPreview && (() => {
+            const d = World.cutPreviewPath(bm.proj);
+            return (
+              <g id="cut-preview" data-export-skip="1" pointerEvents="none">
+                <path d={d} fill="none" stroke="#ffffff" strokeOpacity="0.85" strokeWidth="3.2" strokeLinejoin="round" vectorEffect="non-scaling-stroke"></path>
+                <path d={d} fill="none" stroke="#b3261e" strokeWidth="1.4" strokeLinejoin="round" vectorEffect="non-scaling-stroke"></path>
               </g>
             );
           })()}
@@ -1807,6 +1817,7 @@ function MapView() {
 
       {worldOn && App.ui.tool === "world" && window.WorldPalette && <WorldPalette></WorldPalette>}
       {worldOn && (World.preview || World.geoBusy) && window.GeoBar && <GeoBar></GeoBar>}
+      {worldOn && (World.cutPreview || World.generating) && window.CutBar && <CutBar></CutBar>}
       {App.ui.tool === "place" && window.ObjectPalette && ready && <ObjectPalette></ObjectPalette>}
       {window.RoadModeBar && <RoadModeBar></RoadModeBar>}
       {window.WorldCard && <WorldCard></WorldCard>}

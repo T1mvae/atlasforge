@@ -110,6 +110,153 @@
     return out;
   };
 
+  // ---------- landmasses of the painted raster ----------
+  // The analysis grid cannot see a strait narrower than a data cell: a cell is land when
+  // any of its sub-cells is, so the water between two coasts vanishes and both coasts
+  // read as one piece of land. Landmasses are therefore found on the raster itself (land
+  // 4-connected: land touching only at a corner is two landmasses) and handed down:
+  //   landId[i] — landmass of data cell i (numbered in reading order), -1 for water.
+  //               A cell holding land of two landmasses (a strait runs through it)
+  //               counts as water.
+  //   area[id]  — data cells of each landmass
+  TA.landTopology = function (height, sea, SW, SH, res, W, H) {
+    const NS = SW * SH;
+    const comp = new Int32Array(NS).fill(-1);
+    const queue = new Int32Array(NS);
+    let count = 0;
+    for (let s = 0; s < NS; s++) {
+      if (comp[s] >= 0 || height[s] <= sea) continue;
+      const id = count++;
+      let qh = 0, qt = 0;
+      queue[qt++] = s; comp[s] = id;
+      while (qh < qt) {
+        const i = queue[qh++];
+        const x = i % SW;
+        if (x > 0 && comp[i - 1] < 0 && height[i - 1] > sea) { comp[i - 1] = id; queue[qt++] = i - 1; }
+        if (x < SW - 1 && comp[i + 1] < 0 && height[i + 1] > sea) { comp[i + 1] = id; queue[qt++] = i + 1; }
+        if (i >= SW && comp[i - SW] < 0 && height[i - SW] > sea) { comp[i - SW] = id; queue[qt++] = i - SW; }
+        if (i + SW < NS && comp[i + SW] < 0 && height[i + SW] > sea) { comp[i + SW] = id; queue[qt++] = i + SW; }
+      }
+    }
+    const N = W * H;
+    const landId = new Int32Array(N).fill(-1);
+    let cuts = 0;
+    for (let y = 0; y < H; y++) {
+      for (let x = 0; x < W; x++) {
+        let id = -1, mixed = false;
+        for (let dy = 0; dy < res; dy++) {
+          const sy = y * res + dy;
+          if (sy >= SH) break;
+          for (let dx = 0; dx < res; dx++) {
+            const sx = x * res + dx;
+            if (sx >= SW) break;
+            const c = comp[sy * SW + sx];
+            if (c < 0) continue;
+            if (id < 0) id = c; else if (c !== id) mixed = true;
+          }
+        }
+        if (mixed) cuts++;
+        else landId[y * W + x] = id;
+      }
+    }
+    const remap = new Int32Array(count).fill(-1);
+    const areas = [];
+    for (let i = 0; i < N; i++) {
+      const c = landId[i];
+      if (c < 0) continue;
+      if (remap[c] < 0) { remap[c] = areas.length; areas.push(0); }
+      landId[i] = remap[c];
+      areas[remap[c]]++;
+    }
+    return { landId, count: areas.length, area: Int32Array.from(areas), cuts };
+  };
+
+  // ---------- distance transform ----------
+  // squared Euclidean distance from every cell to the nearest cell with mask[i] = 1
+  // (exact, Felzenszwalb & Huttenlocher); 1e20 where the mask is empty
+  TA.edt2 = function (W, H, mask, out) {
+    const INF = 1e20;
+    const D = out || new Float64Array(W * H);
+    const n = Math.max(W, H);
+    const f = new Float64Array(n), d = new Float64Array(n), v = new Int32Array(n), z = new Float64Array(n + 1);
+    // lower envelope of parabolas: d[q] = min over p of (q - p)² + f[p]
+    const dt = (len) => {
+      let k = -1;
+      for (let q = 0; q < len; q++) {
+        const fq = f[q];
+        if (fq >= INF) continue;
+        if (k < 0) { k = 0; v[0] = q; z[0] = -INF; z[1] = INF; continue; }
+        let p = v[k];
+        let sx = ((fq + q * q) - (f[p] + p * p)) / (2 * (q - p));
+        while (sx <= z[k]) { k--; p = v[k]; sx = ((fq + q * q) - (f[p] + p * p)) / (2 * (q - p)); }
+        k++; v[k] = q; z[k] = sx; z[k + 1] = INF;
+      }
+      if (k < 0) { d.fill(INF, 0, len); return; }
+      k = 0;
+      for (let q = 0; q < len; q++) {
+        while (z[k + 1] < q) k++;
+        const p = v[k];
+        d[q] = (q - p) * (q - p) + f[p];
+      }
+    };
+    for (let x = 0; x < W; x++) {
+      for (let y = 0; y < H; y++) f[y] = mask[y * W + x] ? 0 : INF;
+      dt(H);
+      for (let y = 0; y < H; y++) D[y * W + x] = d[y];
+    }
+    for (let y = 0; y < H; y++) {
+      const row = y * W;
+      for (let x = 0; x < W; x++) f[x] = D[row + x];
+      dt(W);
+      for (let x = 0; x < W; x++) D[row + x] = d[x];
+    }
+    return D;
+  };
+
+  // ---------- how thin the land is ----------
+  // level[i] of a land cell = for how many of the radii (ascending) a disc of land WIDER
+  // than that radius still covers the cell: 0 = thinner than radii[0], radii.length =
+  // wider than all. No disc wider than 2 fits along an isthmus four cells across; a coast
+  // is covered by the discs of the interior, so a coast is not thin — only land that is.
+  // Water and the land of another landmass bound the discs, the map frame does not.
+  // Exact: one morphological opening per radius on Euclidean distance transforms.
+  TA.landLevels = function (lid, W, H, radii) {
+    const N = W * H;
+    const mask = new Uint8Array(N);
+    const border = [];
+    for (let y = 0; y < H; y++) {
+      for (let x = 0; x < W; x++) {
+        const i = y * W + x, L = lid[i];
+        if (L < 0) { mask[i] = 1; continue; }
+        if ((x > 0 && lid[i - 1] >= 0 && lid[i - 1] !== L) || (x < W - 1 && lid[i + 1] >= 0 && lid[i + 1] !== L) ||
+          (y > 0 && lid[i - W] >= 0 && lid[i - W] !== L) || (y < H - 1 && lid[i + W] >= 0 && lid[i + W] !== L)) {
+          mask[i] = 1; border.push(i);
+        }
+      }
+    }
+    const D2 = TA.edt2(W, H, mask);
+    const level = new Uint8Array(N);
+    const tmp = new Float64Array(N);
+    for (const r of radii) {
+      // measured to the water's edge (half a cell short of its centre), a disc of radius r
+      // fits around every centre at least r + ½ from water; it covers the cells within r
+      const tc = (r + 0.5) * (r + 0.5), r2 = r * r;
+      for (let i = 0; i < N; i++) mask[i] = D2[i] >= tc ? 1 : 0;
+      TA.edt2(W, H, mask, tmp);
+      for (let i = 0; i < N; i++) if (lid[i] >= 0 && tmp[i] <= r2) level[i]++;
+    }
+    // a cell on the line between two landmasses bounds the discs itself: it takes the
+    // level of the land beside it
+    for (const i of border) {
+      const x = i % W, L = lid[i];
+      let best = level[i];
+      const nb = [x > 0 ? i - 1 : -1, x < W - 1 ? i + 1 : -1, i - W, i + W];
+      for (const j of nb) if (j >= 0 && j < N && lid[j] === L && level[j] > best) best = level[j];
+      level[i] = best;
+    }
+    return level;
+  };
+
   // ---------- Priority-Flood depression filling (Barnes et al.) ----------
   // Returns filled heights (tiny epsilon so every land cell drains) and the land
   // cells in the order they were reached: increasing filled height = downstream first.
@@ -494,30 +641,146 @@
   };
 
   // ---------- smart provinces ----------
-  // input: W, H, h (metres), basin (merged), riverMask (Uint8, major rivers — optional),
-  //        target (cells per province), opts { mountains: "sides" | "separate",
-  //        riversAsBorders, seeds: [[x, y], …] (e.g. cities) }
-  // Guarantee: all mountain cells of one province drain to the same basin, i.e. no
-  // province straddles a ridge. Mountain blocks are split only inside a basin; small
-  // pieces merge only with same-basin neighbours.
+  // input: W, H, h (metres), basin (merged), landId (Int32 from TA.landTopology; taken
+  //        from h when missing), riverMask (Uint8, major rivers — optional),
+  //        target (cells per province), seed, seeds: [[x, y], …] (e.g. cities),
+  //        opts { mountains: "sides" | "separate", riversAsBorders, joinIslets }
+  // Guarantees:
+  //  · a province never spans two landmasses, however narrow the water between them —
+  //    except an islet joined to the nearest coast (specks always, islets with joinIslets);
+  //  · a province never spans an isthmus: thin land whose removal leaves two substantial
+  //    pieces of its landmass;
+  //  · all mountain cells of a province drain to the same basin (no province straddles a
+  //    ridge);
+  //  · every province is one piece of land (plus the islets joined to it).
+  // Returns { labels, count, meta: [{ cells, land, lands, mount, basin, neck, city }],
+  //           why: Uint8 per cell — what the borders follow (1 strait, 2 isthmus, 3 river,
+  //           4 crest), report }
   TA.smartProvinces = function (input) {
     const { W, H, h, basin } = input;
     const opts = input.opts || {};
     const N = W * H;
     const A = Math.max(12, input.target || 300);
+    const S = Math.sqrt(A);
     const separate = opts.mountains === "separate";
     const riverMask = opts.riversAsBorders && input.riverMask ? input.riverMask : null;
+    const lid = input.landId && input.landId.length === N ? input.landId : TA.components(W, H, (i) => h[i] > 0, false).comp;
+    let nLand = 0;
+    for (let i = 0; i < N; i++) if (lid[i] >= nLand) nLand = lid[i] + 1;
+    const lmArea = new Int32Array(nLand);
+    for (let i = 0; i < N; i++) if (lid[i] >= 0) lmArea[lid[i]]++;
     const isMount = (i) => h[i] >= 1500;
-    const groupOf = (i) => (h[i] <= 0 ? 0 : isMount(i) ? 2 : 1);
-    const barrier = (i) => riverMask && riverMask[i];
+    const groupOf = (i) => (lid[i] < 0 ? 0 : isMount(i) ? 2 : 1);
+    const queue = new Int32Array(N);
 
-    // 1) blocks: same group; mountains also same basin; rivers cut lowland when enabled
+    // 0) thin land: THIN where no disc of land wider than hardR fits over a cell. Growing
+    //    across narrow land costs more (×4 on thin land, less up to softR), so borders
+    //    settle on necks. An ISTHMUS — thin land whose removal leaves two pieces of at
+    //    least minSide cells — is a border like a river; a cape or a spit separates nothing.
+    //    (A data cell is land when any of its sub-cells is, so painted land reads up to a
+    //    cell wider here: radius 2 is a neck painted about three cells across.)
+    const T = [Date.now()];
+    const hardR = clamp(0.1 * S, 2, 3);
+    const softR = clamp(0.25 * S, 3, 7);
+    const lvl = TA.landLevels(lid, W, H, [hardR, (hardR + softR) / 2, softR]);
+    const minSide = Math.max(24, 0.25 * A);
+    const LEVEL_COST = [4, 2.5, 1.6, 1];
+    const thinCost = new Float32Array(N);
+    for (let i = 0; i < N; i++) if (lid[i] >= 0) thinCost[i] = LEVEL_COST[lvl[i]];
+    // parts: 4-connected runs of thin land and of wide land within each landmass
+    const part = new Int32Array(N).fill(-1);
+    const partArea = [], partThin = [];
+    for (let s = 0; s < N; s++) {
+      if (part[s] >= 0 || lid[s] < 0) continue;
+      const L = lid[s], thin = lvl[s] === 0, id = partArea.length;
+      let qh = 0, qt = 0;
+      queue[qt++] = s; part[s] = id;
+      while (qh < qt) {
+        const c = queue[qh++];
+        const cx = c % W, cy = (c / W) | 0;
+        for (let k = 0; k < 4; k++) {
+          const xx = cx + NX[k], yy = cy + NY[k];
+          if (xx < 0 || yy < 0 || xx >= W || yy >= H) continue;
+          const n = yy * W + xx;
+          if (part[n] < 0 && lid[n] === L && (lvl[n] === 0) === thin) { part[n] = id; queue[qt++] = n; }
+        }
+      }
+      partArea.push(qt); partThin.push(thin);
+    }
+    const nParts = partArea.length;
+    const partAdj = Array.from({ length: nParts }, () => []);
+    const linked = new Set();
+    const link = (a, b) => {
+      if (a === b) return;
+      const key = a < b ? a * nParts + b : b * nParts + a;
+      if (linked.has(key)) return;
+      linked.add(key);
+      partAdj[a].push(b); partAdj[b].push(a);
+    };
+    for (let y = 0; y < H; y++) {
+      for (let x = 0; x < W; x++) {
+        const i = y * W + x;
+        if (part[i] < 0) continue;
+        if (x + 1 < W && lid[i + 1] === lid[i]) link(part[i], part[i + 1]);
+        if (y + 1 < H && lid[i + W] === lid[i]) link(part[i], part[i + W]);
+      }
+    }
+    const neckPart = new Uint8Array(nParts);
+    let nNecks = 0;
+    {
+      const mark = new Int32Array(nParts).fill(-1);
+      const stack = [];
+      for (let a = 0; a < nParts; a++) {
+        if (!partThin[a] || partAdj[a].length < 2) continue;
+        // the pieces left when this thin part is taken away
+        let big = 0;
+        for (const start of partAdj[a]) {
+          if (mark[start] === a) continue;
+          let area = 0;
+          stack.length = 0; stack.push(start); mark[start] = a;
+          while (stack.length) {
+            const c = stack.pop();
+            area += partArea[c];
+            for (const d of partAdj[c]) if (d !== a && mark[d] !== a) { mark[d] = a; stack.push(d); }
+          }
+          if (area >= minSide) big++;
+        }
+        if (big >= 2) { neckPart[a] = 1; nNecks++; }
+      }
+    }
+    const neck = new Uint8Array(N);
+    for (let i = 0; i < N; i++) if (part[i] >= 0 && neckPart[part[i]]) neck[i] = 1;
+    // regions: the pieces a landmass falls into between its isthmuses
+    const region = new Int32Array(N).fill(-1);
+    let nRegions = 0;
+    for (let s = 0; s < N; s++) {
+      if (region[s] >= 0 || lid[s] < 0 || neck[s]) continue;
+      const L = lid[s], id = nRegions++;
+      let qh = 0, qt = 0;
+      queue[qt++] = s; region[s] = id;
+      while (qh < qt) {
+        const c = queue[qh++];
+        const cx = c % W, cy = (c / W) | 0;
+        for (let k = 0; k < 4; k++) {
+          const xx = cx + NX[k], yy = cy + NY[k];
+          if (xx < 0 || yy < 0 || xx >= W || yy >= H) continue;
+          const n = yy * W + xx;
+          if (region[n] < 0 && lid[n] === L && !neck[n]) { region[n] = id; queue[qt++] = n; }
+        }
+      }
+    }
+    T.push(Date.now());
+    // a long isthmus gets provinces of its own; a short one is shared out between its ends
+    const ownNeck = 0.3 * A;
+    const barrier = (i) => (riverMask !== null && riverMask[i] === 1) || (neck[i] === 1 && partArea[part[i]] < ownNeck);
+
+    // 1) blocks: one landmass, one landform (mountains also one basin), isthmus land apart;
+    //    rivers cut lowland when enabled
     const block = new Int32Array(N).fill(-1);
     const blocks = [];
-    const queue = new Int32Array(N);
     for (let s = 0; s < N; s++) {
-      if (block[s] >= 0 || h[s] <= 0 || barrier(s)) continue;
-      const g = groupOf(s), bs = basin[s];
+      if (block[s] >= 0 || lid[s] < 0 || barrier(s)) continue;
+      const g = groupOf(s), bs = basin[s], L = lid[s], nk = neck[s];
       const id = blocks.length;
       const cells = [];
       let qh = 0, qt = 0;
@@ -530,28 +793,31 @@
           const xx = cx + NX[k], yy = cy + NY[k];
           if (xx < 0 || yy < 0 || xx >= W || yy >= H) continue;
           const n = yy * W + xx;
-          if (block[n] >= 0 || h[n] <= 0 || barrier(n) || groupOf(n) !== g) continue;
+          if (block[n] >= 0 || lid[n] !== L || neck[n] !== nk || barrier(n) || groupOf(n) !== g) continue;
           if (g === 2 && basin[n] !== bs) continue;
           block[n] = id; queue[qt++] = n;
         }
       }
-      blocks.push({ id, group: g, basin: bs, cells });
+      blocks.push({ id, group: g, basin: bs, land: L, region: nk ? -1 : region[s], cells });
     }
 
     // 2) atoms: split each block into k geodesic Voronoi pieces (never leaves the block)
+    T.push(Date.now());
     const atom = new Int32Array(N).fill(-1);
     const dist = new Float32Array(N).fill(Infinity);
     const seedsIn = new Map(); // block -> seed cells from input seeds (cities)
+    const seedCells = [];
     (input.seeds || []).forEach((p) => {
       const x = Math.floor(p[0]), y = Math.floor(p[1]);
       if (x < 0 || y < 0 || x >= W || y >= H) return;
+      seedCells.push(y * W + x);
       const b = block[y * W + x];
       if (b < 0) return;
       if (!seedsIn.has(b)) seedsIn.set(b, []);
       seedsIn.get(b).push(y * W + x);
     });
     let nAtoms = 0;
-    const atomMeta = []; // { block, group, basin }
+    const atomMeta = []; // { block, group, basin, land, region }
     const heap = new Heap(N);
     const geodesic = (cells, seeds, labelBase, labels) => {
       // multi-source Dijkstra restricted to the cells of one block
@@ -570,7 +836,7 @@
           if (block[n] !== bid) continue;
           // diagonal steps may not squeeze between two cells of another block
           if (k >= 4 && (block[cy * W + xx] !== bid || block[yy * W + cx] !== bid)) continue;
-          const nd = dc + ND[k] * (1 + Math.abs(h[n] - h[c]) / 400);
+          const nd = dc + ND[k] * (1 + Math.abs(h[n] - h[c]) / 400) * thinCost[n];
           if (nd < dist[n]) { dist[n] = nd; labels[n] = labels[c]; heap.push(n, nd); }
         }
       }
@@ -639,44 +905,87 @@
         seeds = seeds.map((s, l) => (l < fixedCount || bestC[l][0] < 0 ? s : bestC[l][0]));
       }
       geodesic(b.cells, seeds, nAtoms, atom);
-      for (let l = 0; l < seeds.length; l++) atomMeta.push({ block: b.id, group: b.group, basin: b.basin });
+      for (let l = 0; l < seeds.length; l++) atomMeta.push({ block: b.id, group: b.group, basin: b.basin, land: b.land, region: b.region });
       nAtoms += seeds.length;
     });
 
-    // 3) cells left over (river barrier cells, unreachable slivers) join the
-    //    neighbouring atom they touch most
-    for (let pass = 0; pass < 50; pass++) {
-      let changed = 0, left = 0;
-      for (let i = 0; i < N; i++) {
-        if (h[i] <= 0 || atom[i] >= 0) continue;
-        left++;
-        const cx = i % W, cy = (i / W) | 0;
-        const votes = new Map();
+    T.push(Date.now());
+    // 3) cells left over (river and isthmus cells, slivers no piece reached) join the
+    //    neighbouring piece of their landmass they touch most — layer by layer, so an
+    //    isthmus is shared out from both ends and its border lands in the middle. A
+    //    diagonal neighbour counts only when it does not reach past a corner of another piece.
+    {
+      const vA = new Int32Array(8), vW = new Int32Array(8);
+      const vote = (i) => {
+        const cx = i % W, cy = (i / W) | 0, L = lid[i];
+        let n = 0;
         for (let k = 0; k < 8; k++) {
           const xx = cx + NX[k], yy = cy + NY[k];
           if (xx < 0 || yy < 0 || xx >= W || yy >= H) continue;
-          const a = atom[yy * W + xx];
-          if (a >= 0 && (!isMount(i) || atomMeta[a].group !== 2 || atomMeta[a].basin === basin[i])) votes.set(a, (votes.get(a) || 0) + (k < 4 ? 2 : 1));
+          const j = yy * W + xx, a = atom[j];
+          if (a < 0 || lid[j] !== L) continue;
+          if (isMount(i) && atomMeta[a].group === 2 && atomMeta[a].basin !== basin[i]) continue;
+          if (k >= 4 && atom[cy * W + xx] !== a && atom[yy * W + cx] !== a) continue;
+          let m = 0;
+          while (m < n && vA[m] !== a) m++;
+          if (m === n) { vA[n] = a; vW[n] = 0; n++; }
+          vW[m] += k < 4 ? 2 : 1;
         }
         let best = -1, bv = 0;
-        votes.forEach((v, a) => { if (v > bv) { bv = v; best = a; } });
-        if (best >= 0) { atom[i] = best; changed++; }
-      }
-      if (!left) break;
-      if (!changed) {
-        // isolated land (single river cells on an islet…): own atoms
-        for (let i = 0; i < N; i++) {
-          if (h[i] > 0 && atom[i] < 0) { atom[i] = nAtoms++; atomMeta.push({ block: -1, group: groupOf(i), basin: basin[i] }); }
+        for (let m = 0; m < n; m++) if (vW[m] > bv || (vW[m] === bv && vA[m] < best)) { bv = vW[m]; best = vA[m]; }
+        return best;
+      };
+      const stamp = new Int32Array(N);
+      let layer = 1;
+      let frontier = [];
+      for (let i = 0; i < N; i++) if (lid[i] >= 0 && atom[i] < 0) frontier.push(i);
+      while (frontier.length) {
+        const decided = [];
+        for (const i of frontier) { const a = vote(i); if (a >= 0) decided.push(i, a); }
+        if (!decided.length) break;
+        for (let k = 0; k < decided.length; k += 2) atom[decided[k]] = decided[k + 1];
+        layer++;
+        const next = [];
+        for (let k = 0; k < decided.length; k += 2) {
+          const i = decided[k], cx = i % W, cy = (i / W) | 0;
+          for (let d = 0; d < 8; d++) {
+            const xx = cx + NX[d], yy = cy + NY[d];
+            if (xx < 0 || yy < 0 || xx >= W || yy >= H) continue;
+            const j = yy * W + xx;
+            if (atom[j] < 0 && lid[j] >= 0 && stamp[j] !== layer) { stamp[j] = layer; next.push(j); }
+          }
         }
-        break;
+        frontier = next;
+      }
+      // land no piece reaches (a speck cut off by rivers…): pieces of its own
+      for (let s = 0; s < N; s++) {
+        if (lid[s] < 0 || atom[s] >= 0) continue;
+        const id = nAtoms++, L = lid[s];
+        let qh = 0, qt = 0, reg = -1;
+        queue[qt++] = s; atom[s] = id;
+        while (qh < qt) {
+          const c = queue[qh++];
+          if (reg < 0) reg = region[c];
+          const cx = c % W, cy = (c / W) | 0;
+          for (let k = 0; k < 4; k++) {
+            const xx = cx + NX[k], yy = cy + NY[k];
+            if (xx < 0 || yy < 0 || xx >= W || yy >= H) continue;
+            const n = yy * W + xx;
+            if (atom[n] < 0 && lid[n] === L) { atom[n] = id; queue[qt++] = n; }
+          }
+        }
+        atomMeta.push({ block: -1, group: groupOf(s), basin: basin[s], land: L, region: reg });
       }
     }
 
     // 4) merge small atoms into an allowed neighbour (union-find over atoms).
+    T.push(Date.now());
     //    A CREST is a boundary between two mountain pieces that runs along high ground:
     //    its mean height stands well above both pieces. Pieces separated by a crest never
     //    end up in one province; pieces side by side on the same slope (divided only by a
-    //    spur that falls away toward the lowland) may.
+    //    spur that falls away toward the lowland) may. Neither may pieces of two landmasses
+    //    or of two regions (the land on either side of an isthmus), and a merge needs a
+    //    real stretch of shared border, not a touch at a corner of the coast.
     const area = new Int32Array(nAtoms);
     const mStat = new Float64Array(nAtoms * 4); // sum, count, min, max of mountain cells
     for (let a = 0; a < nAtoms; a++) { mStat[a * 4 + 2] = 1e9; mStat[a * 4 + 3] = -1e9; }
@@ -726,11 +1035,15 @@
     const parent = new Int32Array(nAtoms);
     for (let a = 0; a < nAtoms; a++) parent[a] = a;
     const find = (a) => { while (parent[a] !== a) { parent[a] = parent[parent[a]]; a = parent[a]; } return a; };
+    const lidOf = new Int32Array(nAtoms), regOf = new Int32Array(nAtoms);
+    for (let a = 0; a < nAtoms; a++) { lidOf[a] = atomMeta[a].land; regOf[a] = atomMeta[a].region; }
     // per group: its mountain pieces (for crest checks) and whether it holds lowland
     const mountList = atomMeta.map((m, a) => (mStat[a * 4 + 1] > area[a] * 0.5 ? [a] : []));
     const hasLow = atomMeta.map((m, a) => mStat[a * 4 + 1] <= area[a] * 0.5);
     const mountOnly = (a) => !hasLow[a];
     const canMerge = (a, b) => {
+      if (lidOf[a] !== lidOf[b]) return false;
+      if (regOf[a] >= 0 && regOf[b] >= 0 && regOf[a] !== regOf[b]) return false;
       if (separate && (mountOnly(a) !== mountOnly(b))) return false;
       const la = mountList[a], lb = mountList[b];
       for (let i = 0; i < la.length; i++) for (let j = 0; j < lb.length; j++) if (crest.has(pairKey(la[i], lb[j]))) return false;
@@ -747,7 +1060,7 @@
             const xx = x + NX[k * 2], yy = y + NY[k * 2];
             if (xx >= W || yy >= H) continue;
             const j = yy * W + xx;
-            if (atom[j] < 0) continue;
+            if (atom[j] < 0 || lid[j] !== lid[i]) continue;
             const b = find(atom[j]);
             if (a === b) continue;
             // a major river is a border when that option is on
@@ -759,7 +1072,7 @@
       }
       return adj;
     };
-    const mergeRound = (isSmall, sameKindBonus) => {
+    const mergeRound = (isSmall, sameKindBonus, minLen) => {
       const adj = adjacency();
       const nbrs = new Map();
       adj.forEach((len, key) => {
@@ -771,7 +1084,7 @@
       });
       const roots = [];
       for (let a = 0; a < nAtoms; a++) if (find(a) === a) roots.push(a);
-      roots.sort((p, q) => area[p] - area[q]);
+      roots.sort((p, q) => area[p] - area[q] || p - q);
       let merged = 0;
       for (const a0 of roots) {
         const a = find(a0);
@@ -779,7 +1092,7 @@
         let best = -1, bl = 0;
         (nbrs.get(a) || []).forEach(([b0, len]) => {
           const b = find(b0);
-          if (b === a || !canMerge(a, b)) return;
+          if (b === a || len < minLen || !canMerge(a, b)) return;
           const same = mountOnly(a) === mountOnly(b);
           const score = len * (same ? sameKindBonus : 1) / Math.sqrt(1 + area[b] / A);
           if (score > bl) { bl = score; best = b; }
@@ -789,30 +1102,246 @@
         area[best] += area[a];
         mountList[best] = mountList[best].concat(mountList[a]);
         hasLow[best] = hasLow[best] || hasLow[a];
+        if (regOf[best] < 0) regOf[best] = regOf[a];
         merged++;
       }
       return merged;
     };
+    const minTouch = Math.max(2, 0.25 * S);
     for (let round = 0; round < 5; round++) {
-      const merged = mergeRound((a) => (mountOnly(a) ? area[a] < A * (separate ? 0.35 : 0.8) : area[a] < A * 0.45), 2);
+      const merged = mergeRound((a) => (mountOnly(a) ? area[a] < A * (separate ? 0.35 : 0.8) : area[a] < A * 0.45), 2, minTouch);
       if (!merged) break;
     }
-    // crumbs: anything tiny joins any allowed neighbour
+    // what is still small joins over a shorter border; crumbs join any allowed neighbour
     for (let round = 0; round < 3; round++) {
-      if (!mergeRound((a) => area[a] < A * 0.08, 1)) break;
+      if (!mergeRound((a) => area[a] < A * 0.2, 1, 2)) break;
+    }
+    for (let round = 0; round < 3; round++) {
+      if (!mergeRound((a) => area[a] < A * 0.08, 1, 1)) break;
     }
 
-    // 5) compact labels
-    const labelOf = new Int32Array(nAtoms).fill(-1);
-    let nLabels = 0;
-    const labels = new Int32Array(N).fill(-1);
-    for (let i = 0; i < N; i++) {
-      if (atom[i] < 0) continue;
-      const r = find(atom[i]);
-      if (labelOf[r] < 0) labelOf[r] = nLabels++;
-      labels[i] = labelOf[r];
+    T.push(Date.now());
+    // 5) every province is one piece of land. A piece cut off from the rest of its
+    //    province (pieces that met only at a corner…) joins the neighbour it shares the
+    //    most border with, or stands alone when it is big or has no neighbour it may join.
+    const piece = new Int32Array(N).fill(-1);
+    const pieceArea = [], pieceRoot = [];
+    for (let s = 0; s < N; s++) {
+      if (atom[s] < 0 || piece[s] >= 0) continue;
+      const r = find(atom[s]), id = pieceArea.length;
+      let qh = 0, qt = 0;
+      queue[qt++] = s; piece[s] = id;
+      while (qh < qt) {
+        const c = queue[qh++];
+        const cx = c % W, cy = (c / W) | 0;
+        for (let k = 0; k < 4; k++) {
+          const xx = cx + NX[k], yy = cy + NY[k];
+          if (xx < 0 || yy < 0 || xx >= W || yy >= H) continue;
+          const n = yy * W + xx;
+          if (piece[n] < 0 && atom[n] >= 0 && lid[n] === lid[s] && find(atom[n]) === r) { piece[n] = id; queue[qt++] = n; }
+        }
+      }
+      pieceArea.push(qt); pieceRoot.push(r);
     }
-    return { labels, count: nLabels };
+    const nPieces = pieceArea.length;
+    const mainPiece = new Int32Array(nAtoms).fill(-1);
+    for (let p = 0; p < nPieces; p++) {
+      const r = pieceRoot[p], m = mainPiece[r];
+      if (m < 0 || pieceArea[p] > pieceArea[m]) mainPiece[r] = p;
+    }
+    // province id of each piece: the atom root for main pieces, nAtoms + piece for pieces
+    // standing alone, -1 while undecided
+    const NP = nAtoms + nPieces;
+    const provOf = new Int32Array(nPieces).fill(-1);
+    const provRegion = (P) => (P < nAtoms ? regOf[P] : regOf[pieceRoot[P - nAtoms]]);
+    let detached = 0;
+    for (let p = 0; p < nPieces; p++) {
+      if (mainPiece[pieceRoot[p]] === p) provOf[p] = pieceRoot[p];
+      else { detached++; if (pieceArea[p] >= 0.35 * A) provOf[p] = nAtoms + p; }
+    }
+    for (let round = 0; detached && round < 6; round++) {
+      const contact = new Map(); // piece * NP + province -> shared border
+      const note = (p, q) => {
+        if (provOf[p] >= 0 || provOf[q] < 0) return;
+        const P = provOf[q], rp = regOf[pieceRoot[p]], rq = provRegion(P);
+        if (rp >= 0 && rq >= 0 && rp !== rq) return;
+        const key = p * NP + P;
+        contact.set(key, (contact.get(key) || 0) + 1);
+      };
+      for (let y = 0; y < H; y++) {
+        for (let x = 0; x < W; x++) {
+          const i = y * W + x, p = piece[i];
+          if (p < 0) continue;
+          for (let k = 0; k < 2; k++) {
+            const xx = x + NX[k * 2], yy = y + NY[k * 2];
+            if (xx >= W || yy >= H) continue;
+            const j = yy * W + xx, q = piece[j];
+            if (q < 0 || q === p || lid[j] !== lid[i]) continue;
+            note(p, q); note(q, p);
+          }
+        }
+      }
+      const bestP = new Map();
+      contact.forEach((len, key) => {
+        const p = Math.floor(key / NP), P = key - p * NP;
+        const cur = bestP.get(p);
+        if (!cur || len > cur[1] || (len === cur[1] && P < cur[0])) bestP.set(p, [P, len]);
+      });
+      if (!bestP.size) break;
+      bestP.forEach((v, p) => { provOf[p] = v[0]; });
+    }
+    for (let p = 0; p < nPieces; p++) if (provOf[p] < 0) provOf[p] = nAtoms + p;
+
+    T.push(Date.now());
+    // 6) islets: a speck of land joins the nearest coast within reach (a province of a
+    //    cell or two means nothing); with opts.joinIslets every islet does. The coast must
+    //    belong to a bigger landmass, so a cluster of islets gathers round its biggest one.
+    const joinParent = new Int32Array(NP);
+    for (let P = 0; P < NP; P++) joinParent[P] = P;
+    const joinFind = (P) => { while (joinParent[P] !== P) { joinParent[P] = joinParent[joinParent[P]]; P = joinParent[P]; } return P; };
+    const tinyA = Math.max(6, 0.015 * A), tinyD = Math.max(2, Math.round(0.15 * S));
+    const isleA = Math.max(4, 0.35 * A), isleD = clamp(Math.round(0.6 * S), 2, 10);
+    const limitA = opts.joinIslets ? Math.max(tinyA, isleA) : tinyA;
+    let isletsJoined = 0;
+    {
+      const small = [];
+      for (let L = 0; L < nLand; L++) if (lmArea[L] > 0 && lmArea[L] < limitA) small.push(L);
+      if (small.length) {
+        small.sort((a, b) => lmArea[a] - lmArea[b] || a - b);
+        const isSmall = new Uint8Array(nLand);
+        small.forEach((L) => { isSmall[L] = 1; });
+        const cellsOf = new Map();
+        for (let i = 0; i < N; i++) if (lid[i] >= 0 && isSmall[lid[i]]) { if (!cellsOf.has(lid[i])) cellsOf.set(lid[i], []); cellsOf.get(lid[i]).push(i); }
+        const seen = new Int32Array(N);
+        for (const L of small) {
+          const cells = cellsOf.get(L);
+          const own = joinFind(provOf[piece[cells[0]]]);
+          if (cells.some((c) => joinFind(provOf[piece[c]]) !== own)) continue; // an islet cut into provinces is no speck
+          const maxD = lmArea[L] < tinyA ? tinyD : isleD;
+          let frontier = cells.slice();
+          cells.forEach((c) => { seen[c] = L + 1; });
+          const hits = new Map();
+          for (let d = 0; d < maxD && frontier.length && !hits.size; d++) {
+            const next = [];
+            for (const c of frontier) {
+              const cx = c % W, cy = (c / W) | 0;
+              for (let k = 0; k < 8; k++) {
+                const xx = cx + NX[k], yy = cy + NY[k];
+                if (xx < 0 || yy < 0 || xx >= W || yy >= H) continue;
+                const j = yy * W + xx;
+                if (seen[j] === L + 1) continue;
+                seen[j] = L + 1;
+                const M = lid[j];
+                if (M >= 0 && M !== L && (lmArea[M] > lmArea[L] || (lmArea[M] === lmArea[L] && M < L))) {
+                  const P = joinFind(provOf[piece[j]]);
+                  if (P !== own) hits.set(P, (hits.get(P) || 0) + 1);
+                } else next.push(j);
+              }
+            }
+            frontier = next;
+          }
+          if (!hits.size) continue;
+          let target = -1, tv = 0;
+          hits.forEach((v, P) => { if (v > tv || (v === tv && P < target)) { tv = v; target = P; } });
+          joinParent[own] = target;
+          isletsJoined++;
+        }
+      }
+    }
+
+    T.push(Date.now());
+    // 7) compact labels in reading order, and what each province is made of
+    const labelOf = new Int32Array(NP).fill(-1);
+    const labels = new Int32Array(N).fill(-1);
+    let nLabels = 0;
+    for (let i = 0; i < N; i++) {
+      if (piece[i] < 0) continue;
+      const P = joinFind(provOf[piece[i]]);
+      if (labelOf[P] < 0) labelOf[P] = nLabels++;
+      labels[i] = labelOf[P];
+    }
+    // per province: cells, mountain cells, isthmus land, its landmasses (most provinces
+    // lie on one) and its main basin (two-slot majority vote)
+    const cellsN = new Int32Array(nLabels), mountN = new Int32Array(nLabels), neckIn = new Uint8Array(nLabels);
+    const land0 = new Int32Array(nLabels).fill(-1), moreLands = new Map();
+    const bA = new Int32Array(nLabels).fill(-1), cA = new Int32Array(nLabels), bB = new Int32Array(nLabels).fill(-1), cB = new Int32Array(nLabels);
+    for (let i = 0; i < N; i++) {
+      const l = labels[i];
+      if (l < 0) continue;
+      cellsN[l]++;
+      if (isMount(i)) mountN[l]++;
+      if (neck[i]) neckIn[l] = 1;
+      const L = lid[i];
+      if (land0[l] < 0) land0[l] = L;
+      else if (L !== land0[l]) {
+        let m = moreLands.get(l);
+        if (!m) moreLands.set(l, (m = new Map()));
+        m.set(L, (m.get(L) || 0) + 1);
+      }
+      const b = basin[i];
+      if (b < 0) continue;
+      if (bA[l] === b) cA[l]++;
+      else if (bB[l] === b) cB[l]++;
+      else if (!cA[l]) { bA[l] = b; cA[l] = 1; }
+      else if (!cB[l]) { bB[l] = b; cB[l] = 1; }
+      else { cA[l]--; cB[l]--; }
+    }
+    const meta = [];
+    for (let l = 0; l < nLabels; l++) {
+      let land = land0[l], lands = 1;
+      const more = moreLands.get(l);
+      if (more) {
+        // the landmass holding most of the province (joined islets are the rest)
+        let own = cellsN[l];
+        more.forEach((v) => { own -= v; });
+        let bv = own;
+        more.forEach((v, L) => { lands++; if (v > bv) { bv = v; land = L; } });
+      }
+      meta.push({ cells: cellsN[l], land, lands, mount: Math.round(mountN[l] / Math.max(1, cellsN[l]) * 100) / 100,
+        basin: cA[l] >= cB[l] ? bA[l] : bB[l], neck: neckIn[l], city: 0 });
+    }
+    seedCells.forEach((c) => { if (labels[c] >= 0) meta[labels[c]].city = 1; });
+
+    // what the borders follow, for "show what I cut along" and the report
+    const why = new Uint8Array(N);
+    const straits = new Set(), crestPairs = new Set();
+    const bigLand = (L) => lmArea[L] >= Math.max(4, tinyA);
+    const strait = (a, b) => { if (a !== b && bigLand(a) && bigLand(b)) straits.add(a < b ? a * nLand + b : b * nLand + a); };
+    for (let y = 0; y < H; y++) {
+      for (let x = 0; x < W; x++) {
+        const i = y * W + x;
+        if (lid[i] < 0) {
+          if (h[i] <= 0) continue;
+          // a cell where two landmasses meet: the strait runs through it
+          const seenL = [];
+          for (let k = 0; k < 8; k++) {
+            const xx = x + NX[k], yy = y + NY[k];
+            if (xx < 0 || yy < 0 || xx >= W || yy >= H) continue;
+            const L = lid[yy * W + xx];
+            if (L >= 0 && seenL.indexOf(L) < 0) { seenL.forEach((M) => strait(L, M)); seenL.push(L); }
+          }
+          continue;
+        }
+        if (neck[i]) why[i] = 2;
+        else if (riverMask && riverMask[i]) why[i] = 3;
+        for (let k = 0; k < 4; k++) {
+          const xx = x + NX[k], yy = y + NY[k];
+          if (xx < 0 || yy < 0 || xx >= W || yy >= H) continue;
+          const j = yy * W + xx;
+          if (lid[j] >= 0 && lid[j] !== lid[i]) { why[i] = 1; strait(lid[i], lid[j]); }
+          else if (lid[j] < 0 && h[j] > 0) why[i] = 1;
+          else if (lid[j] === lid[i] && isMount(i) && isMount(j) && labels[j] !== labels[i] && crest.has(pairKey(atom[i], atom[j]))) {
+            if (!why[i]) why[i] = 4;
+            const a = labels[i], b = labels[j];
+            crestPairs.add(a < b ? a * nLabels + b : b * nLabels + a);
+          }
+        }
+      }
+    }
+    T.push(Date.now());
+    const report = { provinces: nLabels, straits: straits.size, isthmuses: nNecks, crests: crestPairs.size, islets: isletsJoined,
+      ms: T.slice(1).map((t, k) => t - T[k]) };
+    return { labels, count: nLabels, meta, why, report };
   };
 
   // ---------- exact polygons from a label raster ----------

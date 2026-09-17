@@ -211,7 +211,11 @@
       const owner = o.owner && p.states[o.owner] ? o.owner : prov && prov.owner;
       const parts = [`**${o.name || typeName(o.type)}** — ${typeName(o.type).toLowerCase()}`];
       if (o.population) parts.push((ru ? "население " : "population ") + o.population);
-      if (prov) parts.push((ru ? "провинция " : "province ") + prov.name);
+      // "провинция Заречье", but not "провинция Провинция 12" (the default name)
+      if (prov) {
+        const word = ru ? "провинция" : "province";
+        parts.push(prov.name.toLowerCase().startsWith(word) ? prov.name : word + " " + prov.name);
+      }
       parts.push(`(${ctx.fmt(g[0] * ctx.km)}, ${ctx.fmt(g[1] * ctx.km)})`);
       if (o.founded != null && o.founded !== "") parts.push((ru ? "основан в " : "founded ") + o.founded);
       if (o.notes && String(o.notes).trim()) parts.push(String(o.notes).trim().replace(/\s+/g, " "));

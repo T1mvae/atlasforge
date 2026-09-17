@@ -44,14 +44,9 @@ function WorldPalette() {
   const setClimate = (patch) => World.setWorld({ climate: Object.assign({}, clim, patch) });
   const setPO = (patch) => World.setWorld({ provinceOpts: Object.assign({}, po, patch) });
   const strengthBrush = brush === "raise" || brush === "lower" || brush === "smooth";
-  const busy = !!(World.preview || World.geoBusy);
+  const cutting = !!(World.cutPreview || World.generating);
+  const busy = !!(World.preview || World.geoBusy || cutting);
   const rivers = w.rivers || [];
-
-  const generate = () => {
-    if (hasProvinces && !confirm(t("world.regenAsk"))) return;
-    Actions.toast(t("world.generating"));
-    World.generate();
-  };
 
   if (collapsed) {
     return (
@@ -77,7 +72,7 @@ function WorldPalette() {
       )}
 
       <button className="btn primary wp-geo" disabled={busy} onClick={() => Actions.ui({ modal: "geo", card: null })}>{t("world.geo.button")}</button>
-      <div className="wp-note">{busy ? t("world.geo.previewing") : t("world.geo.hint")}</div>
+      <div className="wp-note">{cutting ? t("world.cut.previewing") : busy ? t("world.geo.previewing") : t("world.geo.hint")}</div>
 
       {!busy && (
         <React.Fragment>
@@ -138,7 +133,11 @@ function WorldPalette() {
               <input type="checkbox" checked={po.citySeeds !== false} onChange={(e) => setPO({ citySeeds: e.target.checked })}></input>
               {t("world.citySeeds")}
             </label>
-            <button className={"btn " + (stale || !hasProvinces ? "primary" : "outline")} disabled={World.generating} onClick={generate}>
+            <label className="check-row wp-check">
+              <input type="checkbox" checked={!!po.joinIslets} onChange={(e) => setPO({ joinIslets: e.target.checked })}></input>
+              {t("world.joinIslets")}
+            </label>
+            <button className={"btn " + (stale || !hasProvinces ? "primary" : "outline")} disabled={World.generating} onClick={() => World.generate()}>
               {World.generating ? t("world.generating") : hasProvinces ? t("world.regenerate") : t("world.generate")}
             </button>
             {stale && <div className="wp-note">{t("world.stale")}</div>}
@@ -338,6 +337,52 @@ function GeoBar() {
   );
 }
 
+// preview of a new province cut: what it did, what its borders follow, apply or discard
+function CutBar() {
+  useStore();
+  if (World.generating) {
+    return (
+      <div className="geo-bar" data-export-skip="1">
+        <div className="geo-bar-busy"><div className="spinner"></div><span>{t("world.generating")}</span></div>
+      </div>
+    );
+  }
+  const pv = World.cutPreview;
+  if (!pv) return null;
+  const r = pv.report || {};
+  const lines = [t("world.cut.r.count").replace("{n}", fmtNum(pv.count)) + (pv.before ? " " + t("world.cut.r.before").replace("{n}", fmtNum(pv.before)) : "")];
+  if (r.straits) lines.push(t("world.cut.r.straits").replace("{n}", r.straits));
+  if (r.isthmuses) lines.push(t("world.cut.r.isthmuses").replace("{n}", r.isthmuses));
+  if (r.crests) lines.push(t("world.cut.r.crests").replace("{n}", r.crests));
+  if (pv.opts.riversAsBorders) lines.push(t("world.cut.r.rivers"));
+  if (r.islets) lines.push(t("world.cut.r.islets").replace("{n}", r.islets));
+  const many = pv.expected > 0 && pv.count > pv.expected * 1.3 + 3;
+  return (
+    <div className="geo-bar" data-export-skip="1" onPointerDown={(e) => e.stopPropagation()}>
+      <div className="geo-bar-title">{t("world.cut.title")}</div>
+      <ul className="geo-report">
+        {lines.map((line, i) => <li key={i}>{line}</li>)}
+      </ul>
+      {many && <div className="geo-opt-warn">{t("world.cut.many")}</div>}
+      <label className="check-row cut-why-toggle">
+        <input type="checkbox" checked={World.cutWhy} onChange={(e) => World.setCutWhy(e.target.checked)}></input>
+        {t("world.cut.why")}
+      </label>
+      {World.cutWhy && (
+        <div className="cut-legend">
+          {["strait", "isthmus", "river", "crest"].map((k, i) => (
+            <span key={k}><i style={{ background: World.WHY_COLORS[i + 1] }}></i>{t("world.cut.why." + k)}</span>
+          ))}
+        </div>
+      )}
+      <div className="geo-bar-actions">
+        <button className="btn outline" onClick={() => World.cancelCut()}>{t("world.geo.discard")}</button>
+        <button className="btn primary" onClick={() => World.applyCut()}>{t("world.geo.apply")}</button>
+      </div>
+    </div>
+  );
+}
+
 // Procreate-style vertical brush-size rail on the left edge of the map: drag with a
 // thumb while the other hand draws (no keyboard shortcuts on an iPad)
 function WorldSizeRail() {
@@ -383,7 +428,9 @@ function WorldSizeRail() {
 let worldAnalysisCache = null;
 function worldAnalysis() {
   const riversRef = World.preview && !World.compare ? World.preview.rivers : (App.project.world.rivers || []);
-  const key = App.basemap.count + ":" + (World.hydro ? World.hydro.rev : 0) + ":" + World.rasterRev + ":" + App.terrVersion + ":" + App.ui.lang;
+  // owners and names do not enter the analysis: political edits keep the cache (a geometry
+  // edit reloads the basemap, which does)
+  const key = App.basemap.count + ":" + (World.hydro ? World.hydro.rev : 0) + ":" + World.rasterRev + ":" + App.ui.lang;
   const c = worldAnalysisCache;
   if (!c || c.key !== key || c.bm !== App.basemap || c.riversRef !== riversRef) {
     const feats = (App.basemap.raw && App.basemap.raw.features) || [];
@@ -395,6 +442,18 @@ function worldAnalysis() {
   wa.rivers.forEach((rv) => { const rec = riversRef[rv.index]; if (rec) { rv.name = rec.name; rv.notes = rec.notes || ""; } });
   wa.names = Atlas.names(wa.an, App.ui.lang === "ru" ? "ru" : "en");
   return wa;
+}
+
+// where a province of a custom world lies, in one line (region panel)
+function ProvinceGeo({ id }) {
+  if (!World.active() || !App.basemap.raw) return null;
+  let line = "";
+  try {
+    const wa = worldAnalysis();
+    const i = wa.feats.findIndex((f) => String(f.id) === String(id));
+    if (i >= 0) line = Atlas.provinceLine(wa.an, wa.names, i, App.ui.lang === "ru" ? "ru" : "en", wa.feats[i].properties);
+  } catch (e) { console.warn(e); }
+  return line ? <div className="muted province-geo">{line}</div> : null;
 }
 
 function CardRow({ k, v }) {
@@ -573,4 +632,4 @@ function AtlasModal() {
   );
 }
 
-Object.assign(window, { WorldPalette, AtlasModal, WorldSizeRail, WorldCard, worldAnalysis, CardRow, fmtNum, GeoSheet, GeoBar });
+Object.assign(window, { WorldPalette, AtlasModal, WorldSizeRail, WorldCard, worldAnalysis, CardRow, fmtNum, GeoSheet, GeoBar, CutBar, ProvinceGeo });

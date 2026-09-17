@@ -697,6 +697,13 @@ button, .chip, .state-row, .menu-item { touch-action: manipulation; }
 .geo-bar-actions .geo-hold { margin-right: auto; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; touch-action: none; }
 .geo-bar-actions .geo-hold.on { background: var(--accent); color: #fff; border-color: var(--accent); }
 .geo-bar-busy { display: flex; align-items: center; gap: 12px; font-weight: 600; }
+/* province cut preview: new borders over dimmed old ones, what they follow */
+.world-why { image-rendering: pixelated; }
+.map-stage.cut-previewing #regions, .map-stage.cut-previewing .borders { opacity: 0.25; }
+.geo-bar .geo-opt-warn { color: var(--danger); font-size: 12.5px; line-height: 1.35; }
+.cut-why-toggle { font-size: 13px; }
+.cut-legend { display: flex; flex-wrap: wrap; gap: 6px 12px; font-size: 12px; color: var(--text-dim); }
+.cut-legend i { display: inline-block; width: 12px; height: 12px; border-radius: 3px; margin-right: 5px; vertical-align: -2px; }
 .geo-bar-busy .spinner { width: 20px; height: 20px; border-width: 3px; }
 .card-warn { font-size: 12.5px; line-height: 1.35; color: var(--danger); background: rgba(220, 80, 60, 0.08); border-radius: 8px; padding: 6px 8px; }
 

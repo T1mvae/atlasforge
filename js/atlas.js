@@ -54,17 +54,36 @@
     return out;
   };
 
+  // components with the statistics of TA.components, from a ready labelling
+  function landmasses(W, H, comp, count) {
+    const list = [];
+    for (let id = 0; id < count; id++) list.push({ id, area: 0, sx: 0, sy: 0, sxx: 0, syy: 0, sxy: 0, minx: W, miny: H, maxx: 0, maxy: 0, edge: false });
+    for (let y = 0; y < H; y++) {
+      for (let x = 0; x < W; x++) {
+        const k = comp[y * W + x];
+        if (k < 0) continue;
+        const c = list[k], cx = x + 0.5, cy = y + 0.5;
+        c.area++; c.sx += cx; c.sy += cy; c.sxx += cx * cx; c.syy += cy * cy; c.sxy += cx * cy;
+        if (x < c.minx) c.minx = x; if (x > c.maxx) c.maxx = x;
+        if (y < c.miny) c.miny = y; if (y > c.maxy) c.maxy = y;
+        if (x === 0 || y === 0 || x === W - 1 || y === H - 1) c.edge = true;
+      }
+    }
+    return { comp, list };
+  }
+
   // ---------- analysis shared by province generation, cards and the atlas ----------
   Atlas.analyze = function (features, rivers) {
     const W = GW(), H = GH(), N = W * H;
     const dg = window.World.dataGrid();
-    const h = dg.h, band = dg.band, cov = dg.coverClass, lake = dg.lake;
-    const isLand = (i) => h[i] > 0 && !lake[i];
+    const h = dg.h, band = dg.band, cov = dg.coverClass, lake = dg.lake, lid = dg.landId;
+    // landmasses as painted (the same ones the province cut keeps apart)
+    const isLand = lid ? (i) => lid[i] >= 0 : (i) => h[i] > 0 && !lake[i];
     const cellOf = Atlas.rasterize(features);
     const cells = features.map(() => ({ n: 0, land: 0, sx: 0, sy: 0, hsum: 0, hmax: -1e9, hmaxAt: -1, tsum: 0, psum: 0,
       bandH: [0, 0, 0, 0, 0], coverH: new Array(window.World.COVER_CLASSES.length).fill(0), biomeH: new Map(),
       waters: new Map(), nb: new Map(), lands: new Map(), ranges: new Map(), rivers: new Set() }));
-    const land = TA.components(W, H, isLand, false);
+    const land = lid ? landmasses(W, H, lid, dg.landArea.length) : TA.components(W, H, isLand, false);
     const water = TA.components(W, H, (i) => !isLand(i), false);
     // ranges: mountain cells less than ~2 cells apart belong to one range
     const near = new Uint8Array(N), tmp = new Uint8Array(N);
@@ -338,6 +357,44 @@
     const nextName = () => { let nm; do { nm = (ru ? "Река " : "River ") + (++rn); } while (taken.has(nm)); return nm; };
     an.rivers.forEach((ri) => { riverLabel[ri.k] = ri.rv.name || nextName(); });
     return { totalLand, lands, landLabel, waters, waterLabel, ranges, rangeLabel, riverLabel };
+  };
+
+  // one line on where a province lies: its land, the slope of a range it sits on, its
+  // biggest river, the water it borders, and what the cut noted (isthmus, joined islets)
+  const SIDE = {
+    ru: ["восточный", "северо-восточный", "северный", "северо-западный", "западный", "юго-западный", "южный", "юго-восточный"],
+    en: ["eastern", "north-eastern", "northern", "north-western", "western", "south-western", "southern", "south-eastern"]
+  };
+  Atlas.provinceLine = function (an, names, i, lang, props) {
+    const ru = lang === "ru";
+    const c = an.cells[i];
+    if (!c || !c.land) return "";
+    const top = (m, ok) => { let best = -1, bv = 0; m.forEach((v, k) => { if (v > bv && (!ok || ok(k))) { bv = v; best = k; } }); return best; };
+    const parts = [];
+    const land = top(c.lands, (k) => names.landLabel[k]);
+    if (land >= 0) parts.push(names.landLabel[land]);
+    const range = top(c.ranges, (k) => names.rangeLabel[k]);
+    if (range >= 0) {
+      const mount = (c.bandH[3] + c.bandH[4]) / c.land;
+      const rg = an.ranges[range];
+      if (mount >= 0.4) parts.push((ru ? "горы: " : "mountains: ") + names.rangeLabel[range]);
+      else if (rg.area) {
+        // which side of the range's long axis the province's land lies on
+        const ax = axisOf(rg);
+        const nx = -Math.sin(ax.ang), ny = Math.cos(ax.ang);
+        const dot = (c.sx / c.land - rg.sx / rg.area) * nx + (c.sy / c.land - rg.sy / rg.area) * ny;
+        const side = SIDE[lang][((Math.round(Math.atan2(-(ny * Math.sign(dot || 1)), nx * Math.sign(dot || 1)) / (Math.PI / 4)) % 8) + 8) % 8];
+        parts.push(ru ? side + " склон: " + names.rangeLabel[range] : side + " slope: " + names.rangeLabel[range]);
+      }
+    }
+    const rivers = [...c.rivers].map((k) => an.rivers[k]).filter(Boolean).sort((a, b) => (b.rv.upLen || 0) - (a.rv.upLen || 0));
+    if (rivers.length) parts.push((ru ? (rivers.length > 1 ? "реки: " : "река: ") : (rivers.length > 1 ? "rivers: " : "river: ")) +
+      rivers.slice(0, 2).map((ri) => names.riverLabel[ri.k]).join(", "));
+    const water = top(c.waters, (k) => names.waterLabel[k]);
+    if (water >= 0) parts.push((ru ? "берег: " : "coast: ") + names.waterLabel[water]);
+    if (props && props.isthmus) parts.push(ru ? "перешеек" : "isthmus");
+    if (props && props.islets) parts.push((ru ? "с островками: " : "with islets: ") + props.islets);
+    return parts.join(" · ");
   };
 
   // ---------- the atlas ----------

@@ -16,7 +16,7 @@ self.onmessage = (ev) => {
     }
     if (!ready) throw new Error("worker not initialised");
     if (msg.type === "hydro") self.postMessage(hydro(msg), transferables(["temp", "prec", "biome", "lake", "basin", "down", "acc"], msg));
-    else if (msg.type === "provinces") self.postMessage(provinces(msg));
+    else if (msg.type === "provinces") { const out = provinces(msg); self.postMessage(out, [out.labels, out.why]); }
     else if (msg.type === "geography") {
       const t0 = Date.now();
       const out = self.TerrainAlgos.geography(msg);
@@ -85,19 +85,22 @@ function hydro(msg) {
   return out;
 }
 
-// smart provinces → smoothed polygons with exact shared borders
+// smart provinces → smoothed polygons with exact shared borders, what each province is
+// made of (meta) and what the borders follow (why)
 function provinces(msg) {
   const TA = self.TerrainAlgos;
   const { W, H } = msg;
   const h = new Float32Array(msg.heights);
   const basin = new Int32Array(msg.basin);
+  const landId = msg.landId ? new Int32Array(msg.landId) : null;
   const riverMask = msg.riverMask ? new Uint8Array(msg.riverMask) : null;
   const t0 = Date.now();
-  const prov = TA.smartProvinces({ W, H, h, basin, riverMask, target: msg.target, seed: msg.seed, seeds: msg.seeds, opts: msg.opts });
+  const prov = TA.smartProvinces({ W, H, h, basin, landId, riverMask, target: msg.target, seed: msg.seed, seeds: msg.seeds, opts: msg.opts });
   const t1 = Date.now();
   const polys = TA.labelPolygons(prov.labels, W, H, prov.count);
   const topo = Object.assign({}, self.topojson || {});
   const geoms = TA.smoothProvinceTopology(polys, topo, { iterations: 2, epsilon: 0.12 });
   const t2 = Date.now();
-  return { type: "provinces", rev: msg.rev, count: prov.count, geometries: geoms, labels: prov.labels.buffer, timing: { cut: t1 - t0, polygons: t2 - t1 } };
+  return { type: "provinces", rev: msg.rev, count: prov.count, geometries: geoms, labels: prov.labels.buffer,
+    meta: prov.meta, why: prov.why.buffer, report: prov.report, timing: { cut: t1 - t0, polygons: t2 - t1 } };
 }

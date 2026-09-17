@@ -67,7 +67,7 @@
       seaLevel: 0, snowline: 4200,
       climate: { latTop: 70, latBottom: -10, tEquator: 27, tPole: -28 },
       geoOpts: Object.assign({}, GEO_DEFAULTS),
-      provinceOpts: { mountains: "sides", riversAsBorders: false, citySeeds: true },
+      provinceOpts: { mountains: "sides", riversAsBorders: false, citySeeds: true, joinIslets: false },
       rasters: null
     };
   };
@@ -212,6 +212,7 @@
       loadedFor = p;
       World.preview = null;
       World.compare = false;
+      World.cutPreview = null;
       if (w.version !== 2) {
         ensureBuffers();
         World.height.fill(-1500); World.cover.fill(0);
@@ -544,6 +545,7 @@
   World.strokeStart = function (g, pressure, pointerType, altitude) {
     if (!World.active()) return;
     if (World.preview || World.geoBusy) { Actions.toast(t("world.geo.busyPaint")); return; }
+    if (World.cutPreview) { Actions.toast(t("world.cut.busyPaint")); return; }
     ensureBuffers();
     notePressure(pressure, pointerType);
     const brush = App.ui.worldBrush || "land";
@@ -1093,6 +1095,12 @@
       pv.style.transform = tf;
       pv.style.display = World.preview && !World.compare ? "block" : "none";
     }
+    const wc = World.whyCanvas;
+    if (wc) {
+      if (wc.parentNode !== host) host.appendChild(wc);
+      wc.style.transform = `matrix(${(X1 - X0) / wc.width},0,0,${(Y1 - Y0) / wc.height},${X0},${Y0})`;
+      wc.style.display = World.cutPreview && World.cutWhy ? "block" : "none";
+    }
   };
   World.mapToGrid = function (pt) {
     const proj = App.basemap && App.basemap.proj;
@@ -1105,10 +1113,20 @@
   };
 
   // ---------------- data grid for analysis (atlas, province properties) ----------------
+  // landmasses as painted: found on the raster, so a strait narrower than a data cell
+  // still parts two lands (TA.landTopology)
+  let topoCache = null;
+  World.landTopology = function () {
+    ensureBuffers();
+    const key = World.rasterRev + ":" + sea();
+    if (!topoCache || topoCache.key !== key) topoCache = Object.assign({ key }, TA.landTopology(World.height, sea(), RW, RH, RES, GW, GH));
+    return topoCache;
+  };
   let dgCache = null;
   // what is on the map: heights, bands, painted cover classes (unpainted land = plains);
   // climate only when a fresh analysis exists. Lakes are water in the heights, so the
-  // lake layer stays empty (kept for callers that treat lakes separately).
+  // lake layer stays empty (kept for callers that treat lakes separately). landId: the
+  // landmass of each cell (-1 water, see World.landTopology).
   World.dataGrid = function () {
     const fresh = World.hydroFresh();
     const hy = fresh ? World.hydro : null;
@@ -1130,7 +1148,9 @@
         coverClass[i] = best > 0 && counts[best] >= 2 ? best - 1 : 0;
       }
     }
-    dgCache = { key, h, band, coverClass, lake: new Uint8Array(N), temp: hy ? hy.temp : null, prec: hy ? hy.prec : null };
+    const topo = World.landTopology();
+    dgCache = { key, h, band, coverClass, lake: new Uint8Array(N), temp: hy ? hy.temp : null, prec: hy ? hy.prec : null,
+      landId: topo.landId, landArea: topo.area };
     return dgCache;
   };
   World.sea = sea;
@@ -1150,20 +1170,27 @@
     return out;
   };
 
-  // ---------------- province generation (smart, in the worker) ----------------
+  // ---------------- province generation: cut, preview, apply ----------------
+  // The cut runs in the worker and is shown over the map first — the new borders, what
+  // they follow ("show what I cut along") and a report. Applying replaces the provinces,
+  // which resets the undo history (every province id changes), so nothing is replaced
+  // before the user has seen it.
   World.generating = false;
+  World.cutPreview = null;  // { m, why, report, project, rasterRev, count, expected }
+  World.cutWhy = false;
   World.generate = async function () {
-    if (!World.active() || World.generating) return;
+    if (!World.active() || World.generating || World.preview) return;
     World.generating = true;
+    World.cancelCut();
     App.emit();
     try {
       const project = App.project, w = project.world;
       const hy = await World.ensureAnalysis();
       if (!hy || App.project !== project) return;
       const dg = World.dataGrid();
-      let anyLand = false;
-      for (let i = 0; i < dg.h.length; i++) if (dg.h[i] > 0) { anyLand = true; break; }
-      if (!anyLand) { Actions.toast(t("world.noLand")); return; }
+      let landCells = 0;
+      for (let i = 0; i < dg.landId.length; i++) if (dg.landId[i] >= 0) landCells++;
+      if (!landCells) { Actions.toast(t("world.noLand")); return; }
       const opts = Object.assign({}, w.provinceOpts);
       const riverMask = new Uint8Array(GW * GH);
       if (opts.riversAsBorders) {
@@ -1171,12 +1198,17 @@
       }
       const seeds = opts.citySeeds && window.Objects ? Objects.citySeeds(project) : [];
       const S = clamp(+w.cellSize || 18, 5, 60);
-      const heights = dg.h.slice();
-      const basin = hy.basin.slice();
+      const forRaster = World.rasterRev;
+      const heights = dg.h.slice(), basin = hy.basin.slice(), landId = dg.landId.slice();
       const m = await runJob({ type: "provinces", rev: ++hydroRev, W: GW, H: GH, heights: heights.buffer, basin: basin.buffer,
-        riverMask: riverMask.buffer, target: S * S, seed: w.seed, seeds, opts }, [heights.buffer, basin.buffer, riverMask.buffer]);
+        landId: landId.buffer, riverMask: riverMask.buffer, target: S * S, seed: w.seed, seeds, opts },
+        [heights.buffer, basin.buffer, landId.buffer, riverMask.buffer]);
       if (App.project !== project) return;
-      applyGenerated(project, m);
+      if (World.rasterRev !== forRaster) { Actions.toast(t("world.geo.stale")); return; }
+      World.cutPreview = { m, why: new Uint8Array(m.why), report: m.report, opts, project, rasterRev: forRaster,
+        count: m.count, before: App.basemap.count || 0, expected: Math.round(landCells / (S * S)) };
+      renderWhy();
+      Actions.ui({ card: null, modal: null });
     } catch (e) {
       console.error("province generation failed", e);
       Actions.toast(t("world.generateFailed"));
@@ -1186,8 +1218,70 @@
     }
   };
 
+  // what the new borders follow, one colour per reason, on a data-grid canvas
+  const WHY_COLORS = [null, [47, 127, 208], [232, 145, 45], [31, 163, 163], [155, 93, 229]]; // strait, isthmus, river, crest
+  World.WHY_COLORS = WHY_COLORS.map((c) => (c ? "rgb(" + c.join(",") + ")" : null));
+  function renderWhy() {
+    const pv = World.cutPreview;
+    if (!pv) return;
+    if (!World.whyCanvas) {
+      const cv = document.createElement("canvas");
+      cv.width = GW; cv.height = GH;
+      cv.className = "world-canvas world-why";
+      World.whyCanvas = cv;
+    }
+    const ctx = World.whyCanvas.getContext("2d");
+    const img = ctx.createImageData(GW, GH);
+    const d = img.data;
+    for (let i = 0; i < pv.why.length; i++) {
+      const c = WHY_COLORS[pv.why[i]];
+      if (!c) continue;
+      d[i * 4] = c[0]; d[i * 4 + 1] = c[1]; d[i * 4 + 2] = c[2]; d[i * 4 + 3] = 235;
+    }
+    ctx.putImageData(img, 0, 0);
+    World.whyCanvas.style.display = World.cutWhy ? "block" : "none";
+  }
+  World.setCutWhy = function (on) {
+    World.cutWhy = !!on;
+    if (World.whyCanvas) World.whyCanvas.style.display = World.cutPreview && World.cutWhy ? "block" : "none";
+    App.emit();
+  };
+  // the new borders as one SVG path (map coordinates), built once per preview
+  World.cutPreviewPath = function (proj) {
+    const pv = World.cutPreview;
+    if (!pv || !proj) return "";
+    if (pv.path && pv.pathProj === proj) return pv.path;
+    const out = [];
+    pv.m.geometries.forEach((g) => {
+      if (!g || !g.coordinates) return;
+      const polys = g.type === "Polygon" ? [g.coordinates] : g.type === "MultiPolygon" ? g.coordinates : [];
+      polys.forEach((poly) => poly.forEach((ring) => {
+        if (ring.length < 2) return;
+        out.push("M" + ring.map((q) => { const m = proj(q); return m[0].toFixed(1) + "," + m[1].toFixed(1); }).join("L") + "Z");
+      }));
+    });
+    pv.path = out.join("");
+    pv.pathProj = proj;
+    return pv.path;
+  };
+  World.cancelCut = function () {
+    if (!World.cutPreview) return;
+    World.cutPreview = null;
+    if (World.whyCanvas) World.whyCanvas.style.display = "none";
+    App.emit();
+  };
+  World.applyCut = function () {
+    const pv = World.cutPreview;
+    if (!pv) return;
+    if (App.project !== pv.project || World.rasterRev !== pv.rasterRev) { Actions.toast(t("world.geo.stale")); World.cancelCut(); return; }
+    if (App.basemap.count > 0 && !confirm(t("world.regenAsk"))) return;
+    World.cutPreview = null;
+    if (World.whyCanvas) World.whyCanvas.style.display = "none";
+    applyGenerated(pv.project, pv.m);
+  };
+
   function applyGenerated(project, m) {
-    const features = m.geometries.map((g) => ({ type: "Feature", geometry: g, properties: {} }))
+    const features = m.geometries.map((g, i) => ({ type: "Feature", geometry: g, properties: {}, _meta: m.meta ? m.meta[i] : null }))
       .filter((f) => f.geometry && f.geometry.coordinates && f.geometry.coordinates.length);
     // number provinces in reading order (north-west first)
     const S = clamp(+project.world.cellSize || 18, 5, 60);
@@ -1201,9 +1295,18 @@
     const prefix = t("world.provinceDefault");
     features.forEach((f, i) => {
       const id = "p" + (i + 1);
+      const mt = f._meta;
       f.id = id;
       delete f._c;
+      delete f._meta;
       f.properties = { id, name: prefix.replace("{n}", i + 1) };
+      // how the cut sees it: its drainage basin (provinces of one cut share the numbers),
+      // whether it holds an isthmus, how many islets were joined to it
+      if (mt) {
+        if (mt.basin >= 0) f.properties.basin = mt.basin;
+        if (mt.neck) f.properties.isthmus = 1;
+        if (mt.lands > 1) f.properties.islets = mt.lands - 1;
+      }
     });
     const an = window.Atlas.analyze(features, World.displayRivers());
     features.forEach((f, i) => {
@@ -1242,6 +1345,7 @@
 
   World.runGeography = async function (opts) {
     if (!World.active() || World.geoBusy) return;
+    World.cancelCut();
     const project = App.project, w = project.world;
     World.geoBusy = true;
     World.preview = null;

@@ -2499,7 +2499,9 @@ function RegionTab() {
     }
   }), f && /*#__PURE__*/React.createElement("div", {
     className: "muted"
-  }, t("region.baseName"), ": ", f.name, f.country ? " · " + f.country : ""), f && (f.histArea || f.cultArea) && /*#__PURE__*/React.createElement("div", {
+  }, t("region.baseName"), ": ", f.name, f.country ? " · " + f.country : ""), f && window.ProvinceGeo && window.World && World.active() && /*#__PURE__*/React.createElement(ProvinceGeo, {
+    id: rid
+  }), f && (f.histArea || f.cultArea) && /*#__PURE__*/React.createElement("div", {
     className: "muted"
   }, f.histArea ? t("region.histArea") + ": " + f.histArea : "", f.histArea && f.cultArea ? " · " : "", f.cultArea ? t("region.cultArea") + ": " + f.cultArea : "")), /*#__PURE__*/React.createElement(Field, {
     label: t("f.owner")

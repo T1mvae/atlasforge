@@ -312,6 +312,80 @@
     return { filled, order: order.subarray(0, nOrder) };
   };
 
+  // ---------- Priority-Flood with breaching ----------
+  // Like TA.priorityFlood, but a hollow is drained instead of filled: when the flood
+  // reaches a cell lower than the one it came from, the way back to the outlet is cut to
+  // just below it. Water then runs down the real slopes into a hollow and on along the
+  // lowest way out, instead of across a filled flat toward wherever the flood entered it —
+  // so the routes follow the ground, and do not jump when a later pass cuts an outlet.
+  // Returns { filled: the breached surface, down, order: land cells downstream first }.
+  TA.priorityBreach = function (h, W, H) {
+    const N = W * H;
+    const dem = new Float64Array(N);
+    const closed = new Uint8Array(N);
+    const parent = new Int32Array(N).fill(-1);
+    const heap = new Heap(N);
+    for (let i = 0; i < N; i++) dem[i] = h[i];
+    for (let y = 0; y < H; y++) {
+      for (let x = 0; x < W; x++) {
+        const i = y * W + x;
+        if (h[i] <= 0) {
+          closed[i] = 1;
+          let coast = false;
+          for (let k = 0; k < 4 && !coast; k++) {
+            const xx = x + NX[k], yy = y + NY[k];
+            if (xx >= 0 && yy >= 0 && xx < W && yy < H && h[yy * W + xx] > 0) coast = true;
+          }
+          if (coast) heap.push(i, h[i]);
+        } else if (x === 0 || y === 0 || x === W - 1 || y === H - 1) {
+          closed[i] = 1;
+          heap.push(i, h[i]);
+        }
+      }
+    }
+    while (heap.n) {
+      const c = heap.pop();
+      const cx = c % W, cy = (c / W) | 0;
+      const land = h[c] > 0;
+      for (let k = 0; k < 8; k++) {
+        const xx = cx + NX[k], yy = cy + NY[k];
+        if (xx < 0 || yy < 0 || xx >= W || yy >= H) continue;
+        const n = yy * W + xx;
+        if (closed[n]) continue;
+        closed[n] = 1;
+        if (land) {
+          parent[n] = c;
+          if (dem[n] <= dem[c]) { // a hollow: every cell on the way out lies lower than the one before
+            let lo = dem[n], p = c;
+            while (p >= 0 && dem[p] >= lo) { lo -= 1e-4; dem[p] = lo; p = parent[p]; }
+          }
+        }
+        heap.push(n, dem[n]);
+      }
+    }
+    const down = TA.flowDirections(dem, h, W, H);
+    return { filled: dem, down, order: TA.flowOrder(down, h, W, H) };
+  };
+
+  // land cells ordered downstream first (from the cells whose water leaves the land)
+  TA.flowOrder = function (down, h, W, H) {
+    const N = W * H;
+    const order = new Int32Array(N);
+    let n = 0;
+    for (let i = 0; i < N; i++) if (h[i] > 0 && (down[i] < 0 || h[down[i]] <= 0)) order[n++] = i;
+    for (let q = 0; q < n; q++) {
+      const c = order[q];
+      const cx = c % W, cy = (c / W) | 0;
+      for (let k = 0; k < 8; k++) {
+        const xx = cx + NX[k], yy = cy + NY[k];
+        if (xx < 0 || yy < 0 || xx >= W || yy >= H) continue;
+        const u = yy * W + xx;
+        if (down[u] === c && h[u] > 0) order[n++] = u;
+      }
+    }
+    return order.subarray(0, n);
+  };
+
   // steepest descent on the filled surface; -1 where the next cell is water / off-map
   TA.flowDirections = function (filled, h, W, H) {
     const N = W * H;
@@ -336,31 +410,38 @@
 
   // ---------- climate ----------
   // opts: latTop, latBottom (degrees), tEquator, tPole (°C at sea level)
+  // Climate on the analysis grid. opts: latTop, latBottom (latitude of the map's top and
+  // bottom rows), tEquator, tPole (°C at sea level), km (per cell).
+  // temp — °C at the ground; prec — yearly precipitation on an absolute scale, 1 ≈ 2000 mm.
+  // Air picks up moisture over the sea (more over warm sea) and carries it with the
+  // prevailing wind of its latitude band (trade winds and polar easterlies blow west, the
+  // westerlies east). Over land it rains a little every kilometre — most of that rain
+  // evaporates again, so an interior stays fairly moist a long way in — and much more
+  // where the ground rises: windward slopes are wet, the land behind a range is in its
+  // rain shadow. Latitude bands make rain likelier (the tropics) or rarer (the subtropical
+  // highs), and every coast gets some rain from the sea whichever way the wind blows.
   TA.climate = function (h, W, H, opts) {
     opts = opts || {};
     const latTop = opts.latTop != null ? +opts.latTop : 70;
     const latBottom = opts.latBottom != null ? +opts.latBottom : -10;
     const tEq = opts.tEquator != null ? +opts.tEquator : 27;
     const tPole = opts.tPole != null ? +opts.tPole : -28;
+    const km = +opts.km > 0 ? +opts.km : 5;
     const N = W * H;
     const temp = new Float32Array(N);
     const prec = new Float32Array(N);
     const latOf = (y) => latTop + (latBottom - latTop) * (y + 0.5) / H;
     for (let y = 0; y < H; y++) {
-      const lat = Math.abs(latOf(y));
-      const t0 = tEq - (tEq - tPole) * Math.pow(Math.min(90, lat) / 90, 1.25);
+      const u = Math.min(90, Math.abs(latOf(y))) / 90;
+      const t0 = tEq - (tEq - tPole) * u * u; // 30° ≈ 21 °C, 45° ≈ 13 °C, 60° ≈ 3 °C with the defaults
       for (let x = 0; x < W; x++) {
         const i = y * W + x;
         temp[i] = t0 - 6.5 * Math.max(0, h[i]) / 1000;
       }
     }
-    // rows swept by the prevailing wind of their latitude band: trade winds and polar
-    // easterlies blow west, the mid-latitude westerlies east. Moisture is picked up over
-    // water, rained out over land (more where the ground rises), and stripped by high
-    // ranges — which leaves rain shadows behind them.
     const bandWet = (lat) => {
       const a = Math.abs(lat);
-      const pts = [[0, 1.35], [10, 1.2], [22, 0.5], [32, 0.65], [45, 1.1], [60, 1.0], [72, 0.6], [90, 0.35]];
+      const pts = [[0, 1.35], [10, 1.2], [20, 0.62], [27, 0.5], [35, 0.75], [45, 1.1], [60, 1.0], [72, 0.6], [90, 0.35]];
       for (let k = 1; k < pts.length; k++) {
         if (a <= pts[k][0]) {
           const t = (a - pts[k - 1][0]) / (pts[k][0] - pts[k - 1][0]);
@@ -369,81 +450,107 @@
       }
       return 0.35;
     };
+    // moisture the air holds over the sea (warm sea: more)
+    const mSat = (t) => 0.35 + 0.65 * clamp((t + 5) / 35, 0, 1);
+    const PER_KM = 1 / 900;            // share of the air's moisture that rains out per km of flat land
+    // share of that rain that evaporates back into the air: more where it is warm (forests)
+    const recycle = (t) => 0.45 + 0.25 * clamp((t - 10) / 20, 0, 1);
+    const UPTAKE = 1 - Math.exp(-km / 450); // over the sea the air nears saturation in ~450 km
+    const MIX = 1 - Math.exp(-km / 1500);   // air from other directions mixes in over ~1500 km
+    const K = 511;                     // moisture per km → the 0…1 precipitation scale
+    // the air rises with the lie of the land, not with every valley cut into it
+    const hs = new Float32Array(N), tmpS = new Float32Array(N);
+    for (let i = 0; i < N; i++) hs[i] = Math.max(0, h[i]);
+    boxBlur(hs, W, H, Math.max(2, Math.round(12 / km)), tmpS);
     for (let y = 0; y < H; y++) {
       const lat = latOf(y);
       const a = Math.abs(lat);
       const eastward = a >= 30 && a < 60;
-      const wet = bandWet(lat);
+      const band = bandWet(lat);
+      // under the subtropical highs the air sinks and dries on its way inland
+      const sink = 1 - Math.exp(-km * Math.max(0, 1 - band) / 1100);
+      // near the equator the air rises in thunderstorms that draw moisture in from all
+      // sides; elsewhere air from other directions slowly mixes in (least under the
+      // subtropical highs), so a rain shadow fades a long way behind its range
+      const conv = 2 * Math.max(0, band - 1) * UPTAKE;
+      const bgBand = 0.5 * Math.pow(Math.min(1, band), 3);
       let m = 0;
-      for (let pass = 0; pass < 2; pass++) { // second pass starts with the moisture that wrapped around
+      for (let pass = 0; pass < 2; pass++) { // the second pass starts with the air that wrapped round
         let prevH = 0;
-        for (let s = 0; s < W; s++) {
-          const x = eastward ? s : W - 1 - s;
+        for (let s0 = 0; s0 < W; s0++) {
+          const x = eastward ? s0 : W - 1 - s0;
           const i = y * W + x;
           const hh = h[i];
           if (hh <= 0) {
-            m = Math.min(1, m + 0.035 * (0.35 + 0.65 * clamp((temp[i] + 5) / 35, 0, 1)));
-            if (pass) prec[i] += m * 0.02;
+            m += (mSat(temp[i]) - m) * UPTAKE;
             prevH = 0;
-          } else {
-            const lift = Math.max(0, hh - prevH);
-            let rate = 0.018 + Math.min(0.6, lift / 900);
-            if (hh > 2500) rate += 0.08 + (hh - 2500) / 25000;
-            const rain = m * Math.min(0.85, rate);
-            m = m - rain + rain * 0.18; // some of it evaporates again from the land
-            if (pass) prec[i] += rain * wet;
-            prevH = hh;
+            continue;
           }
+          const sat = mSat(temp[i]);
+          if (conv && m < sat) m += (sat - m) * conv;
+          const bg = sat * bgBand;
+          if (m < bg) m += (bg - m) * MIX;
+          const lift = Math.max(0, hs[i] - prevH); // metres risen over this cell
+          let frac = km * PER_KM + Math.min(0.6, lift / 900);
+          if (hh > 2500) frac += 0.08 + (hh - 2500) / 25000;
+          frac = Math.min(0.85, frac * band);
+          const rain = m * frac;
+          m -= rain * (1 - recycle(temp[i])) + m * sink;
+          if (pass) prec[i] = rain / km * K;
+          prevH = hs[i];
         }
       }
     }
-    // smooth (separable box blur, radius 3) and normalise
-    const tmp = new Float32Array(N);
-    const R = 3;
+    // rain from the sea on every coast, fading inland over a few hundred km (not from a
+    // lake: water not reaching the map edge counts only as big as an inland sea)
+    const waters = TA.components(W, H, (i) => h[i] <= 0, true);
+    const seaSized = waters.list.map((c) => c.edge || c.area * km * km > 150000);
+    const seaMask = new Uint8Array(N);
+    for (let i = 0; i < N; i++) { const c = waters.comp[i]; seaMask[i] = c >= 0 && seaSized[c] ? 1 : 0; }
+    const d2 = TA.edt2(W, H, seaMask);
     for (let y = 0; y < H; y++) {
-      let acc = 0, cnt = 0;
-      for (let x = -R; x < W; x++) {
-        const add = x + R, rem = x - R - 1;
-        if (add < W) { acc += prec[y * W + add]; cnt++; }
-        if (rem >= 0) { acc -= prec[y * W + rem]; cnt--; }
-        if (x >= 0) tmp[y * W + x] = acc / cnt;
+      const band = bandWet(latOf(y));
+      for (let x = 0; x < W; x++) {
+        const i = y * W + x;
+        if (h[i] <= 0 || d2[i] >= 1e19) continue;
+        prec[i] += 0.12 * mSat(temp[i]) * Math.min(1, band) * Math.exp(-Math.sqrt(d2[i]) * km / 250);
       }
     }
-    for (let x = 0; x < W; x++) {
-      let acc = 0, cnt = 0;
-      for (let y = -R; y < H; y++) {
-        const add = y + R, rem = y - R - 1;
-        if (add < H) { acc += tmp[add * W + x]; cnt++; }
-        if (rem >= 0) { acc -= tmp[rem * W + x]; cnt--; }
-        if (y >= 0) prec[y * W + x] = acc / cnt;
-      }
-    }
-    let landVals = [];
-    for (let i = 0; i < N; i += 7) if (h[i] > 0) landVals.push(prec[i]);
-    landVals.sort((p, q) => p - q);
-    const p95 = landVals.length ? landVals[Math.floor(landVals.length * 0.95)] || 1 : 1;
-    for (let i = 0; i < N; i++) prec[i] = clamp(prec[i] / (p95 || 1), 0, 1);
+    // weather is broad: smooth over about 100 km (two box passes), land only
+    const R = Math.max(1, Math.round(60 / km));
+    const tmp = new Float32Array(N);
+    for (let pass = 0; pass < 2; pass++) boxBlur(prec, W, H, R, tmp);
+    for (let i = 0; i < N; i++) prec[i] = h[i] > 0 ? clamp(prec[i], 0, 1) : 0;
     return { temp, prec };
   };
 
+  // Biome from temperature, precipitation and how much water that climate could
+  // evaporate: a desert is where precipitation stays far below it, not merely where it is low.
+  TA.pet = (t) => 0.18 + 0.022 * Math.max(0, t); // potential evaporation, same scale as prec
   TA.biomeOf = function (t, p, h, nearWater, flat) {
     if (h <= 0) return 0;
     if (t < -10) return 1;
-    if (p > 0.72 && nearWater && flat && h < 400 && t > 0) return 13;
+    const mi = p / TA.pet(t); // moisture index
+    if (mi > 1.05 && nearWater && flat && h < 400 && t > 0) return 13;
     if (t < -2) return 2;
-    if (t < 5) return p > 0.28 ? 3 : p < 0.1 ? 4 : 2;
-    if (t < 19) return p < 0.12 ? 5 : p < 0.3 ? 6 : p < 0.62 ? 7 : 8;
-    return p < 0.12 ? 9 : p < 0.34 ? 10 : p < 0.66 ? 11 : 12;
+    if (t < 5) return mi < 0.15 ? 4 : mi < 0.45 ? 2 : 3;
+    if (t < 19) return mi < 0.2 ? 5 : mi < 0.5 ? 6 : mi < 1.3 ? 7 : 8;
+    return mi < 0.2 ? 9 : mi < 0.55 ? 10 : mi < 1.2 ? 11 : 12;
   };
 
   // ---------- hydrology: accumulation, lakes, rivers, basins ----------
-  // opts: rain (Float32 0..1 per cell), riverThreshold (flux units), minRiverCells
+  // opts: rain (Float32 0..1 per cell), riverThreshold (flux units), minRiverCells,
+  //   through (Uint8 per cell, optional) — lakes already there, given as low land: their
+  //   water passes on over the lowest point of the rim; no new lake or river is made there;
+  //   breach — route water through hollows by TA.priorityBreach (no lakes are found then)
   TA.hydrology = function (h, W, H, opts) {
     opts = opts || {};
     const N = W * H;
-    const { filled, order } = TA.priorityFlood(h, W, H);
-    const down = TA.flowDirections(filled, h, W, H);
+    const pf = opts.breach ? TA.priorityBreach(h, W, H) : TA.priorityFlood(h, W, H);
+    const { filled, order } = pf;
+    const down = pf.down || TA.flowDirections(filled, h, W, H);
     const rain = opts.rain;
+    const through = opts.through || null;
     const acc = new Float32Array(N);
     for (let k = order.length - 1; k >= 0; k--) {
       const c = order[k];
@@ -461,10 +568,11 @@
       let sp = 0;
       const cells = [];
       stack[sp++] = i; seen[i] = 1;
-      let minH = Infinity, inflow = 0, spill = -Infinity;
+      let minH = Infinity, inflow = 0, spill = -Infinity, wet = false;
       while (sp) {
         const c = stack[--sp];
         cells.push(c);
+        if (through && through[c]) wet = true;
         if (h[c] < minH) minH = h[c];
         if (acc[c] > inflow) inflow = acc[c];
         if (filled[c] > spill) spill = filled[c];
@@ -476,7 +584,7 @@
           if (!seen[n] && h[n] > 0 && filled[n] - h[n] >= 3) { seen[n] = 1; stack[sp++] = n; }
         }
       }
-      if (spill - minH < (opts.lakeDepth || 25)) continue;
+      if (wet || spill - minH < (opts.lakeDepth || 25)) continue; // wet: the lake is there already
       // surface area where evaporation balances the inflow; the lowest cells fill first
       const evap = opts.evaporation || 4;
       const area = Math.min(cells.length, Math.round(inflow / evap));
@@ -497,7 +605,8 @@
     // rivers: cells carrying more flux than the threshold (lake surfaces excluded)
     const thr = opts.riverThreshold || 60;
     const isRiver = new Uint8Array(N);
-    for (let i = 0; i < N; i++) if (h[i] > 0 && !lake[i] && acc[i] >= thr) isRiver[i] = 1;
+    const lakeAt = (i) => lake[i] || (through !== null && through[i] === 1);
+    for (let i = 0; i < N; i++) if (h[i] > 0 && !lakeAt(i) && acc[i] >= thr) isRiver[i] = 1;
     // main upstream = the river neighbour flowing into this cell with the most flux
     const mainUp = new Int32Array(N).fill(-1);
     const upCount = new Uint8Array(N);
@@ -545,15 +654,15 @@
       r.flux = acc[last];
       r.order = strahler[last];
       r.mouth = next;
-      r.mouthType = next < 0 ? "edge" : h[next] <= 0 ? "sea" : lake[next] ? "lake" : isRiver[next] ? "river" : "land";
+      r.mouthType = next < 0 ? "edge" : h[next] <= 0 ? "sea" : lakeAt(next) ? "lake" : isRiver[next] ? "river" : "land";
       r.into = r.mouthType === "river" ? rid[next] : -1;
-      r.sourceType = lake[down[r.source]] || (r.source >= 0 && neighbourLake(r.source)) ? "lake" : "spring";
+      r.sourceType = (down[r.source] >= 0 && lakeAt(down[r.source])) || (r.source >= 0 && neighbourLake(r.source)) ? "lake" : "spring";
     });
     function neighbourLake(c) {
       const cx = c % W, cy = (c / W) | 0;
       for (let k = 0; k < 8; k++) {
         const xx = cx + NX[k], yy = cy + NY[k];
-        if (xx >= 0 && yy >= 0 && xx < W && yy < H && lake[yy * W + xx]) return true;
+        if (xx >= 0 && yy >= 0 && xx < W && yy < H && lakeAt(yy * W + xx)) return true;
       }
       return false;
     }
@@ -1652,12 +1761,18 @@
   //   lakes     — lakes where water collects in closed basins
   //   addRivers — rivers and tributaries where the runoff concentrates; rivers an earlier
   //               pass added are replaced unless they were named, noted or adjusted
-  //   biomes    — land cover from the climate, only where nothing is painted
+  //   tributaries — every river the painter drew gets its own system: its catchment is as
+  //               wet as a river that size needs, and streams gather into it (marked trib;
+  //               with addRivers off only those are replaced)
+  //   biomes    — land cover from the climate, with green valleys along rivers; cover the
+  //               pass painted before (COVER_AUTO bit) is repainted, cover painted by hand
+  //               stays (all of it is repainted with repaintAll)
   // input: { RW, RH, RES, GW, GH, height: ArrayBuffer (Int16, metres above datum),
   //   cover: ArrayBuffer (Uint8, js/world.js COVER), rivers: [{ id, name, pts, … }],
   //   riverNames: { key: { name, notes, anchor } } (names of rivers from older versions),
   //   seaLevel, climate, seed, scaleKm, riverThreshold, opts }
   // output: { height, cover (ArrayBuffers), rivers, report }
+  TA.COVER_AUTO = 128; // cover the geography pass painted (bit on the cover value)
   TA.geography = function (inp) {
     const RW = inp.RW, RH = inp.RH, RES = inp.RES, W = inp.GW, H = inp.GH;
     const N2 = RW * RH, N = W * H;
@@ -1670,7 +1785,8 @@
     const rel = new Float32Array(N2);
     for (let i = 0; i < N2; i++) rel[i] = src[i] - sl;
     const report = { reversed: [], extended: [], gorges: [], added: 0, tributaries: 0, replaced: 0, named: 0,
-      lakes: 0, lakeKm2: 0, biomePct: null, foothillsKm2: null, erosion: false };
+      lakes: 0, lakeKm2: 0, biomePct: null, foothillsKm2: null, erosion: false, systems: [], valleysKm2: 0 };
+    const climOpts = Object.assign({}, inp.climate || {}, { km: kmUnit });
     const r2 = (v) => Math.round(v * 100) / 100;
     const rIdx = (x, y) => clamp(Math.floor(y * RES), 0, RH - 1) * RW + clamp(Math.floor(x * RES), 0, RW - 1);
     const relAt = (p) => rel[rIdx(p[0], p[1])];
@@ -1823,9 +1939,11 @@
     }
 
     // ---- 3. rivers the painter drew ----
-    if (opts.addRivers) {
+    if (opts.addRivers || opts.tributaries) {
+      // rivers an earlier run added are found again (kept once the painter touched them);
+      // with tributaries alone, only the streams of the drawn rivers' systems
       const n0 = rivers.length;
-      rivers = rivers.filter((r) => !(r.auto && !r.name && !r.notes && !r.manual)); // kept once the painter touched them
+      rivers = rivers.filter((r) => !(r.auto && !r.name && !r.notes && !r.manual && (opts.addRivers || r.trib)));
       report.replaced = n0 - rivers.length;
     }
     const SPU = 2 * RES; // bed samples per data unit
@@ -1834,6 +1952,7 @@
       const P = TA.resamplePolyline(pts, 1 / SPU);
       const bed = new Float32Array(P.length);
       const radius = 0.7 + 1.6 * scale;
+      const last = P.length - 1, vals = [];
       let cur = Infinity, run = 0, gorges = 0;
       for (let s = 0; s < P.length; s++) {
         const t = relAt(P[s]);
@@ -1843,15 +1962,27 @@
           run = 0;
           continue;
         }
-        // the valley floor sits below its banks (not below the centre line, which an
-        // earlier pass may already have carved — so running the pass again digs no deeper)
-        let bank = 0, nb = 0;
-        for (let a = 0; a < 8; a++) {
-          const q = [P[s][0] + Math.cos(a * Math.PI / 4) * radius, P[s][1] + Math.sin(a * Math.PI / 4) * radius];
-          const v = relAt(q);
-          if (v > 0) { bank += v; nb++; }
+        // The valley floor sits below its banks: the ground just outside the valley on
+        // both sides, across the course (not along it, and not the centre line, which an
+        // earlier pass may already have carved). The median ignores the few samples that
+        // fall into the valley of a river joining here — so running the pass again finds
+        // the same banks and digs no deeper.
+        const a = P[Math.max(0, s - 2)], b = P[Math.min(last, s + 2)];
+        let tx = b[0] - a[0], ty = b[1] - a[1];
+        const tl = Math.hypot(tx, ty) || 1;
+        tx /= tl; ty /= tl;
+        vals.length = 0;
+        for (let off = -3; off <= 3; off += 3) {
+          const q0 = P[clamp(s + off, 0, last)];
+          for (let f = 1.25; f < 1.7; f += 0.35) {
+            for (let side = -1; side <= 1; side += 2) {
+              const v = relAt([q0[0] - ty * radius * f * side, q0[1] + tx * radius * f * side]);
+              if (v > 0) vals.push(v);
+            }
+          }
         }
-        bank = nb ? bank / nb : t;
+        vals.sort((p, q) => p - q);
+        const bank = vals.length ? vals[vals.length >> 1] : t;
         const depth = 6 + 40 * scale * Math.pow(s / Math.max(1, P.length - 1), 0.6);
         cur = Math.min(cur, bank - depth, t);
         if (floor != null && cur < floor) cur = floor;
@@ -1861,11 +1992,21 @@
         else { if (run >= SPU) gorges++; run = 0; }
       }
       if (run >= SPU) gorges++;
+      // the valley sides rise from the bed to the ground just outside the valley in that
+      // direction (not to the cell's own height, which an earlier pass may have lowered):
+      // carving a carved valley again changes nothing
       corridor(P, radius, (i, dn, s) => {
         const b = bed[s];
         if (rel[i] <= 0 || b <= 0) return;
         const k = smooth01((dn - 0.1) / 0.9);
-        const v = b + (rel[i] - b) * Math.pow(k, 1.25);
+        let top = rel[i];
+        if (k > 0) {
+          const dx = ((i % RW) + 0.5) / RES - P[s][0], dy = (((i / RW) | 0) + 0.5) / RES - P[s][1];
+          const dl = Math.hypot(dx, dy) || 1;
+          const o = relAt([P[s][0] + dx / dl * radius * 1.08, P[s][1] + dy / dl * radius * 1.08]);
+          if (o > 0) top = Math.max(o, b);
+        }
+        const v = b + (top - b) * Math.pow(k, 1.25);
         if (v < rel[i]) rel[i] = Math.max(1, v);
       });
       return gorges;
@@ -1988,110 +2129,213 @@
 
     // ---- 4. water on the (possibly carved) terrain: lakes and new rivers ----
     let hG = gridHeights();
-    if (opts.lakes || opts.addRivers) {
-      const clim = TA.climate(hG, W, H, inp.climate || {});
-      const hyd = TA.hydrology(hG, W, H, { rain: clim.prec, riverThreshold: Math.max(10, +inp.riverThreshold || 60),
-        minRiverCells: 6, minLakeCells: opts.lakes ? 60 : 1e12, lakeDepth: 70, evaporation: 10 });
-      if (opts.lakes) {
-        // painted ground is full of shallow hollows: keep the lakes that matter — the
-        // biggest few — and let the rest stay dry
-        const comps = TA.components(W, H, (i) => hyd.lake[i] === 1, false);
-        const keep = comps.list.filter((c) => c.area >= 30).sort((a, b) => b.area - a.area).slice(0, 15);
-        const kept = new Uint8Array(comps.list.length);
-        keep.forEach((c) => { kept[c.id] = 1; });
-        for (let i = 0; i < N; i++) if (hyd.lake[i] && !kept[comps.comp[i]]) hyd.lake[i] = 0;
-        report.lakes = keep.length;
-        report.lakeKm2 = Math.round(keep.reduce((sum, c) => sum + c.area, 0) * kmUnit * kmUnit);
-        if (keep.length) {
-          for (let y = 0; y < RH; y++) {
-            for (let x = 0; x < RW; x++) {
-              const i = y * RW + x;
-              if (rel[i] <= 0) continue;
-              const jx = (x + 0.5) / RES + (vnoise(x / 3, y / 3, seed + 31) - 0.5) * 1.2;
-              const jy = (y + 0.5) / RES + (vnoise(x / 3 + 17.1, y / 3 + 5.3, seed + 37) - 0.5) * 1.2;
-              if (hyd.lake[gIdx(jx, jy)]) rel[i] = -(15 + 90 * vnoise(x / 7, y / 7, seed + 41));
-            }
-          }
+    // Lakes already there (painted, or made by an earlier pass) pass their water on over
+    // the lowest point of their rim: flow is traced over them as low land, or a lake would
+    // cut a river off from its headwaters. Inland seas stay where the water ends.
+    const findLakes = () => {
+      const comps = TA.components(W, H, (i) => hG[i] <= 0, true);
+      const maxCells = 150000 / (kmUnit * kmUnit);
+      const isLake = comps.list.map((c) => !c.edge && c.area <= maxCells);
+      const mask = new Uint8Array(N);
+      for (let i = 0; i < N; i++) { const c = comps.comp[i]; if (c >= 0 && isLake[c]) mask[i] = 1; }
+      return { mask, big: comps.list.filter((c, k) => isLake[k] && c.area >= 30).length };
+    };
+    let lakes0 = findLakes();
+    // water runs over the ground with its small bumps: without them runoff on smooth
+    // painted plains runs in parallel lines instead of gathering into branching streams
+    const flowSurface = () => {
+      const o = new Float32Array(N);
+      for (let y = 0; y < H; y++) {
+        for (let x = 0; x < W; x++) {
+          const i = y * W + x;
+          o[i] = lakes0.mask[i] ? 1 : hG[i] > 0 ? Math.max(1, hG[i] + (fbm(x / 5, y / 5, seed + 201, 3) - 0.5) * 24) : hG[i];
         }
       }
-      if (opts.addRivers) {
-        const mask = new Uint8Array(N);
-        const stampMask = (pts) => {
-          TA.resamplePolyline(pts, 0.5).forEach((q) => {
-            const cx = Math.floor(q[0]), cy = Math.floor(q[1]);
-            for (let dy = -1; dy <= 1; dy++) {
-              for (let dx = -1; dx <= 1; dx++) {
-                const x = cx + dx, y = cy + dy;
-                if (x >= 0 && y >= 0 && x < W && y < H) mask[y * W + x] = 1;
-              }
-            }
-          });
-        };
-        rivers.forEach((r) => stampMask(r.pts));
-        const sim = hyd.rivers;
-        const depth = sim.map((r) => { let d = 0, c = r.into; while (c >= 0 && d <= sim.length) { d++; c = sim[c].into; } return d; });
-        const order = sim.map((_, i) => i).sort((a, b) => (depth[a] - depth[b]) || (sim[b].flux - sim[a].flux));
-        const addedIdx = [];
-        const centre = (c) => [c % W + 0.5, ((c / W) | 0) + 0.5];
-        order.forEach((si) => {
-          const r = sim[si];
-          const cells = r.cells;
-          let cut = cells.length;
-          for (let k = 0; k < cells.length; k++) if (mask[cells[k]]) { cut = k; break; }
-          if (cut < 6) return; // too short, or it is a river that is already there
-          let pts = Array.from(cells.slice(0, cut), centre);
-          let onRiver = cut < cells.length;
-          if (!onRiver && r.mouth >= 0) {
-            // on to the sea, a lake that was kept, or a river; the stream it joined or the
-            // hollow it filled may not have been kept, so follow the water on from there
-            let c = r.mouth, guard = 0;
-            while (c >= 0 && guard++ < N) {
-              if (mask[c]) { onRiver = true; break; }
-              pts.push(centre(c));
-              if (hG[c] <= 0 || hyd.lake[c]) break;
-              c = hyd.down[c];
-            }
+      return o;
+    };
+    // Lakes come first, so the catchments, the climate and the rivers below see them — as
+    // they will when the pass is run again.
+    if (opts.lakes) {
+      const hydL = TA.hydrology(flowSurface(), W, H, { rain: TA.climate(hG, W, H, climOpts).prec, riverThreshold: 1e12,
+        through: lakes0.mask, minLakeCells: 60, lakeDepth: 70, evaporation: 10 });
+      // painted ground is full of shallow hollows: keep the lakes that matter — the
+      // biggest few, counting those already there (so a second run adds none) — and
+      // let the rest stay dry
+      const comps = TA.components(W, H, (i) => hydL.lake[i] === 1, false);
+      const keep = comps.list.filter((c) => c.area >= 30).sort((a, b) => b.area - a.area).slice(0, Math.max(0, 15 - lakes0.big));
+      const kept = new Uint8Array(comps.list.length);
+      keep.forEach((c) => { kept[c.id] = 1; });
+      report.lakes = keep.length;
+      report.lakeKm2 = Math.round(keep.reduce((sum, c) => sum + c.area, 0) * kmUnit * kmUnit);
+      if (keep.length) {
+        for (let y = 0; y < RH; y++) {
+          for (let x = 0; x < RW; x++) {
+            const i = y * RW + x;
+            if (rel[i] <= 0) continue;
+            const jx = (x + 0.5) / RES + (vnoise(x / 3, y / 3, seed + 31) - 0.5) * 1.2;
+            const jy = (y + 0.5) / RES + (vnoise(x / 3 + 17.1, y / 3 + 5.3, seed + 37) - 0.5) * 1.2;
+            const g = gIdx(jx, jy);
+            if (hydL.lake[g] && kept[comps.comp[g]]) rel[i] = -(15 + 90 * vnoise(x / 7, y / 7, seed + 41));
           }
-          if (onRiver) {
-            // stopped a cell or two before the river it reaches: run on to its course
-            const q = nearestRiver(pts[pts.length - 1], 6, -1);
-            if (q) pts.push(q.point);
-          }
-          // a gentle meander, then smooth (both ends stay where they are)
-          const ms = seed + 97 * si;
-          pts = pts.map((p, k) => {
-            if (k === 0 || k === pts.length - 1) return p;
-            const a = pts[k - 1], b = pts[k + 1];
-            let tx = b[0] - a[0], ty = b[1] - a[1];
-            const tl = Math.hypot(tx, ty) || 1;
-            tx /= tl; ty /= tl;
-            const off = (vnoise(k * 0.45, 0.5, ms) - 0.5) * 0.9;
-            return [p[0] - ty * off, p[1] + tx * off];
-          });
-          pts = TA.rdp(TA.chaikin(pts, 2, false), 0.12);
-          if (TA.polylineLength(pts) < (+inp.minRiverLength || 10)) return;
-          rivers.push({ name: "", pts, auto: true, width: 1 });
-          addedIdx.push(rivers.length - 1);
-          stampMask(pts);
-        });
-        report.added = addedIdx.length;
-        // names kept from the time rivers were simulated (older worlds)
-        Object.keys(inp.riverNames || {}).forEach((key) => {
-          const nm = inp.riverNames[key];
-          if (!nm || !nm.name || !nm.anchor) return;
-          let best = null, bl = -1;
-          rivers.forEach((r) => {
-            if (r.name || !nearestOnPolyline(r.pts, nm.anchor, 4)) return;
-            const L = TA.polylineLength(r.pts);
-            if (L > bl) { bl = L; best = r; }
-          });
-          if (best) { best.name = nm.name; if (nm.notes) best.notes = nm.notes; report.named++; }
-        });
-        const net = carveNetwork(addedIdx);
-        addedIdx.forEach((i) => { if (net.into[i] >= 0) report.tributaries++; });
+        }
+        hG = gridHeights();
+        lakes0 = findLakes();
       }
-      hG = gridHeights();
     }
+    // Every river the painter drew stands for a whole system: its catchment (the land
+    // whose water reaches it) has to be wet enough for a river that size — most of all in
+    // its headwaters — and streams too small to draw gather into it.
+    const sizeOf = (r, upLen) => (r.manual && r.manual.size != null ? +r.manual.size : upLen * kmUnit < 80 ? 0 : upLen * kmUnit < 400 ? 1 : upLen * kmUnit < 1500 ? 2 : 3);
+    let wetBoost = null, catchOf = null, drawnSize = null;
+    const drawnIdx = rivers.map((r, k) => k).filter((k) => !rivers[k].auto);
+    if (drawnIdx.length && (opts.tributaries || opts.biomes)) {
+      const net = TA.riverNetwork(rivers.map((r) => r.pts), 1.3);
+      drawnSize = new Int8Array(rivers.length).fill(-1);
+      const foot = new Int32Array(N).fill(-1), footA = new Float32Array(N);
+      drawnIdx.forEach((k) => {
+        drawnSize[k] = sizeOf(rivers[k], net.upLen[k]);
+        const P = TA.resamplePolyline(rivers[k].pts, 0.5);
+        P.forEach((q, s0) => {
+          const c = gIdx(q[0], q[1]);
+          if (foot[c] < 0 || drawnSize[k] > drawnSize[foot[c]]) { foot[c] = k; footA[c] = s0 / Math.max(1, P.length - 1); }
+        });
+      });
+      // downstream first, every cell takes the river its water reaches and where it joins it
+      // (routed as the new rivers below are, so a stream found there belongs to the system)
+      const hF = flowSurface();
+      const pf = TA.priorityBreach(hF, W, H);
+      const dn = pf.down;
+      catchOf = new Int32Array(N).fill(-1);
+      const joinA = new Float32Array(N);
+      for (let k = 0; k < pf.order.length; k++) {
+        const c = pf.order[k];
+        if (foot[c] >= 0) { catchOf[c] = foot[c]; joinA[c] = footA[c]; continue; }
+        const d = dn[c];
+        if (d >= 0 && catchOf[d] >= 0) { catchOf[c] = catchOf[d]; joinA[c] = joinA[d]; }
+      }
+      // how wet each catchment is now, and how wet a river that size needs it
+      const NEED = [0, 0.2, 0.27, 0.34];
+      const clim0 = TA.climate(hG, W, H, climOpts);
+      const sum = new Float64Array(rivers.length), cnt = new Float64Array(rivers.length);
+      for (let i = 0; i < N; i++) { const k = catchOf[i]; if (k >= 0 && hG[i] > 0) { sum[k] += clim0.prec[i]; cnt[k]++; } }
+      wetBoost = new Float32Array(N).fill(1);
+      drawnIdx.forEach((k) => {
+        const mean = cnt[k] ? sum[k] / cnt[k] : 1, need = NEED[drawnSize[k]];
+        const f = need > mean ? Math.min(4, need / Math.max(0.02, mean)) : 1;
+        report.systems.push({ name: rivers[k].name || "", size: drawnSize[k], km2: Math.round(cnt[k] * kmUnit * kmUnit), boosted: f > 1.02 });
+        if (f <= 1.02) return;
+        // the headwaters (land draining into the upper course) get the most rain
+        for (let i = 0; i < N; i++) if (catchOf[i] === k) wetBoost[i] = 1 + (f - 1) * (0.45 + 0.9 * (1 - joinA[i]));
+      });
+      // no hard edge at the divide
+      const tmpB = new Float32Array(N);
+      boxBlur(wetBoost, W, H, 2, tmpB);
+    }
+    const boosted = (clim) => { if (wetBoost) for (let i = 0; i < N; i++) clim.prec[i] = Math.min(1, clim.prec[i] * wetBoost[i]); return clim; };
+
+    const addTribs = opts.tributaries && catchOf;
+    if (opts.addRivers || addTribs) {
+      const clim = boosted(TA.climate(hG, W, H, climOpts));
+      const thr = Math.max(10, +inp.riverThreshold || 60);
+      const TRIB = [1, 0.7, 0.5, 0.35]; // share of the threshold a stream needs inside a drawn river's catchment, by its size
+      const thrLow = addTribs ? thr * TRIB[drawnIdx.reduce((m, k) => Math.max(m, drawnSize[k]), 0)] : thr;
+      const hyd = TA.hydrology(flowSurface(), W, H, { rain: clim.prec, riverThreshold: thrLow, through: lakes0.mask,
+        minRiverCells: 4, minLakeCells: 1e12, breach: true });
+      const mask = new Uint8Array(N);
+      const stampMask = (pts) => {
+        TA.resamplePolyline(pts, 0.5).forEach((q) => {
+          const cx = Math.floor(q[0]), cy = Math.floor(q[1]);
+          for (let dy = -1; dy <= 1; dy++) {
+            for (let dx = -1; dx <= 1; dx++) {
+              const x = cx + dx, y = cy + dy;
+              if (x >= 0 && y >= 0 && x < W && y < H) mask[y * W + x] = 1;
+            }
+          }
+        });
+      };
+      rivers.forEach((r) => stampMask(r.pts));
+      const sim = hyd.rivers;
+      const depth = sim.map((r) => { let d = 0, c = r.into; while (c >= 0 && d <= sim.length) { d++; c = sim[c].into; } return d; });
+      const order = sim.map((_, i) => i).sort((a, b) => (depth[a] - depth[b]) || (sim[b].flux - sim[a].flux));
+      const addedIdx = [];
+      const tribOf = new Map(); // added river index → the drawn river whose system it belongs to
+      const centre = (c) => [c % W + 0.5, ((c / W) | 0) + 0.5];
+      order.forEach((si) => {
+        const r = sim[si];
+        const cells = r.cells;
+        let cut = cells.length;
+        for (let k = 0; k < cells.length; k++) if (mask[cells[k]]) { cut = k; break; }
+        if (cut < 4) return; // too short, or it is a river that is already there
+        // a stream of a drawn river's system, or a river of its own?
+        const sys = catchOf ? catchOf[cells[0]] : -1;
+        const flux = hyd.acc[cells[cut - 1]];
+        if (sys >= 0 && addTribs) {
+          if (flux < thr * TRIB[drawnSize[sys]]) return;
+        } else {
+          if (!opts.addRivers || flux < thr || cut < 6) return;
+        }
+        let pts = Array.from(cells.slice(0, cut), centre);
+        let onRiver = cut < cells.length;
+        if (!onRiver && r.mouth >= 0) {
+          // on to the sea, a lake that was kept, or a river; the stream it joined or the
+          // hollow it filled may not have been kept, so follow the water on from there
+          let c = r.mouth, guard = 0;
+          while (c >= 0 && guard++ < N) {
+            if (mask[c]) { onRiver = true; break; }
+            pts.push(centre(c));
+            if (hG[c] <= 0) break; // the sea or a lake
+            c = hyd.down[c];
+          }
+        }
+        if (onRiver) {
+          // stopped a cell or two before the river it reaches: run on to its course
+          const q = nearestRiver(pts[pts.length - 1], 6, -1);
+          if (q) pts.push(q.point);
+        }
+        // a gentle meander, then smooth (both ends stay where they are)
+        // (a field over the map, not along the river: a river found again on a later run
+        // wiggles the same way)
+        pts = pts.map((p, k) => {
+          if (k === 0 || k === pts.length - 1) return p;
+          const a = pts[k - 1], b = pts[k + 1];
+          let tx = b[0] - a[0], ty = b[1] - a[1];
+          const tl = Math.hypot(tx, ty) || 1;
+          tx /= tl; ty /= tl;
+          const off = (vnoise(p[0] * 0.45, p[1] * 0.45, seed + 97) - 0.5) * 0.9;
+          return [p[0] - ty * off, p[1] + tx * off];
+        });
+        pts = TA.rdp(TA.chaikin(pts, 2, false), 0.12);
+        const minLen = sys >= 0 && addTribs ? Math.max(4, (+inp.minRiverLength || 10) * 0.4) : (+inp.minRiverLength || 10);
+        if (TA.polylineLength(pts) < minLen) return;
+        const trib = sys >= 0 && addTribs;
+        rivers.push(trib ? { name: "", pts, auto: true, trib: 1, width: 1 } : { name: "", pts, auto: true, width: 1 });
+        addedIdx.push(rivers.length - 1);
+        if (trib) tribOf.set(rivers.length - 1, sys);
+        stampMask(pts);
+      });
+      report.added = addedIdx.length;
+      // names kept from the time rivers were simulated (older worlds)
+      Object.keys(inp.riverNames || {}).forEach((key) => {
+        const nm = inp.riverNames[key];
+        if (!nm || !nm.name || !nm.anchor) return;
+        let best = null, bl = -1;
+        rivers.forEach((r) => {
+          if (r.name || !nearestOnPolyline(r.pts, nm.anchor, 4)) return;
+          const L = TA.polylineLength(r.pts);
+          if (L > bl) { bl = L; best = r; }
+        });
+        if (best) { best.name = nm.name; if (nm.notes) best.notes = nm.notes; report.named++; }
+      });
+      const net = carveNetwork(addedIdx);
+      addedIdx.forEach((i) => { if (net.into[i] >= 0) report.tributaries++; });
+      // how many streams each drawn river gathered
+      const perSys = new Map();
+      tribOf.forEach((sys) => perSys.set(sys, (perSys.get(sys) || 0) + 1));
+      report.systems.forEach((sy) => { sy.tribs = 0; });
+      drawnIdx.forEach((k, j) => { if (report.systems[j]) report.systems[j].tribs = perSys.get(k) || 0; });
+      report.drawnTribs = tribOf.size;
+    }
+    hG = gridHeights();
 
     // ---- a last check along every river: the water surface never rises downstream
     //      (smooths the little steps where corridors of joining rivers overlap) ----
@@ -2112,27 +2356,53 @@
       hG = gridHeights();
     }
 
-    // ---- 5. natural zones from the climate, only on unpainted land ----
+    // ---- 5. natural zones from the climate; cover painted by hand stays ----
     if (opts.biomes) {
-      const clim = TA.climate(hG, W, H, inp.climate || {});
-      const wet = new Uint8Array(N);
-      rivers.forEach((r) => {
+      const clim = boosted(TA.climate(hG, W, H, climOpts));
+      // green valleys: land along a river is watered by it, the wider the bigger the river
+      // (a stream ~5 km each side, a great river ~25 km); a big river's flat mouth is a delta
+      const rip = new Float32Array(N), delta = new Uint8Array(N);
+      const netAll = TA.riverNetwork(rivers.map((r) => r.pts), 1.3);
+      const HALF_KM = [5, 9, 15, 24];
+      rivers.forEach((r, k) => {
+        const sz = sizeOf(r, netAll.upLen[k]);
+        const R = Math.max(1, HALF_KM[sz] / kmUnit); // in cells
+        const Rc = Math.ceil(R);
         TA.resamplePolyline(r.pts, 0.5).forEach((q) => {
           const cx = Math.floor(q[0]), cy = Math.floor(q[1]);
-          for (let dy = -2; dy <= 2; dy++) {
-            for (let dx = -2; dx <= 2; dx++) {
-              const x = cx + dx, y = cy + dy;
-              if (x >= 0 && y >= 0 && x < W && y < H) wet[y * W + x] = 1;
+          for (let dy = -Rc; dy <= Rc; dy++) {
+            const y = cy + dy;
+            if (y < 0 || y >= H) continue;
+            for (let dx = -Rc; dx <= Rc; dx++) {
+              const x = cx + dx;
+              if (x < 0 || x >= W) continue;
+              const dd = Math.hypot(x + 0.5 - q[0], y + 0.5 - q[1]);
+              if (dd > R) continue;
+              const i = y * W + x, v = 1 - dd / R;
+              if (v > rip[i]) rip[i] = v;
             }
           }
         });
+        // a large river reaching the sea over flat land spreads into a delta
+        const m = r.pts[r.pts.length - 1];
+        if (sz >= 2 && netAll.into[k] < 0 && waterNear(m, 1.5)) {
+          const D = Math.ceil((sz === 3 ? 40 : 22) / kmUnit);
+          const cx = Math.floor(m[0]), cy = Math.floor(m[1]);
+          for (let dy = -D; dy <= D; dy++) for (let dx = -D; dx <= D; dx++) {
+            const x = cx + dx, y = cy + dy;
+            if (x < 0 || y < 0 || x >= W || y >= H || dx * dx + dy * dy > D * D) continue;
+            const i = y * W + x;
+            if (hG[i] > 0 && hG[i] < 60 && rip[i] > 0.15) delta[i] = 1;
+          }
+        }
       });
-      const biome = new Uint8Array(N);
+      // two fields: the land away from rivers, and the same land in a river valley
+      const biome = new Uint8Array(N), biomeV = new Uint8Array(N);
       for (let y = 0; y < H; y++) {
         for (let x = 0; x < W; x++) {
           const i = y * W + x;
           if (hG[i] <= 0) continue;
-          let nearWater = wet[i] === 1, flat = true;
+          let nearWater = false, flat = true;
           for (let dy = -2; dy <= 2; dy++) {
             for (let dx = -2; dx <= 2; dx++) {
               const xx = x + dx, yy = y + dy;
@@ -2142,10 +2412,14 @@
               if (Math.abs(hG[j] - hG[i]) > 60) flat = false;
             }
           }
-          biome[i] = TA.biomeOf(clim.temp[i], Math.min(1, clim.prec[i] + (nearWater ? 0.12 : 0)), hG[i], nearWater, flat);
+          const t = clim.temp[i], p = clim.prec[i];
+          biome[i] = TA.biomeOf(t, p, hG[i], nearWater, flat);
+          // the river keeps its banks green whatever the rain: at the channel as wet as a forest
+          biomeV[i] = delta[i] && t > 0 ? 13
+            : rip[i] > 0 ? TA.biomeOf(t, Math.max(p, TA.pet(t) * (0.55 + 0.55 * rip[i])), hG[i], nearWater, flat) : biome[i];
         }
       }
-      // majority filter (5×5, twice): no speckles of desert inside a forest
+      // majority filter (5×5, twice) away from rivers: no speckles of desert inside a forest
       for (let pass = 0; pass < 2; pass++) {
         const src2 = biome.slice();
         const votes = new Uint16Array(14);
@@ -2158,8 +2432,7 @@
               for (let dx = -2; dx <= 2; dx++) {
                 const xx = x + dx, yy = y + dy;
                 if (xx < 0 || yy < 0 || xx >= W || yy >= H) continue;
-                const b = src2[yy * W + xx];
-                if (b) votes[b]++;
+                votes[src2[yy * W + xx]]++;
               }
             }
             let best = src2[i];
@@ -2168,26 +2441,50 @@
           }
         }
       }
-      let land = 0, painted = 0;
+      // painted cell by cell: the edge of a valley follows the river (the valley field is
+      // read between analysis cells), the rest takes a jittered look so zones interlock
+      const RIP = 0.25;
+      const deltaF = new Float32Array(N);
+      for (let i = 0; i < N; i++) deltaF[i] = delta[i];
+      const between = (a, gx, gy) => {
+        const fx = gx - 0.5, fy = gy - 0.5;
+        const xa = clamp(Math.floor(fx), 0, W - 1), ya = clamp(Math.floor(fy), 0, H - 1);
+        const xb = Math.min(W - 1, xa + 1), yb = Math.min(H - 1, ya + 1);
+        const tx = clamp(fx - xa, 0, 1), ty = clamp(fy - ya, 0, 1);
+        const top = a[ya * W + xa] + (a[ya * W + xb] - a[ya * W + xa]) * tx;
+        const bot = a[yb * W + xa] + (a[yb * W + xb] - a[yb * W + xa]) * tx;
+        return top + (bot - top) * ty;
+      };
+      let land = 0, painted = 0, valley = 0;
+      const AUTO = TA.COVER_AUTO;
       for (let y = 0; y < RH; y++) {
         for (let x = 0; x < RW; x++) {
           const i = y * RW + x;
           if (rel[i] <= 0) continue;
           land++;
-          if (C[i]) continue;
-          const jx = (x + 0.5) / RES + (vnoise(x / 4, y / 4, seed + 71) - 0.5) * 2.2;
-          const jy = (y + 0.5) / RES + (vnoise(x / 4 + 31.7, y / 4 + 12.3, seed + 83) - 0.5) * 2.2;
-          let b = biome[gIdx(jx, jy)] || biome[gIdx(x / RES, y / RES)];
+          if (C[i] && !(C[i] & AUTO) && !opts.repaintAll) continue; // painted by hand
+          const gx = (x + 0.5) / RES, gy = (y + 0.5) / RES;
+          const g0 = gIdx(gx, gy);
+          const inValley = between(rip, gx, gy) > RIP || between(deltaF, gx, gy) > 0.5;
+          let b;
+          if (inValley) b = biomeV[g0] || biome[g0];
+          else {
+            const jx = gx + (vnoise(x / 4, y / 4, seed + 71) - 0.5) * 2.2;
+            const jy = gy + (vnoise(x / 4 + 31.7, y / 4 + 12.3, seed + 83) - 0.5) * 2.2;
+            b = biome[gIdx(jx, jy)] || biome[g0];
+          }
           if (!b) { // a coastal cell whose analysis cell counts as water
-            const gx = Math.floor(x / RES), gy = Math.floor(y / RES);
-            for (let dy = -1; dy <= 1 && !b; dy++) for (let dx = -1; dx <= 1 && !b; dx++) b = biome[gIdx(gx + dx, gy + dy)];
+            const cx = Math.floor(gx), cy = Math.floor(gy);
+            for (let dy = -1; dy <= 1 && !b; dy++) for (let dx = -1; dx <= 1 && !b; dx++) b = (inValley ? biomeV : biome)[gIdx(cx + dx, cy + dy)];
           }
           if (!b) continue;
-          C[i] = TA.COVER_OF_BIOME[b];
+          C[i] = TA.COVER_OF_BIOME[b] | AUTO;
           painted++;
+          if (inValley) valley++;
         }
       }
       report.biomePct = land ? Math.round(painted / land * 100) : 0;
+      report.valleysKm2 = Math.round(valley * (kmUnit / RES) * (kmUnit / RES));
     }
 
     const out = new Int16Array(N2);

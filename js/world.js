@@ -29,6 +29,9 @@
   // painted cover values (0 = nothing painted); indices match TA.COVER_OF_BIOME
   const COVER = ["none", "plains", "forest", "desert", "marsh", "tundra", "jungle", "taiga", "savanna", "glacier"];
   const COVER_CLASSES = COVER.slice(1); // analysis classes (unpainted land counts as plains)
+  // the geography pass sets the top bit on the cover it paints (TA.COVER_AUTO), so a later
+  // run repaints its own cover but never the painter's; everything that reads cover masks it
+  const COVER_MASK = 127;
 
   const RELIEF_BRUSHES = ["land", "sea", "plains", "hills", "mountains", "peaks", "ridge", "valley", "raise", "lower", "smooth"];
   // index in this list = the cover value the brush paints ("autoCover" erases the cover)
@@ -46,7 +49,8 @@
     river: "#3f77b3", eraseRiver: "#c65a5a"
   };
   // the options of the geography pass and their defaults
-  const GEO_DEFAULTS = { fixRivers: true, addRivers: true, density: 0.5, lakes: true, biomes: true, foothills: true, erosion: false };
+  const GEO_DEFAULTS = { fixRivers: true, addRivers: true, tributaries: true, density: 0.5, lakes: true, biomes: true, foothills: true,
+    erosion: false, repaintAll: false };
 
   const World = (window.World = {
     GW, GH, RES, RW, RH, COVER, COVER_CLASSES, BRUSHES, RELIEF_BRUSHES, COVER_BRUSHES, WATER_BRUSHES, BRUSH_SWATCH,
@@ -356,7 +360,7 @@
   // no cliff shadow.
   function landRGB(i, x, y, Hh, C, sl, snowline, zf, out) {
     const hr = Hh[i] - sl;
-    const cv = C[i];
+    const cv = C[i] & COVER_MASK;
     const base = COVER_COLOR[cv] || COVER_COLOR[0];
     let r = base[0], g = base[1], b = base[2];
     // bare rock with altitude (not under a glacier)
@@ -386,7 +390,7 @@
     out[1] = SHALLOW[1] + (MID[1] - SHALLOW[1]) * t1 + (DEEP[1] - MID[1]) * t2;
     out[2] = SHALLOW[2] + (MID[2] - SHALLOW[2]) * t1 + (DEEP[2] - MID[2]) * t2;
   }
-  const grainOf = (cv) => (cv === 2 || cv === 6 || cv === 7 ? 18 : 9); // forests look rougher
+  const grainOf = (cv) => ((cv &= COVER_MASK) === 2 || cv === 6 || cv === 7 ? 18 : 9); // forests look rougher
 
   // paint a raster rectangle of heights Hh / cover C into ctx (the terrain canvas or the preview)
   function paintRect(x0, y0, x1, y1, Hh, C, ctx) {
@@ -896,7 +900,8 @@
     const i = y * RW + x;
     const hr = World.height[i] - sea();
     if (hr <= 0) return "sea";
-    if (World.cover[i]) return COVER_BRUSHES[World.cover[i]] || "meadow";
+    const cv = World.cover[i] & COVER_MASK;
+    if (cv) return COVER_BRUSHES[cv] || "meadow";
     if (hr >= 3500) return "peaks";
     if (hr >= 1500) return "mountains";
     if (hr >= 500) return "hills";
@@ -906,6 +911,23 @@
     if (!World.height) return null;
     const x = clamp(Math.floor(g[0] * RES), 0, RW - 1), y = clamp(Math.floor(g[1] * RES), 0, RH - 1);
     return World.height[y * RW + x] - sea();
+  };
+  // share of the land (%) whose cover the geography pass leaves alone: painted by hand, or
+  // by a version of the pass from before it marked its own cover
+  let handShare = null;
+  World.handCoverShare = function () {
+    if (!World.height) return 0;
+    const key = World.rasterRev + ":" + sea();
+    if (handShare && handShare.key === key) return handShare.v;
+    const Hh = World.height, C = World.cover, sl = sea();
+    let land = 0, hand = 0;
+    for (let i = 0; i < RW * RH; i++) {
+      if (Hh[i] <= sl) continue;
+      land++;
+      if (C[i] && !(C[i] & ~COVER_MASK)) hand++;
+    }
+    handShare = { key, v: land ? Math.round(hand / land * 100) : 0 };
+    return handShare.v;
   };
 
   World.setWorld = function (patch, opts) {
@@ -1009,7 +1031,7 @@
 
   // Analysis of the terrain as it is (basins for smart provinces, climate for the atlas).
   // It runs on demand and is never drawn.
-  const climateKey = () => JSON.stringify(W0().climate || {});
+  const climateKey = () => JSON.stringify(W0().climate || {}) + ":" + (+W0().scaleKm || 5);
   World.hydroFresh = function () {
     const hy = World.hydro;
     return !!(hy && hy.rasterRev === World.rasterRev && hy.climateKey === climateKey() && hy.sea === sea());
@@ -1024,7 +1046,8 @@
     const forRaster = World.rasterRev, key = climateKey(), sl = sea();
     const heights = World.dataHeights();
     const hgrid = heights.slice();
-    return runJob({ type: "hydro", rev, W: GW, H: GH, heights: heights.buffer, climate: w.climate, riverThreshold: 60 },
+    return runJob({ type: "hydro", rev, W: GW, H: GH, heights: heights.buffer,
+      climate: Object.assign({}, w.climate, { km: +w.scaleKm || 5 }), riverThreshold: 60 },
       [heights.buffer]).then((m) => {
       if (rev !== hydroRev || App.project !== project) return null; // superseded
       World.hydro = {
@@ -1283,7 +1306,7 @@
         const i = y * GW + x;
         band[i] = TA.bandOf(h[i]);
         counts.fill(0);
-        for (let dy = 0; dy < RES; dy++) for (let dx = 0; dx < RES; dx++) counts[C[(y * RES + dy) * RW + x * RES + dx]]++;
+        for (let dy = 0; dy < RES; dy++) for (let dx = 0; dx < RES; dx++) counts[C[(y * RES + dy) * RW + x * RES + dx] & COVER_MASK]++;
         let best = 0;
         for (let k = 1; k < COVER.length; k++) if (counts[k] > counts[best]) best = k;
         coverClass[i] = best > 0 && counts[best] >= 2 ? best - 1 : 0;

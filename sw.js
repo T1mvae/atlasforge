@@ -7,7 +7,7 @@
 //          template is opened (or via "download for offline"), then served cache-first.
 // A new version installs in the background and waits; the page asks the user to reload
 // (message "skipWaiting") so an edit in progress is never interrupted.
-const VERSION = "135865dc9c";
+const VERSION = "1853e9a3b7";
 const SHELL = "af-shell-" + VERSION;
 const DATA = "af-data-v1";
 const PRECACHE = [
@@ -17,8 +17,8 @@ const PRECACHE = [
   "build/map.js?v=b0a00fefea",
   "build/objects.js?v=85e5a3856b",
   "build/panels.js?v=22be86f0ca",
-  "build/world.js?v=c6f70dc989",
-  "css/editor.css?v=332e39c46a",
+  "build/world.js?v=15cfae87d5",
+  "css/editor.css?v=36ca6c8ebe",
   "icons/apple-touch-icon.png",
   "icons/apple-touch-icon.png?v=953bc6d2b1",
   "icons/icon-192.png",
@@ -30,15 +30,15 @@ const PRECACHE = [
   "js/edit.js?v=bfb1feadc3",
   "js/export.js?v=cb2f6d64d9",
   "js/geo.js?v=a68a71e50b",
-  "js/i18n.js?v=c32f43dbde",
+  "js/i18n.js?v=4f7c1607a0",
   "js/names.js?v=bba4c0ceee",
   "js/objects.js?v=e11d5d7ba0",
   "js/pwa.js?v=9f35de276b",
   "js/regions.js?v=e79649b7ce",
   "js/storage.js?v=3b0efdbec5",
-  "js/terrain-algos.js?v=0e5f88b934",
+  "js/terrain-algos.js?v=3e001197c6",
   "js/terrain.worker.js?v=689563dd1a",
-  "js/world.js?v=29697e2883",
+  "js/world.js?v=c7c113c43f",
   "manifest.webmanifest?v=10553cf767",
   "vendor/d3.min.js?v=69faba9d2f",
   "vendor/polygon-clipping.umd.min.js?v=6aa5a82c1d",

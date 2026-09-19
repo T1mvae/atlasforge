@@ -185,6 +185,11 @@ function WorldPalette() {
               <input type="range" className="range" min="10" max="40" step="1" value={clim.tEquator ?? 27}
                 onChange={(e) => setClimate({ tEquator: +e.target.value })}></input>
             </label>
+            <label className="wp-field">
+              <span>{t("world.tPole")} — {clim.tPole ?? -28} °C</span>
+              <input type="range" className="range" min="-50" max="10" step="1" value={clim.tPole ?? -28}
+                onChange={(e) => setClimate({ tPole: +e.target.value })}></input>
+            </label>
           </WorldSection>
 
           <WorldSection id="map" title={t("world.mapSettings")}>
@@ -224,10 +229,11 @@ function GeoSheet() {
   if (!p || !p.world || !World.active()) return null;
   const set = (patch) => setO(Object.assign({}, o, patch));
   const hasRivers = (p.world.rivers || []).some((r) => !r.auto);
-  const any = o.fixRivers || o.addRivers || o.lakes || o.biomes || o.foothills || o.erosion;
+  const any = o.fixRivers || o.addRivers || o.tributaries || o.lakes || o.biomes || o.foothills || o.erosion;
+  const legacy = World.handCoverShare(); // % of land whose cover the fix leaves alone
   const close = () => Actions.ui({ modal: null });
   const run = () => {
-    World.setWorld({ geoOpts: o });
+    World.setWorld({ geoOpts: Object.assign({}, o, { repaintAll: false }) }); // repainting everything is never remembered
     close();
     World.runGeography(o);
   };
@@ -252,6 +258,7 @@ function GeoSheet() {
           <div className="muted">{t("world.geo.intro")}</div>
           <div className="wp-section">{t("world.geo.groupWater")}</div>
           {opt("fixRivers", !hasRivers ? <span className="geo-opt-warn">{t("world.geo.noDrawnRivers")}</span> : null)}
+          {opt("tributaries", !hasRivers ? <span className="geo-opt-warn">{t("world.geo.noDrawnRivers")}</span> : null)}
           {opt("addRivers")}
           {o.addRivers && (
             <label className="wp-field geo-slider">
@@ -263,6 +270,8 @@ function GeoSheet() {
           {opt("lakes")}
           <div className="wp-section">{t("world.geo.groupLand")}</div>
           {opt("biomes")}
+          {o.biomes && legacy >= 30 && !o.repaintAll && <div className="wp-note geo-legacy">{t("world.geo.legacyCover").replace("{n}", legacy)}</div>}
+          {o.biomes && legacy >= 1 && opt("repaintAll")}
           {opt("foothills")}
           {opt("erosion")}
         </div>
@@ -292,13 +301,20 @@ function geoReportLines(r, opts) {
     if (r.gorges.length) out.push(t("world.geo.r.gorges").replace("{n}", r.gorges.length) + names(r.gorges));
     if (!r.reversed.length && !r.extended.length && !r.gorges.length) out.push(t("world.geo.r.riversOk"));
   }
-  if (opts.addRivers) {
+  if (opts.addRivers || opts.tributaries) {
     out.push(t("world.geo.r.added").replace("{n}", r.added).replace("{m}", r.tributaries) +
       (r.replaced ? " " + t("world.geo.r.replaced").replace("{n}", r.replaced) : ""));
     if (r.named) out.push(t("world.geo.r.named").replace("{n}", r.named));
   }
+  if (opts.tributaries && r.systems && r.systems.length) {
+    const sys = r.systems.slice().sort((a, b) => b.km2 - a.km2);
+    const list = sys.slice(0, 3).map((sy) => t("world.geo.r.system").replace("{name}", sy.name ? "«" + sy.name + "»" : t("world.geo.r.unnamed"))
+      .replace("{km}", fmtNum(Math.round(sy.km2 / 1000) * 1000)).replace("{n}", sy.tribs || 0) + (sy.boosted ? t("world.geo.r.systemWet") : ""));
+    out.push(t("world.geo.r.systems").replace("{list}", list.join("; ")) + (sys.length > 3 ? t("world.geo.r.more").replace("{n}", sys.length - 3) : ""));
+  }
   if (opts.lakes) out.push(r.lakes ? t("world.geo.r.lakes").replace("{n}", r.lakes).replace("{km}", fmtNum(r.lakeKm2)) : t("world.geo.r.noLakes"));
-  if (opts.biomes) out.push(t("world.geo.r.biomes").replace("{n}", r.biomePct || 0));
+  if (opts.biomes) out.push(t(opts.repaintAll ? "world.geo.r.biomesAll" : "world.geo.r.biomes").replace("{n}", r.biomePct || 0));
+  if (opts.biomes && r.valleysKm2) out.push(t("world.geo.r.valleys").replace("{km}", fmtNum(Math.round(r.valleysKm2 / 1000) * 1000)));
   if (opts.foothills) out.push(r.foothillsKm2 ? t("world.geo.r.foothills").replace("{km}", fmtNum(r.foothillsKm2)) : t("world.geo.r.noFoothills"));
   if (opts.erosion) out.push(t("world.geo.r.erosion"));
   return out;

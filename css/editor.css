@@ -697,6 +697,7 @@ button, .chip, .state-row, .menu-item { touch-action: manipulation; }
 .geo-opt-text span { color: var(--text-dim); font-size: 12px; line-height: 1.35; }
 .geo-opt-text .geo-opt-warn { color: var(--danger); }
 .geo-slider { padding: 0 10px 0 36px; }
+.geo-legacy { font-size: 12px; color: var(--text); background: var(--accent-soft); border-radius: 8px; padding: 8px 10px; }
 .geo-bar {
   position: absolute; left: 50%; bottom: 16px; transform: translateX(-50%); z-index: 46;
   width: min(560px, calc(100% - 24px)); max-height: min(60%, 420px); overflow-y: auto;

@@ -65,7 +65,7 @@ function BrushGrid(_ref2) {
   }));
 }
 function WorldPalette() {
-  var _clim$latTop, _clim$latTop2, _clim$latBottom, _clim$latBottom2, _clim$tEquator, _clim$tEquator2;
+  var _clim$latTop, _clim$latTop2, _clim$latBottom, _clim$latBottom2, _clim$tEquator, _clim$tEquator2, _clim$tPole, _clim$tPole2;
   useStore();
   var p = App.project;
   if (!p || !p.world) return null;
@@ -406,6 +406,20 @@ function WorldPalette() {
         tEquator: +e.target.value
       });
     }
+  })), /*#__PURE__*/React.createElement("label", {
+    className: "wp-field"
+  }, /*#__PURE__*/React.createElement("span", null, t("world.tPole"), " \u2014 ", (_clim$tPole = clim.tPole) !== null && _clim$tPole !== void 0 ? _clim$tPole : -28, " \xB0C"), /*#__PURE__*/React.createElement("input", {
+    type: "range",
+    className: "range",
+    min: "-50",
+    max: "10",
+    step: "1",
+    value: (_clim$tPole2 = clim.tPole) !== null && _clim$tPole2 !== void 0 ? _clim$tPole2 : -28,
+    onChange: function onChange(e) {
+      return setClimate({
+        tPole: +e.target.value
+      });
+    }
   }))), /*#__PURE__*/React.createElement(WorldSection, {
     id: "map",
     title: t("world.mapSettings")
@@ -488,7 +502,8 @@ function GeoSheet() {
   var hasRivers = (p.world.rivers || []).some(function (r) {
     return !r.auto;
   });
-  var any = o.fixRivers || o.addRivers || o.lakes || o.biomes || o.foothills || o.erosion;
+  var any = o.fixRivers || o.addRivers || o.tributaries || o.lakes || o.biomes || o.foothills || o.erosion;
+  var legacy = World.handCoverShare(); // % of land whose cover the fix leaves alone
   var close = function close() {
     return Actions.ui({
       modal: null
@@ -496,8 +511,10 @@ function GeoSheet() {
   };
   var run = function run() {
     World.setWorld({
-      geoOpts: o
-    });
+      geoOpts: Object.assign({}, o, {
+        repaintAll: false
+      })
+    }); // repainting everything is never remembered
     close();
     World.runGeography(o);
   };
@@ -537,6 +554,8 @@ function GeoSheet() {
     className: "wp-section"
   }, t("world.geo.groupWater")), opt("fixRivers", !hasRivers ? /*#__PURE__*/React.createElement("span", {
     className: "geo-opt-warn"
+  }, t("world.geo.noDrawnRivers")) : null), opt("tributaries", !hasRivers ? /*#__PURE__*/React.createElement("span", {
+    className: "geo-opt-warn"
   }, t("world.geo.noDrawnRivers")) : null), opt("addRivers"), o.addRivers && /*#__PURE__*/React.createElement("label", {
     className: "wp-field geo-slider"
   }, /*#__PURE__*/React.createElement("span", null, t("world.geo.density")), /*#__PURE__*/React.createElement("input", {
@@ -553,7 +572,9 @@ function GeoSheet() {
     }
   })), opt("lakes"), /*#__PURE__*/React.createElement("div", {
     className: "wp-section"
-  }, t("world.geo.groupLand")), opt("biomes"), opt("foothills"), opt("erosion")), /*#__PURE__*/React.createElement("div", {
+  }, t("world.geo.groupLand")), opt("biomes"), o.biomes && legacy >= 30 && !o.repaintAll && /*#__PURE__*/React.createElement("div", {
+    className: "wp-note geo-legacy"
+  }, t("world.geo.legacyCover").replace("{n}", legacy)), o.biomes && legacy >= 1 && opt("repaintAll"), opt("foothills"), opt("erosion")), /*#__PURE__*/React.createElement("div", {
     className: "modal-foot"
   }, /*#__PURE__*/React.createElement("button", {
     className: "btn outline",
@@ -586,12 +607,22 @@ function geoReportLines(r, opts) {
     if (r.gorges.length) out.push(t("world.geo.r.gorges").replace("{n}", r.gorges.length) + names(r.gorges));
     if (!r.reversed.length && !r.extended.length && !r.gorges.length) out.push(t("world.geo.r.riversOk"));
   }
-  if (opts.addRivers) {
+  if (opts.addRivers || opts.tributaries) {
     out.push(t("world.geo.r.added").replace("{n}", r.added).replace("{m}", r.tributaries) + (r.replaced ? " " + t("world.geo.r.replaced").replace("{n}", r.replaced) : ""));
     if (r.named) out.push(t("world.geo.r.named").replace("{n}", r.named));
   }
+  if (opts.tributaries && r.systems && r.systems.length) {
+    var sys = r.systems.slice().sort(function (a, b) {
+      return b.km2 - a.km2;
+    });
+    var list = sys.slice(0, 3).map(function (sy) {
+      return t("world.geo.r.system").replace("{name}", sy.name ? "«" + sy.name + "»" : t("world.geo.r.unnamed")).replace("{km}", fmtNum(Math.round(sy.km2 / 1000) * 1000)).replace("{n}", sy.tribs || 0) + (sy.boosted ? t("world.geo.r.systemWet") : "");
+    });
+    out.push(t("world.geo.r.systems").replace("{list}", list.join("; ")) + (sys.length > 3 ? t("world.geo.r.more").replace("{n}", sys.length - 3) : ""));
+  }
   if (opts.lakes) out.push(r.lakes ? t("world.geo.r.lakes").replace("{n}", r.lakes).replace("{km}", fmtNum(r.lakeKm2)) : t("world.geo.r.noLakes"));
-  if (opts.biomes) out.push(t("world.geo.r.biomes").replace("{n}", r.biomePct || 0));
+  if (opts.biomes) out.push(t(opts.repaintAll ? "world.geo.r.biomesAll" : "world.geo.r.biomes").replace("{n}", r.biomePct || 0));
+  if (opts.biomes && r.valleysKm2) out.push(t("world.geo.r.valleys").replace("{km}", fmtNum(Math.round(r.valleysKm2 / 1000) * 1000)));
   if (opts.foothills) out.push(r.foothillsKm2 ? t("world.geo.r.foothills").replace("{km}", fmtNum(r.foothillsKm2)) : t("world.geo.r.noFoothills"));
   if (opts.erosion) out.push(t("world.geo.r.erosion"));
   return out;

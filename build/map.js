@@ -2284,9 +2284,22 @@ function MapView() {
       return /*#__PURE__*/React.createElement("path", {
         key: "wr" + rv.index,
         d: World.riverPath(rv, bm.proj),
-        fill: rv.index === sel ? "#1f5fa8" : "#3f74a8",
-        stroke: rv.index === sel ? "#ffcf5a" : "#3f74a8",
-        strokeWidth: rv.index === sel ? 2 : 0.7,
+        fill: "#3f74a8",
+        stroke: "#3f74a8",
+        strokeWidth: 0.7,
+        strokeLinejoin: "round",
+        vectorEffect: "non-scaling-stroke"
+      });
+    }), list.filter(function (rv) {
+      return rv.index === sel;
+    }).map(function (rv) {
+      return /*#__PURE__*/React.createElement("path", {
+        key: "ws" + rv.index,
+        "data-export-skip": "1",
+        d: World.riverPath(rv, bm.proj),
+        fill: "#1f5fa8",
+        stroke: "#ffcf5a",
+        strokeWidth: 2,
         strokeLinejoin: "round",
         vectorEffect: "non-scaling-stroke"
       });

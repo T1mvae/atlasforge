@@ -280,18 +280,19 @@ function ObjectSymbols() {
 }
 
 // objects scale partly with the zoom so they stay readable when zoomed out and don't
-// swallow the map when zoomed in
-function objectScale(o, k) {
+// swallow the map when zoomed in. ppu: screen px per map unit at zoom 1 (the live screen
+// when omitted; an image export passes its own "virtual screen")
+function objectScale(o, k, ppu) {
   var ty = Objects.TYPE[o.type] || {
     size: 0.8
   };
   var imp = [0.75, 1, 1.3][Math.max(0, Math.min(2, (o.importance || 2) - 1))];
   // ~22 screen px for a normal city, growing a little as you zoom in
-  var pxPerUnit = (window.MapAPI && MapAPI.pxPerUnit ? MapAPI.pxPerUnit() : 1) * k;
+  var pxPerUnit = (ppu != null ? ppu : window.MapAPI && MapAPI.pxPerUnit ? MapAPI.pxPerUnit() : 1) * k;
   return 22 * ty.size * imp * Math.pow(k, 0.22) / Math.max(0.01, pxPerUnit) / 16;
 }
-function objectTransform(o, k) {
-  var s = objectScale(o, k);
+function objectTransform(o, k, ppu) {
+  var s = objectScale(o, k, ppu);
   return "translate(".concat(o.x, ",").concat(o.y, ") scale(").concat(s.toFixed(4), ") translate(-8,-15)");
 }
 

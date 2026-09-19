@@ -350,6 +350,44 @@
   const ROCK = hex("#8f8173"), SNOW = hex("#f3f6f8"), SHALLOW = hex("#90c1da"), MID = hex("#5d9bc5"), DEEP = hex("#35699a");
   const GLACIER = 9;
 
+  // colour of a land cell before the coast rim and the grain: cover, bare rock with
+  // altitude, snow above the snow line, Horn hillshade with light from the north-west.
+  // Water next to the shore counts as level ground, so a lake high in the hills throws
+  // no cliff shadow.
+  function landRGB(i, x, y, Hh, C, sl, snowline, zf, out) {
+    const hr = Hh[i] - sl;
+    const cv = C[i];
+    const base = COVER_COLOR[cv] || COVER_COLOR[0];
+    let r = base[0], g = base[1], b = base[2];
+    // bare rock with altitude (not under a glacier)
+    const rt = cv === GLACIER ? 0 : smoothstep(1100, 3400, hr) * 0.78;
+    r += (ROCK[0] - r) * rt; g += (ROCK[1] - g) * rt; b += (ROCK[2] - b) * rt;
+    const snow = smoothstep(snowline - 400, snowline + 900, hr + (vnoise(x / 3, y / 3, 11) - 0.5) * 600);
+    if (snow > 0) { r += (SNOW[0] - r) * snow; g += (SNOW[1] - g) * snow; b += (SNOW[2] - b) * snow; }
+    const ym = y > 0 ? y - 1 : y, yp = y < RH - 1 ? y + 1 : y;
+    const xm = x > 0 ? x - 1 : x, xp = x < RW - 1 ? x + 1 : x;
+    const hc = Hh[i];
+    const at = (j) => (Hh[j] <= sl ? hc : Hh[j]);
+    const a1 = at(ym * RW + xm), a2 = at(ym * RW + x), a3 = at(ym * RW + xp);
+    const a4 = at(y * RW + xm), a6 = at(y * RW + xp);
+    const a7 = at(yp * RW + xm), a8 = at(yp * RW + x), a9 = at(yp * RW + xp);
+    const dzdx = ((a3 + 2 * a6 + a9) - (a1 + 2 * a4 + a7)) / 8 * zf;
+    const dzdy = ((a7 + 2 * a8 + a9) - (a1 + 2 * a2 + a3)) / 8 * zf;
+    const len = Math.sqrt(dzdx * dzdx + dzdy * dzdy + 1);
+    // light vector (-1, -1, 1.4) normalised
+    const lambert = (dzdx * 0.5 + dzdy * 0.5 + 0.7) / len;
+    const shade = clamp(0.35 + lambert * 0.95, 0.45, 1.3);
+    out[0] = r * shade; out[1] = g * shade; out[2] = b * shade;
+  }
+  // colour of water d metres deep
+  function waterRGB(d, out) {
+    const t1 = smoothstep(0, 350, d), t2 = smoothstep(350, 3500, d);
+    out[0] = SHALLOW[0] + (MID[0] - SHALLOW[0]) * t1 + (DEEP[0] - MID[0]) * t2;
+    out[1] = SHALLOW[1] + (MID[1] - SHALLOW[1]) * t1 + (DEEP[1] - MID[1]) * t2;
+    out[2] = SHALLOW[2] + (MID[2] - SHALLOW[2]) * t1 + (DEEP[2] - MID[2]) * t2;
+  }
+  const grainOf = (cv) => (cv === 2 || cv === 6 || cv === 7 ? 18 : 9); // forests look rougher
+
   // paint a raster rectangle of heights Hh / cover C into ctx (the terrain canvas or the preview)
   function paintRect(x0, y0, x1, y1, Hh, C, ctx) {
     ensureBuffers();
@@ -363,51 +401,26 @@
     const snowline = +W0().snowline || 4200;
     const cellM = ((+W0().scaleKm || 5) * 1000) / RES;
     const zf = 5.5 / cellM; // exaggerated relief
+    const col = [0, 0, 0];
     let o = 0;
     for (let y = y0; y <= y1; y++) {
-      const ym = y > 0 ? y - 1 : y, yp = y < RH - 1 ? y + 1 : y;
       for (let x = x0; x <= x1; x++) {
         const i = y * RW + x;
         const hr = Hh[i] - sl;
-        let r, g, b;
         const grain = (hash2(x, y, 7) - 0.5);
+        let r, g, b;
         if (hr <= 0) {
-          const d = -hr;
-          const t1 = smoothstep(0, 350, d), t2 = smoothstep(350, 3500, d);
-          r = SHALLOW[0] + (MID[0] - SHALLOW[0]) * t1 + (DEEP[0] - MID[0]) * t2;
-          g = SHALLOW[1] + (MID[1] - SHALLOW[1]) * t1 + (DEEP[1] - MID[1]) * t2;
-          b = SHALLOW[2] + (MID[2] - SHALLOW[2]) * t1 + (DEEP[2] - MID[2]) * t2;
+          waterRGB(-hr, col);
           const k = grain * 4;
-          r += k; g += k; b += k;
+          r = col[0] + k; g = col[1] + k; b = col[2] + k;
         } else {
-          const cv = C[i];
-          const base = COVER_COLOR[cv] || COVER_COLOR[0];
-          r = base[0]; g = base[1]; b = base[2];
-          // bare rock with altitude (not under a glacier)
-          const rt = cv === GLACIER ? 0 : smoothstep(1100, 3400, hr) * 0.78;
-          r += (ROCK[0] - r) * rt; g += (ROCK[1] - g) * rt; b += (ROCK[2] - b) * rt;
-          const snow = smoothstep(snowline - 400, snowline + 900, hr + (vnoise(x / 3, y / 3, 11) - 0.5) * 600);
-          if (snow > 0) { r += (SNOW[0] - r) * snow; g += (SNOW[1] - g) * snow; b += (SNOW[2] - b) * snow; }
-          // Horn hillshade, light from the north-west; water next to the shore counts as
-          // level ground, so a lake high in the hills does not throw a cliff shadow
-          const xm = x > 0 ? x - 1 : x, xp = x < RW - 1 ? x + 1 : x;
-          const hc = Hh[i];
-          const at = (j) => (Hh[j] <= sl ? hc : Hh[j]);
-          const a1 = at(ym * RW + xm), a2 = at(ym * RW + x), a3 = at(ym * RW + xp);
-          const a4 = at(y * RW + xm), a6 = at(y * RW + xp);
-          const a7 = at(yp * RW + xm), a8 = at(yp * RW + x), a9 = at(yp * RW + xp);
-          const dzdx = ((a3 + 2 * a6 + a9) - (a1 + 2 * a4 + a7)) / 8 * zf;
-          const dzdy = ((a7 + 2 * a8 + a9) - (a1 + 2 * a2 + a3)) / 8 * zf;
-          const len = Math.sqrt(dzdx * dzdx + dzdy * dzdy + 1);
-          // light vector (-1, -1, 1.4) normalised
-          const lambert = (dzdx * 0.5 + dzdy * 0.5 + 0.7) / len;
-          const shade = clamp(0.35 + lambert * 0.95, 0.45, 1.3);
-          r *= shade; g *= shade; b *= shade;
+          landRGB(i, x, y, Hh, C, sl, snowline, zf, col);
+          r = col[0]; g = col[1]; b = col[2];
           // thin dark rim along coasts
           if ((x > 0 && Hh[i - 1] <= sl) || (x < RW - 1 && Hh[i + 1] <= sl) || (y > 0 && Hh[i - RW] <= sl) || (y < RH - 1 && Hh[i + RW] <= sl)) {
             r = r * 0.72 + 20; g = g * 0.72 + 22; b = b * 0.72 + 20;
           }
-          const k = grain * (cv === 2 || cv === 6 || cv === 7 ? 18 : 9);
+          const k = grain * grainOf(C[i]);
           r += k; g += k; b += k;
         }
         data[o] = r; data[o + 1] = g; data[o + 2] = b; data[o + 3] = 255;
@@ -416,6 +429,134 @@
     }
     ctx.putImageData(img, x0, y0);
   }
+
+  // ---------------- terrain at any size (image export) ----------------
+  // Every raster cell's colour is worked out once, as the screen shows it but without the
+  // pixel-wide coast rim; each output pixel then blends its four nearest cells. Land and
+  // water blend apart and the interpolated height decides which of them a pixel shows, so
+  // the coast stays one sharp line at any size, with a thin dark rim drawn along it.
+  let hiRes = null;
+  function hiResColors() {
+    ensureBuffers();
+    const w = W0();
+    const key = World.renderRev + ":" + keyOf(w) + ":" + (+w.scaleKm || 5);
+    if (hiRes && hiRes.key === key) return hiRes;
+    const Hh = World.height, C = World.cover, sl = sea();
+    const snowline = +w.snowline || 4200;
+    const zf = 5.5 / (((+w.scaleKm || 5) * 1000) / RES);
+    const N = RW * RH;
+    const land = new Uint8ClampedArray(N * 3), water = new Uint8ClampedArray(N * 3), isLand = new Uint8Array(N);
+    const col = [0, 0, 0];
+    for (let y = 0; y < RH; y++) {
+      for (let x = 0; x < RW; x++) {
+        const i = y * RW + x, o = i * 3;
+        const grain = hash2(x, y, 7) - 0.5;
+        if (Hh[i] > sl) {
+          isLand[i] = 1;
+          landRGB(i, x, y, Hh, C, sl, snowline, zf, col);
+          const k = grain * grainOf(C[i]);
+          land[o] = col[0] + k; land[o + 1] = col[1] + k; land[o + 2] = col[2] + k;
+          waterRGB(0, col);
+        } else {
+          waterRGB(sl - Hh[i], col);
+          const k = grain * 4;
+          col[0] += k; col[1] += k; col[2] += k;
+        }
+        water[o] = col[0]; water[o + 1] = col[1]; water[o + 2] = col[2];
+      }
+    }
+    // water cells next to land take their neighbours' land colour, so a pixel just on the
+    // land side of the coast blends real land colours only
+    for (let y = 0; y < RH; y++) {
+      for (let x = 0; x < RW; x++) {
+        const i = y * RW + x;
+        if (isLand[i]) continue;
+        let r = 0, g = 0, b = 0, n = 0;
+        for (let dy = -1; dy <= 1; dy++) {
+          const yy = y + dy;
+          if (yy < 0 || yy >= RH) continue;
+          for (let dx = -1; dx <= 1; dx++) {
+            const xx = x + dx;
+            if (xx < 0 || xx >= RW || !isLand[yy * RW + xx]) continue;
+            const j = (yy * RW + xx) * 3;
+            r += land[j]; g += land[j + 1]; b += land[j + 2]; n++;
+          }
+        }
+        const o = i * 3;
+        if (n) { land[o] = r / n; land[o + 1] = g / n; land[o + 2] = b / n; }
+        else { land[o] = COVER_COLOR[0][0]; land[o + 1] = COVER_COLOR[0][1]; land[o + 2] = COVER_COLOR[0][2]; }
+      }
+    }
+    hiRes = { key, land, water };
+    return hiRes;
+  }
+  World.releaseHiRes = function () { hiRes = null; };
+
+  // Draw into ctx at (0, 0) a dw × dh picture of the map-unit rectangle starting at
+  // (mapX0, mapY0), ppm pixels per map unit. Outside the painted world: seaRGB.
+  World.renderTerrain = function (ctx, dw, dh, mapX0, mapY0, ppm, seaRGB) {
+    if (!World.active() || !App.basemap || !App.basemap.proj) return;
+    const hr = hiResColors();
+    const L = hr.land, Wt = hr.water;
+    const Hh = World.height, sl = sea();
+    const proj = App.basemap.proj;
+    const p0 = proj([0, 0]), p1 = proj([GW, GH]);
+    const kx = RW / (p1[0] - p0[0]), ky = RH / (p1[1] - p0[1]); // raster cells per map unit
+    const cellPx = ppm / kx;                                      // output pixels per raster cell
+    const rimPx = Math.max(1, Math.min(2.2, cellPx * 0.35));       // the dark coast line
+    const sr = seaRGB ? seaRGB[0] : 0, sg = seaRGB ? seaRGB[1] : 0, sb = seaRGB ? seaRGB[2] : 0;
+    const img = ctx.createImageData(dw, dh);
+    const d = img.data;
+    for (let py = 0; py < dh; py++) {
+      const ry = (mapY0 + (py + 0.5) / ppm - p0[1]) * ky - 0.5;
+      const outY = ry < -0.5 || ry > RH - 0.5;
+      const y0 = Math.floor(ry), fy = ry - y0;
+      const ya = clamp(y0, 0, RH - 1) * RW, yb = clamp(y0 + 1, 0, RH - 1) * RW;
+      let o = py * dw * 4;
+      for (let px = 0; px < dw; px++, o += 4) {
+        const rx = (mapX0 + (px + 0.5) / ppm - p0[0]) * kx - 0.5;
+        if (outY || rx < -0.5 || rx > RW - 0.5) { d[o] = sr; d[o + 1] = sg; d[o + 2] = sb; d[o + 3] = 255; continue; }
+        const x0 = Math.floor(rx), fx = rx - x0;
+        const xa = clamp(x0, 0, RW - 1), xb = clamp(x0 + 1, 0, RW - 1);
+        const i00 = ya + xa, i10 = ya + xb, i01 = yb + xa, i11 = yb + xb;
+        const h00 = Hh[i00] - sl, h10 = Hh[i10] - sl, h01 = Hh[i01] - sl, h11 = Hh[i11] - sl;
+        const w00 = (1 - fx) * (1 - fy), w10 = fx * (1 - fy), w01 = (1 - fx) * fy, w11 = fx * fy;
+        const j00 = i00 * 3, j10 = i10 * 3, j01 = i01 * 3, j11 = i11 * 3;
+        const allLand = h00 > 0 && h10 > 0 && h01 > 0 && h11 > 0;
+        const allWater = h00 <= 0 && h10 <= 0 && h01 <= 0 && h11 <= 0;
+        if (allWater) {
+          d[o] = Wt[j00] * w00 + Wt[j10] * w10 + Wt[j01] * w01 + Wt[j11] * w11;
+          d[o + 1] = Wt[j00 + 1] * w00 + Wt[j10 + 1] * w10 + Wt[j01 + 1] * w01 + Wt[j11 + 1] * w11;
+          d[o + 2] = Wt[j00 + 2] * w00 + Wt[j10 + 2] * w10 + Wt[j01 + 2] * w01 + Wt[j11 + 2] * w11;
+          d[o + 3] = 255;
+          continue;
+        }
+        let r = L[j00] * w00 + L[j10] * w10 + L[j01] * w01 + L[j11] * w11;
+        let g = L[j00 + 1] * w00 + L[j10 + 1] * w10 + L[j01 + 1] * w01 + L[j11 + 1] * w11;
+        let b = L[j00 + 2] * w00 + L[j10 + 2] * w10 + L[j01 + 2] * w01 + L[j11 + 2] * w11;
+        if (!allLand) {
+          // the coast crosses this cell: signed distance to it in output pixels from the
+          // bilinear height and its slope
+          const h = h00 * w00 + h10 * w10 + h01 * w01 + h11 * w11;
+          const gx = (h10 - h00) * (1 - fy) + (h11 - h01) * fy, gy = (h01 - h00) * (1 - fx) + (h11 - h10) * fx;
+          const dist = h / (Math.sqrt(gx * gx + gy * gy) || 1e-6) * cellPx;
+          if (dist > 0) {
+            const rim = clamp(1 - dist / rimPx, 0, 1);
+            r = r * (1 - 0.28 * rim) + 20 * rim; g = g * (1 - 0.28 * rim) + 22 * rim; b = b * (1 - 0.28 * rim) + 20 * rim;
+          }
+          const cover = clamp(0.5 + dist, 0, 1); // antialiased shore
+          if (cover < 1) {
+            const wr = Wt[j00] * w00 + Wt[j10] * w10 + Wt[j01] * w01 + Wt[j11] * w11;
+            const wg = Wt[j00 + 1] * w00 + Wt[j10 + 1] * w10 + Wt[j01 + 1] * w01 + Wt[j11 + 1] * w11;
+            const wb = Wt[j00 + 2] * w00 + Wt[j10 + 2] * w10 + Wt[j01 + 2] * w01 + Wt[j11 + 2] * w11;
+            r = wr + (r - wr) * cover; g = wg + (g - wg) * cover; b = wb + (b - wb) * cover;
+          }
+        }
+        d[o] = r; d[o + 1] = g; d[o + 2] = b; d[o + 3] = 255;
+      }
+    }
+    ctx.putImageData(img, 0, 0);
+  };
 
   World.renderAll = function () {
     ensureBuffers();

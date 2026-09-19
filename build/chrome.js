@@ -262,14 +262,11 @@ function TopBar() {
     id: "export",
     label: t("menu.export")
   }, /*#__PURE__*/React.createElement(MenuItem, {
-    label: t("menu.exportPng"),
+    label: t("menu.exportImage"),
     onClick: function onClick() {
-      return Exports.png(2, true);
-    }
-  }), /*#__PURE__*/React.createElement(MenuItem, {
-    label: t("menu.exportPngHi"),
-    onClick: function onClick() {
-      return Exports.png(4, true);
+      return Actions.ui({
+        modal: "export"
+      });
     }
   }), /*#__PURE__*/React.createElement(MenuItem, {
     label: t("menu.exportSvg"),
@@ -1348,6 +1345,115 @@ function TemplatesModal() {
   }, t("modal.create")))));
 }
 
+// picture export: size, legend, progress, and at the end a "Save / Share" button — on the
+// iPad the share sheet opens only from a tap, not after a long asynchronous job
+function ExportModal() {
+  useStore();
+  var job = Exports.job;
+  var size = App.ui.exportSize || "normal";
+  var legend = App.ui.exportLegend !== false;
+  var hasStates = !!(App.project && App.project.stateOrder.length);
+  var running = !!(job && job.running);
+  var close = function close() {
+    Exports.clearJob();
+    Actions.ui({
+      modal: null
+    });
+  };
+  var num = function num(v) {
+    return Math.round(v).toLocaleString(App.ui.lang === "ru" ? "ru-RU" : "en-US");
+  };
+  var dims = function dims(k) {
+    return num(MAP_W * Exports.SIZES[k].ppu) + " × " + num(MAP_H * Exports.SIZES[k].ppu);
+  };
+  var mb = function mb(b) {
+    return (b / 1048576).toFixed(b >= 10485760 ? 0 : 1);
+  };
+  var pick = function pick(k) {
+    if (job && !running) Exports.clearJob();
+    Actions.setPref({
+      exportSize: k
+    });
+  };
+  return /*#__PURE__*/React.createElement("div", {
+    className: "modal-backdrop",
+    onClick: function onClick() {
+      if (!running) close();
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "modal export-modal",
+    onClick: function onClick(e) {
+      return e.stopPropagation();
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "modal-head"
+  }, /*#__PURE__*/React.createElement("span", {
+    className: "modal-title"
+  }, t("export.title")), /*#__PURE__*/React.createElement("button", {
+    className: "btn icon",
+    onClick: close
+  }, "\u2715")), /*#__PURE__*/React.createElement("div", {
+    className: "modal-body"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "export-sizes"
+  }, ["normal", "large", "huge"].map(function (k) {
+    return /*#__PURE__*/React.createElement("button", {
+      key: k,
+      className: "export-size" + (size === k ? " on" : ""),
+      disabled: running,
+      onClick: function onClick() {
+        return pick(k);
+      }
+    }, /*#__PURE__*/React.createElement("b", null, t("export.size." + k)), /*#__PURE__*/React.createElement("span", null, dims(k)), /*#__PURE__*/React.createElement("span", {
+      className: "muted"
+    }, t("export.sizeHint." + k)));
+  })), hasStates && /*#__PURE__*/React.createElement("label", {
+    className: "check-row"
+  }, /*#__PURE__*/React.createElement("input", {
+    type: "checkbox",
+    checked: legend,
+    disabled: running,
+    onChange: function onChange(e) {
+      return Actions.setPref({
+        exportLegend: e.target.checked
+      });
+    }
+  }), t("export.legend")), running && /*#__PURE__*/React.createElement("div", {
+    className: "export-progress"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "export-bar"
+  }, /*#__PURE__*/React.createElement("i", {
+    style: {
+      width: Math.round(job.progress * 100) + "%"
+    }
+  })), /*#__PURE__*/React.createElement("span", null, t("export.working").replace("{p}", Math.round(job.progress * 100)))), job && job.blob && !running && /*#__PURE__*/React.createElement("div", {
+    className: "export-done"
+  }, t("export.done").replace("{w}", num(job.w)).replace("{h}", num(job.h)).replace("{mb}", mb(job.blob.size))), job && job.error && /*#__PURE__*/React.createElement("div", {
+    className: "card-warn"
+  }, t(job.error === "compression" ? "export.errCompression" : "export.errFailed"))), /*#__PURE__*/React.createElement("div", {
+    className: "modal-foot"
+  }, running ? /*#__PURE__*/React.createElement("button", {
+    className: "btn outline",
+    onClick: function onClick() {
+      return Exports.clearJob();
+    }
+  }, t("modal.cancel")) : /*#__PURE__*/React.createElement("button", {
+    className: "btn outline",
+    onClick: close
+  }, t("export.close")), job && job.blob && !running ? /*#__PURE__*/React.createElement("button", {
+    className: "btn primary",
+    onClick: function onClick() {
+      return Exports.saveResult();
+    }
+  }, t(window.PWA && PWA.iOS ? "export.share" : "export.saveAgain")) : /*#__PURE__*/React.createElement("button", {
+    className: "btn primary",
+    disabled: running,
+    onClick: function onClick() {
+      return Exports.startPng(size, legend);
+    }
+  }, t("export.make")))));
+}
+
 // installable app: "new version ready" + "add to Home Screen" (Safari on iPad)
 function PwaBanner() {
   useStore();
@@ -1524,6 +1630,7 @@ Object.assign(window, {
   LibraryModal: LibraryModal,
   Toast: Toast,
   PwaBanner: PwaBanner,
-  QuickMenu: QuickMenu
+  QuickMenu: QuickMenu,
+  ExportModal: ExportModal
 });
 //# sourceMappingURL=chrome.js.map

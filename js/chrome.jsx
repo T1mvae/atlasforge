@@ -104,8 +104,7 @@ function TopBar() {
         <MenuItem label={t("menu.importGeo")} onClick={() => Exports.importGeoJSON()}></MenuItem>
       </MenuButton>
       <MenuButton id="export" label={t("menu.export")}>
-        <MenuItem label={t("menu.exportPng")} onClick={() => Exports.png(2, true)}></MenuItem>
-        <MenuItem label={t("menu.exportPngHi")} onClick={() => Exports.png(4, true)}></MenuItem>
+        <MenuItem label={t("menu.exportImage")} onClick={() => Actions.ui({ modal: "export" })}></MenuItem>
         <MenuItem label={t("menu.exportSvg")} onClick={() => Exports.svg()}></MenuItem>
         <MenuItem label={t("menu.exportJson")} onClick={() => Exports.json()}></MenuItem>
         {window.World && World.active() && <MenuItem label={t("world.atlas")} disabled={!App.basemap.count} onClick={() => Actions.ui({ modal: "atlas" })}></MenuItem>}
@@ -496,6 +495,67 @@ function TemplatesModal() {
   );
 }
 
+// picture export: size, legend, progress, and at the end a "Save / Share" button — on the
+// iPad the share sheet opens only from a tap, not after a long asynchronous job
+function ExportModal() {
+  useStore();
+  const job = Exports.job;
+  const size = App.ui.exportSize || "normal";
+  const legend = App.ui.exportLegend !== false;
+  const hasStates = !!(App.project && App.project.stateOrder.length);
+  const running = !!(job && job.running);
+  const close = () => { Exports.clearJob(); Actions.ui({ modal: null }); };
+  const num = (v) => Math.round(v).toLocaleString(App.ui.lang === "ru" ? "ru-RU" : "en-US");
+  const dims = (k) => num(MAP_W * Exports.SIZES[k].ppu) + " × " + num(MAP_H * Exports.SIZES[k].ppu);
+  const mb = (b) => (b / 1048576).toFixed(b >= 10485760 ? 0 : 1);
+  const pick = (k) => { if (job && !running) Exports.clearJob(); Actions.setPref({ exportSize: k }); };
+  return (
+    <div className="modal-backdrop" onClick={() => { if (!running) close(); }}>
+      <div className="modal export-modal" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-head">
+          <span className="modal-title">{t("export.title")}</span>
+          <button className="btn icon" onClick={close}>✕</button>
+        </div>
+        <div className="modal-body">
+          <div className="export-sizes">
+            {["normal", "large", "huge"].map((k) => (
+              <button key={k} className={"export-size" + (size === k ? " on" : "")} disabled={running} onClick={() => pick(k)}>
+                <b>{t("export.size." + k)}</b>
+                <span>{dims(k)}</span>
+                <span className="muted">{t("export.sizeHint." + k)}</span>
+              </button>
+            ))}
+          </div>
+          {hasStates && (
+            <label className="check-row">
+              <input type="checkbox" checked={legend} disabled={running} onChange={(e) => Actions.setPref({ exportLegend: e.target.checked })}></input>
+              {t("export.legend")}
+            </label>
+          )}
+          {running && (
+            <div className="export-progress">
+              <div className="export-bar"><i style={{ width: Math.round(job.progress * 100) + "%" }}></i></div>
+              <span>{t("export.working").replace("{p}", Math.round(job.progress * 100))}</span>
+            </div>
+          )}
+          {job && job.blob && !running && (
+            <div className="export-done">{t("export.done").replace("{w}", num(job.w)).replace("{h}", num(job.h)).replace("{mb}", mb(job.blob.size))}</div>
+          )}
+          {job && job.error && <div className="card-warn">{t(job.error === "compression" ? "export.errCompression" : "export.errFailed")}</div>}
+        </div>
+        <div className="modal-foot">
+          {running
+            ? <button className="btn outline" onClick={() => Exports.clearJob()}>{t("modal.cancel")}</button>
+            : <button className="btn outline" onClick={close}>{t("export.close")}</button>}
+          {job && job.blob && !running
+            ? <button className="btn primary" onClick={() => Exports.saveResult()}>{t(window.PWA && PWA.iOS ? "export.share" : "export.saveAgain")}</button>
+            : <button className="btn primary" disabled={running} onClick={() => Exports.startPng(size, legend)}>{t("export.make")}</button>}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // installable app: "new version ready" + "add to Home Screen" (Safari on iPad)
 function PwaBanner() {
   useStore();
@@ -572,4 +632,4 @@ function Toast() {
   return <div className="toast">{App.ui.toast}</div>;
 }
 
-Object.assign(window, { TopBar, Legend, Timeline, TemplatesModal, LibraryModal, Toast, PwaBanner, QuickMenu });
+Object.assign(window, { TopBar, Legend, Timeline, TemplatesModal, LibraryModal, Toast, PwaBanner, QuickMenu, ExportModal });

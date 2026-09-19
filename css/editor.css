@@ -710,6 +710,25 @@ button, .chip, .state-row, .menu-item { touch-action: manipulation; }
 .geo-bar-actions .geo-hold { margin-right: auto; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; touch-action: none; }
 .geo-bar-actions .geo-hold.on { background: var(--accent); color: #fff; border-color: var(--accent); }
 .geo-bar-busy { display: flex; align-items: center; gap: 12px; font-weight: 600; }
+/* picture export */
+.export-modal { width: min(540px, calc(100vw - 24px)); }
+.export-modal .modal-body { display: flex; flex-direction: column; gap: 12px; }
+.export-sizes { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.export-size {
+  display: flex; flex-direction: column; gap: 3px; align-items: flex-start; text-align: left; padding: 10px;
+  border: 1px solid var(--border); border-radius: 10px; background: var(--panel-2); color: var(--text);
+  font: inherit; font-size: 12px; cursor: pointer;
+}
+.export-size b { font-size: 13px; }
+.export-size .muted { font-size: 11.5px; line-height: 1.3; }
+.export-size.on { border-color: var(--accent); background: var(--accent-soft); box-shadow: inset 0 0 0 1px var(--accent); }
+.export-size:disabled { opacity: 0.6; cursor: default; }
+@media (max-width: 520px) { .export-sizes { grid-template-columns: 1fr; } }
+.export-progress { display: flex; flex-direction: column; gap: 6px; font-size: 13px; }
+.export-bar { height: 8px; border-radius: 4px; background: var(--panel-2); overflow: hidden; border: 1px solid var(--border); }
+.export-bar i { display: block; height: 100%; background: var(--accent); transition: width 0.2s; }
+.export-done { font-weight: 600; font-size: 13px; }
+
 /* names by a rule */
 .names-modal { width: min(560px, calc(100vw - 24px)); }
 .names-modal .modal-body { display: flex; flex-direction: column; gap: 10px; }

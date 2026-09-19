@@ -361,7 +361,7 @@
   window.addEventListener("pagehide", () => { if (saveTimer) saveNow(); });
 
   const PREF_KEYS = ["lang", "theme", "propsWidth", "leftOpen", "rightOpen", "pencilOnly", "worldPressure", "tiltSize",
-    "worldStabilizer", "worldSize", "worldRough", "worldBrush"];
+    "worldStabilizer", "worldSize", "worldRough", "worldBrush", "placeType", "atlasDetail", "roadFollow"];
   function saveUiPrefs() {
     try {
       const out = {};

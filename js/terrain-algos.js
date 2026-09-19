@@ -55,6 +55,13 @@
     this.n = 0;
   }
   Heap.prototype.push = function (i, k) {
+    // a search that pushes a cell again when it finds a shorter way (lazy deletion) can
+    // hold more entries than cells: grow instead of silently dropping them
+    if (this.n >= this.idx.length) {
+      const idx2 = new Int32Array(this.idx.length * 2 || 16), key2 = new Float64Array(this.idx.length * 2 || 16);
+      idx2.set(this.idx); key2.set(this.key);
+      this.idx = idx2; this.key = key2;
+    }
     let n = this.n++;
     const idx = this.idx, key = this.key;
     while (n > 0) {

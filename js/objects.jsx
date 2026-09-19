@@ -17,7 +17,23 @@ const OBJ_ICON = {
   pass: <g><path d="M1 13.5 L5 5 L7.5 9.5 L9 7.5 L11 5 L15 13.5 Z"></path><path d="M7.5 9.5 L9 7.5" className="obj-accent"></path></g>,
   battle: <g><path d="M3 3 L13 13 M13 3 L3 13 M2 10.5 L5.5 14 M10.5 14 L14 10.5"></path></g>,
   camp: <g><path d="M1.5 14 L8 3 L14.5 14 Z"></path><path d="M8 14 L8 9 L10.5 14"></path></g>,
-  marker: <g><path d="M8 15 C8 15 3 9.5 3 6 A5 5 0 0 1 13 6 C13 9.5 8 15 8 15 Z"></path><circle cx="8" cy="6" r="1.8" className="obj-accent"></circle></g>
+  marker: <g><path d="M8 15 C8 15 3 9.5 3 6 A5 5 0 0 1 13 6 C13 9.5 8 15 8 15 Z"></path><circle cx="8" cy="6" r="1.8" className="obj-accent"></circle></g>,
+  inn: <g><path d="M2 14.5 V8 L6.5 4 L11 8 V14.5 Z"></path><path d="M5.5 14.5 V11 H7.5 V14.5"></path><path d="M11 8.5 H15 M14 8.5 V9.5" className="obj-line"></path><path d="M12 9.5 H15 V12.5 H12 Z" className="obj-accent"></path></g>,
+  // fantasy: obj-magic (violet), obj-danger (red), obj-hole (a dark opening), obj-line (no fill)
+  dragon: <g><path d="M2 14.5 C3.5 8.5 7.5 3.5 14.5 1.5 C13.5 4.5 13.5 7.5 12 10 C11 9 9.5 9 9 10.8 C8 9.8 6.5 10 6 11.8 C5 11 3.5 11.5 2 14.5 Z" className="obj-danger"></path><path d="M8 5.3 L6 11.8 M8 5.3 L9 10.8 M8 5.3 L12 10" className="obj-line"></path></g>,
+  lair: <g><path d="M3.5 2.5 C6 5.5 6.2 10 4 14.5 C4.6 10 4.6 6 3.5 2.5 Z" className="obj-danger"></path><path d="M7.5 2 C10 5 10.2 10 8 14.5 C8.6 10 8.6 5.5 7.5 2 Z" className="obj-danger"></path><path d="M11.5 2.5 C14 5.5 14.2 10 12 14.5 C12.6 10 12.6 6 11.5 2.5 Z" className="obj-danger"></path></g>,
+  cursed: <g><path d="M8 2 C4.6 2 3 4.5 3 7.2 C3 9.2 4 10.4 5 11 V13 H11 V11 C12 10.4 13 9.2 13 7.2 C13 4.5 11.4 2 8 2 Z"></path><circle cx="6" cy="7.5" r="1.3" className="obj-danger"></circle><circle cx="10" cy="7.5" r="1.3" className="obj-danger"></circle><path d="M7.4 10 L8 9 L8.6 10 Z" className="obj-hole"></path><path d="M5 13 V14.5 H11 V13 M7 13 V14.5 M9 13 V14.5"></path></g>,
+  cave: <g><path d="M1 14.5 L3.5 7.5 L6.5 4.5 L9.5 3.5 L12.5 6.5 L15 14.5 Z"></path><path d="M5 14.5 V11.8 C5 8.6 11 8.6 11 11.8 V14.5 Z" className="obj-hole"></path></g>,
+  portal: <g><path d="M8 1.5 C11.3 1.5 12.5 4.8 12.5 8 C12.5 11.5 10.8 14.5 8 14.5 C5.2 14.5 3.5 11.5 3.5 8 C3.5 4.8 4.7 1.5 8 1.5 Z" className="obj-magic"></path><path d="M8 5 C9.8 5 10.3 7.2 9 8.3 C7.8 9.3 6.2 8.5 6.6 7.1 C6.9 6.2 8 6.3 8.1 7.1" className="obj-line"></path></g>,
+  magetower: <g><path d="M6 14.5 L6.6 7 H9.4 L10 14.5 Z"></path><path d="M5.3 7 L8 1 L10.7 7 Z" className="obj-magic"></path><path d="M7.3 14.5 V12 C7.3 11.2 8.7 11.2 8.7 12 V14.5"></path><path d="M12.8 1.8 L13.3 3 L14.5 3.2 L13.6 4 L13.9 5.2 L12.8 4.6 L11.7 5.2 L12 4 L11.1 3.2 L12.3 3 Z" className="obj-accent"></path></g>,
+  crystal: <g><path d="M2.5 9 L4.2 8 L5.4 14.5 H3.2 Z" className="obj-magic"></path><path d="M13.5 9.5 L11.8 8.5 L10.6 14.5 H12.8 Z" className="obj-magic"></path><path d="M8 1.5 L11 5.5 L10 14.5 H6 L5 5.5 Z" className="obj-magic"></path><path d="M5 5.5 H11 M8 1.5 V14.5" className="obj-line"></path></g>,
+  spring: <g><path d="M8 1.8 C8 1.8 4.6 6.6 4.6 9.2 A3.4 3.4 0 0 0 11.4 9.2 C11.4 6.6 8 1.8 8 1.8 Z" className="obj-magic"></path><path d="M2 14.5 C4.5 13.3 11.5 13.3 14 14.5" className="obj-line"></path><path d="M12.8 1.2 L13.4 2.9 L15.1 3.5 L13.4 4.1 L12.8 5.8 L12.2 4.1 L10.5 3.5 L12.2 2.9 Z" className="obj-accent"></path></g>,
+  grove: <g><path d="M4.5 9.5 V14.5 M11.5 9.5 V14.5 M8 8 V14.5 M2.5 14.5 H13.5"></path><circle cx="4.5" cy="8" r="2.5"></circle><circle cx="11.5" cy="8" r="2.5"></circle><circle cx="8" cy="5" r="3.2" className="obj-accent"></circle></g>,
+  stones: <g><path d="M3.5 14.5 V6.2 H6.2 V14.5 Z"></path><path d="M9.8 14.5 V6.2 H12.5 V14.5 Z"></path><path d="M2.6 4 H13.4 V6.2 H2.6 Z"></path><path d="M1 14.5 H15"></path></g>,
+  barrow: <g><path d="M1 14.5 C2.5 8.5 5 6 8 6 C11 6 13.5 8.5 15 14.5 Z"></path><path d="M6.5 14.5 V11.5 H9.5 V14.5 Z" className="obj-hole"></path><path d="M5.8 11.4 H10.2"></path></g>,
+  shrine: <g><path d="M4 14.5 V10 H12 V14.5 Z"></path><path d="M3 10 V8.5 H13 V10 Z"></path><path d="M8 1.8 C9.9 3.9 10.6 5.4 9.6 7.2 C9.1 8 6.9 8 6.4 7.2 C5.4 5.4 6.1 3.8 8 1.8 Z" className="obj-accent"></path></g>,
+  dwarfhold: <g><path d="M1 14.5 L5.5 4.5 L8 7.5 L10.5 3.5 L15 14.5 Z"></path><path d="M5.8 14.5 V10.8 H10.2 V14.5 Z" className="obj-hole"></path><path d="M5 10.8 L8 8.6 L11 10.8 Z" className="obj-accent"></path></g>,
+  treasure: <g><path d="M2.5 14 V8.5 H13.5 V14 Z"></path><path d="M2.5 8.5 C2.5 5.2 13.5 5.2 13.5 8.5 Z" className="obj-accent"></path><path d="M2.5 11 H7 M9 11 H13.5"></path><path d="M7 9.2 H9 V11.6 H7 Z" className="obj-accent"></path></g>
 };
 
 function ObjectIcon({ type, size }) {
@@ -55,9 +71,11 @@ function objectTransform(o, k) {
   return `translate(${o.x},${o.y}) scale(${s.toFixed(4)}) translate(-8,-15)`;
 }
 
+// sea routes under trails under roads: a trail running along a road shows as the road
+const ROAD_ORDER = { sea: 0, trail: 1, road: 2 };
 function RoadsLayer() {
   const p = App.project;
-  const roads = Object.values((p && p.roads) || {});
+  const roads = Object.values((p && p.roads) || {}).sort((a, b) => (ROAD_ORDER[a.kind] || 0) - (ROAD_ORDER[b.kind] || 0));
   if (!roads.length || p.settings.showRoads === false) return null;
   return (
     <g id="roads" pointerEvents="none">
@@ -115,14 +133,27 @@ function ObjectPalette() {
   return (
     <div className="world-palette object-palette" data-export-skip="1" onPointerDown={(e) => e.stopPropagation()}>
       <div className="wp-head"><span className="wp-title">{t("obj.palette")}</span></div>
-      <div className="obj-grid">
-        {Objects.TYPES.map((ty) => (
-          <button key={ty.id} className={"obj-type" + (type === ty.id ? " on" : "")} onClick={() => Actions.setPref({ placeType: ty.id })}>
-            <ObjectIcon type={ty.id} size={22}></ObjectIcon>
-            <span>{t("obj.type." + ty.id)}</span>
-          </button>
-        ))}
-      </div>
+      {Objects.GROUPS.map((gr) => {
+        const key = "objOpen_" + gr;
+        const open = App.ui[key] != null ? App.ui[key] : true;
+        return (
+          <div key={gr} className="wp-group">
+            <button className="wp-group-head" onClick={() => Actions.ui({ [key]: !open })}>
+              <span>{open ? "▾" : "▸"}</span> {t("obj.group." + gr)}
+            </button>
+            {open && (
+              <div className="obj-grid">
+                {Objects.TYPES.filter((ty) => ty.group === gr).map((ty) => (
+                  <button key={ty.id} className={"obj-type" + (type === ty.id ? " on" : "")} onClick={() => Actions.setPref({ placeType: ty.id })}>
+                    <ObjectIcon type={ty.id} size={22}></ObjectIcon>
+                    <span>{t("obj.type." + ty.id)}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        );
+      })}
       <div className="wp-note">{t("obj.placeHint")}</div>
       <label className="check-row wp-check">
         <input type="checkbox" checked={p.settings.showObjectLabels !== false} onChange={(e) => Actions.setSettings({ showObjectLabels: e.target.checked }, { undo: false })}></input>
@@ -142,13 +173,17 @@ function RoadModeBar() {
   if (!rf) return null;
   const o = App.project && App.project.objects && App.project.objects[rf.id];
   return (
-    <div className="geom-bar" data-export-skip="1">
+    <div className="geom-bar road-bar" data-export-skip="1">
       <span className="muted">{t("obj.roadPick").replace("{name}", o ? o.name : "")}</span>
       <div className="chip-row">
         {Objects.ROAD_KINDS.map((kd) => (
           <button key={kd} className={"chip" + (rf.kind === kd ? " on" : "")} onClick={() => Actions.ui({ roadFrom: Object.assign({}, rf, { kind: kd }) })}>{t("obj.road." + kd)}</button>
         ))}
       </div>
+      {rf.kind !== "sea" && window.World && World.active() && (
+        <button className={"chip" + (App.ui.roadFollow !== false ? " on" : "")} title={t("obj.roadFollowHint")}
+          onClick={() => Actions.setPref({ roadFollow: App.ui.roadFollow === false })}>{t("obj.roadFollow")}</button>
+      )}
       <button className="btn outline" onClick={() => Actions.ui({ roadFrom: null })}>{t("edit.cancel")}</button>
     </div>
   );
@@ -183,11 +218,15 @@ function ObjectCard({ id }) {
         <button className="btn icon" onClick={() => Actions.ui({ card: null })}>✕</button>
       </div>
       <input className="input card-title" value={o.name || ""} placeholder={t("obj.namePh")} onChange={(e) => set({ name: e.target.value })}></input>
-      <div className="obj-grid compact">
-        {Objects.TYPES.map((ty) => (
-          <button key={ty.id} className={"obj-type" + (o.type === ty.id ? " on" : "")} title={t("obj.type." + ty.id)} onClick={() => set({ type: ty.id })}>
-            <ObjectIcon type={ty.id} size={18}></ObjectIcon>
-          </button>
+      <div className="obj-type-groups">
+        {Objects.GROUPS.map((gr) => (
+          <div key={gr} className="obj-grid compact" title={t("obj.group." + gr)}>
+            {Objects.TYPES.filter((ty) => ty.group === gr).map((ty) => (
+              <button key={ty.id} className={"obj-type" + (o.type === ty.id ? " on" : "")} title={t("obj.type." + ty.id)} onClick={() => set({ type: ty.id })}>
+                <ObjectIcon type={ty.id} size={18}></ObjectIcon>
+              </button>
+            ))}
+          </div>
         ))}
       </div>
       <div className="card-grid">

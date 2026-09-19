@@ -1,5 +1,9 @@
 "use strict";
 
+function _typeof(o) { "@babel/helpers - typeof"; return _typeof = "function" == typeof Symbol && "symbol" == typeof Symbol.iterator ? function (o) { return typeof o; } : function (o) { return o && "function" == typeof Symbol && o.constructor === Symbol && o !== Symbol.prototype ? "symbol" : typeof o; }, _typeof(o); }
+function _defineProperty(e, r, t) { return (r = _toPropertyKey(r)) in e ? Object.defineProperty(e, r, { value: t, enumerable: !0, configurable: !0, writable: !0 }) : e[r] = t, e; }
+function _toPropertyKey(t) { var i = _toPrimitive(t, "string"); return "symbol" == _typeof(i) ? i : i + ""; }
+function _toPrimitive(t, r) { if ("object" != _typeof(t) || !t) return t; var e = t[Symbol.toPrimitive]; if (void 0 !== e) { var i = e.call(t, r || "default"); if ("object" != _typeof(i)) return i; throw new TypeError("@@toPrimitive must return a primitive value."); } return ("string" === r ? String : Number)(t); }
 // AtlasForge — places & roads UI: SVG symbols, map layer, placing palette, place card
 var OBJ_ICON = {
   village: /*#__PURE__*/React.createElement("g", null, /*#__PURE__*/React.createElement("path", {
@@ -93,6 +97,161 @@ var OBJ_ICON = {
     cy: "6",
     r: "1.8",
     className: "obj-accent"
+  })),
+  inn: /*#__PURE__*/React.createElement("g", null, /*#__PURE__*/React.createElement("path", {
+    d: "M2 14.5 V8 L6.5 4 L11 8 V14.5 Z"
+  }), /*#__PURE__*/React.createElement("path", {
+    d: "M5.5 14.5 V11 H7.5 V14.5"
+  }), /*#__PURE__*/React.createElement("path", {
+    d: "M11 8.5 H15 M14 8.5 V9.5",
+    className: "obj-line"
+  }), /*#__PURE__*/React.createElement("path", {
+    d: "M12 9.5 H15 V12.5 H12 Z",
+    className: "obj-accent"
+  })),
+  // fantasy: obj-magic (violet), obj-danger (red), obj-hole (a dark opening), obj-line (no fill)
+  dragon: /*#__PURE__*/React.createElement("g", null, /*#__PURE__*/React.createElement("path", {
+    d: "M2 14.5 C3.5 8.5 7.5 3.5 14.5 1.5 C13.5 4.5 13.5 7.5 12 10 C11 9 9.5 9 9 10.8 C8 9.8 6.5 10 6 11.8 C5 11 3.5 11.5 2 14.5 Z",
+    className: "obj-danger"
+  }), /*#__PURE__*/React.createElement("path", {
+    d: "M8 5.3 L6 11.8 M8 5.3 L9 10.8 M8 5.3 L12 10",
+    className: "obj-line"
+  })),
+  lair: /*#__PURE__*/React.createElement("g", null, /*#__PURE__*/React.createElement("path", {
+    d: "M3.5 2.5 C6 5.5 6.2 10 4 14.5 C4.6 10 4.6 6 3.5 2.5 Z",
+    className: "obj-danger"
+  }), /*#__PURE__*/React.createElement("path", {
+    d: "M7.5 2 C10 5 10.2 10 8 14.5 C8.6 10 8.6 5.5 7.5 2 Z",
+    className: "obj-danger"
+  }), /*#__PURE__*/React.createElement("path", {
+    d: "M11.5 2.5 C14 5.5 14.2 10 12 14.5 C12.6 10 12.6 6 11.5 2.5 Z",
+    className: "obj-danger"
+  })),
+  cursed: /*#__PURE__*/React.createElement("g", null, /*#__PURE__*/React.createElement("path", {
+    d: "M8 2 C4.6 2 3 4.5 3 7.2 C3 9.2 4 10.4 5 11 V13 H11 V11 C12 10.4 13 9.2 13 7.2 C13 4.5 11.4 2 8 2 Z"
+  }), /*#__PURE__*/React.createElement("circle", {
+    cx: "6",
+    cy: "7.5",
+    r: "1.3",
+    className: "obj-danger"
+  }), /*#__PURE__*/React.createElement("circle", {
+    cx: "10",
+    cy: "7.5",
+    r: "1.3",
+    className: "obj-danger"
+  }), /*#__PURE__*/React.createElement("path", {
+    d: "M7.4 10 L8 9 L8.6 10 Z",
+    className: "obj-hole"
+  }), /*#__PURE__*/React.createElement("path", {
+    d: "M5 13 V14.5 H11 V13 M7 13 V14.5 M9 13 V14.5"
+  })),
+  cave: /*#__PURE__*/React.createElement("g", null, /*#__PURE__*/React.createElement("path", {
+    d: "M1 14.5 L3.5 7.5 L6.5 4.5 L9.5 3.5 L12.5 6.5 L15 14.5 Z"
+  }), /*#__PURE__*/React.createElement("path", {
+    d: "M5 14.5 V11.8 C5 8.6 11 8.6 11 11.8 V14.5 Z",
+    className: "obj-hole"
+  })),
+  portal: /*#__PURE__*/React.createElement("g", null, /*#__PURE__*/React.createElement("path", {
+    d: "M8 1.5 C11.3 1.5 12.5 4.8 12.5 8 C12.5 11.5 10.8 14.5 8 14.5 C5.2 14.5 3.5 11.5 3.5 8 C3.5 4.8 4.7 1.5 8 1.5 Z",
+    className: "obj-magic"
+  }), /*#__PURE__*/React.createElement("path", {
+    d: "M8 5 C9.8 5 10.3 7.2 9 8.3 C7.8 9.3 6.2 8.5 6.6 7.1 C6.9 6.2 8 6.3 8.1 7.1",
+    className: "obj-line"
+  })),
+  magetower: /*#__PURE__*/React.createElement("g", null, /*#__PURE__*/React.createElement("path", {
+    d: "M6 14.5 L6.6 7 H9.4 L10 14.5 Z"
+  }), /*#__PURE__*/React.createElement("path", {
+    d: "M5.3 7 L8 1 L10.7 7 Z",
+    className: "obj-magic"
+  }), /*#__PURE__*/React.createElement("path", {
+    d: "M7.3 14.5 V12 C7.3 11.2 8.7 11.2 8.7 12 V14.5"
+  }), /*#__PURE__*/React.createElement("path", {
+    d: "M12.8 1.8 L13.3 3 L14.5 3.2 L13.6 4 L13.9 5.2 L12.8 4.6 L11.7 5.2 L12 4 L11.1 3.2 L12.3 3 Z",
+    className: "obj-accent"
+  })),
+  crystal: /*#__PURE__*/React.createElement("g", null, /*#__PURE__*/React.createElement("path", {
+    d: "M2.5 9 L4.2 8 L5.4 14.5 H3.2 Z",
+    className: "obj-magic"
+  }), /*#__PURE__*/React.createElement("path", {
+    d: "M13.5 9.5 L11.8 8.5 L10.6 14.5 H12.8 Z",
+    className: "obj-magic"
+  }), /*#__PURE__*/React.createElement("path", {
+    d: "M8 1.5 L11 5.5 L10 14.5 H6 L5 5.5 Z",
+    className: "obj-magic"
+  }), /*#__PURE__*/React.createElement("path", {
+    d: "M5 5.5 H11 M8 1.5 V14.5",
+    className: "obj-line"
+  })),
+  spring: /*#__PURE__*/React.createElement("g", null, /*#__PURE__*/React.createElement("path", {
+    d: "M8 1.8 C8 1.8 4.6 6.6 4.6 9.2 A3.4 3.4 0 0 0 11.4 9.2 C11.4 6.6 8 1.8 8 1.8 Z",
+    className: "obj-magic"
+  }), /*#__PURE__*/React.createElement("path", {
+    d: "M2 14.5 C4.5 13.3 11.5 13.3 14 14.5",
+    className: "obj-line"
+  }), /*#__PURE__*/React.createElement("path", {
+    d: "M12.8 1.2 L13.4 2.9 L15.1 3.5 L13.4 4.1 L12.8 5.8 L12.2 4.1 L10.5 3.5 L12.2 2.9 Z",
+    className: "obj-accent"
+  })),
+  grove: /*#__PURE__*/React.createElement("g", null, /*#__PURE__*/React.createElement("path", {
+    d: "M4.5 9.5 V14.5 M11.5 9.5 V14.5 M8 8 V14.5 M2.5 14.5 H13.5"
+  }), /*#__PURE__*/React.createElement("circle", {
+    cx: "4.5",
+    cy: "8",
+    r: "2.5"
+  }), /*#__PURE__*/React.createElement("circle", {
+    cx: "11.5",
+    cy: "8",
+    r: "2.5"
+  }), /*#__PURE__*/React.createElement("circle", {
+    cx: "8",
+    cy: "5",
+    r: "3.2",
+    className: "obj-accent"
+  })),
+  stones: /*#__PURE__*/React.createElement("g", null, /*#__PURE__*/React.createElement("path", {
+    d: "M3.5 14.5 V6.2 H6.2 V14.5 Z"
+  }), /*#__PURE__*/React.createElement("path", {
+    d: "M9.8 14.5 V6.2 H12.5 V14.5 Z"
+  }), /*#__PURE__*/React.createElement("path", {
+    d: "M2.6 4 H13.4 V6.2 H2.6 Z"
+  }), /*#__PURE__*/React.createElement("path", {
+    d: "M1 14.5 H15"
+  })),
+  barrow: /*#__PURE__*/React.createElement("g", null, /*#__PURE__*/React.createElement("path", {
+    d: "M1 14.5 C2.5 8.5 5 6 8 6 C11 6 13.5 8.5 15 14.5 Z"
+  }), /*#__PURE__*/React.createElement("path", {
+    d: "M6.5 14.5 V11.5 H9.5 V14.5 Z",
+    className: "obj-hole"
+  }), /*#__PURE__*/React.createElement("path", {
+    d: "M5.8 11.4 H10.2"
+  })),
+  shrine: /*#__PURE__*/React.createElement("g", null, /*#__PURE__*/React.createElement("path", {
+    d: "M4 14.5 V10 H12 V14.5 Z"
+  }), /*#__PURE__*/React.createElement("path", {
+    d: "M3 10 V8.5 H13 V10 Z"
+  }), /*#__PURE__*/React.createElement("path", {
+    d: "M8 1.8 C9.9 3.9 10.6 5.4 9.6 7.2 C9.1 8 6.9 8 6.4 7.2 C5.4 5.4 6.1 3.8 8 1.8 Z",
+    className: "obj-accent"
+  })),
+  dwarfhold: /*#__PURE__*/React.createElement("g", null, /*#__PURE__*/React.createElement("path", {
+    d: "M1 14.5 L5.5 4.5 L8 7.5 L10.5 3.5 L15 14.5 Z"
+  }), /*#__PURE__*/React.createElement("path", {
+    d: "M5.8 14.5 V10.8 H10.2 V14.5 Z",
+    className: "obj-hole"
+  }), /*#__PURE__*/React.createElement("path", {
+    d: "M5 10.8 L8 8.6 L11 10.8 Z",
+    className: "obj-accent"
+  })),
+  treasure: /*#__PURE__*/React.createElement("g", null, /*#__PURE__*/React.createElement("path", {
+    d: "M2.5 14 V8.5 H13.5 V14 Z"
+  }), /*#__PURE__*/React.createElement("path", {
+    d: "M2.5 8.5 C2.5 5.2 13.5 5.2 13.5 8.5 Z",
+    className: "obj-accent"
+  }), /*#__PURE__*/React.createElement("path", {
+    d: "M2.5 11 H7 M9 11 H13.5"
+  }), /*#__PURE__*/React.createElement("path", {
+    d: "M7 9.2 H9 V11.6 H7 Z",
+    className: "obj-accent"
   }))
 };
 function ObjectIcon(_ref) {
@@ -135,9 +294,18 @@ function objectTransform(o, k) {
   var s = objectScale(o, k);
   return "translate(".concat(o.x, ",").concat(o.y, ") scale(").concat(s.toFixed(4), ") translate(-8,-15)");
 }
+
+// sea routes under trails under roads: a trail running along a road shows as the road
+var ROAD_ORDER = {
+  sea: 0,
+  trail: 1,
+  road: 2
+};
 function RoadsLayer() {
   var p = App.project;
-  var roads = Object.values(p && p.roads || {});
+  var roads = Object.values(p && p.roads || {}).sort(function (a, b) {
+    return (ROAD_ORDER[a.kind] || 0) - (ROAD_ORDER[b.kind] || 0);
+  });
   if (!roads.length || p.settings.showRoads === false) return null;
   return /*#__PURE__*/React.createElement("g", {
     id: "roads",
@@ -247,22 +415,36 @@ function ObjectPalette() {
     className: "wp-head"
   }, /*#__PURE__*/React.createElement("span", {
     className: "wp-title"
-  }, t("obj.palette"))), /*#__PURE__*/React.createElement("div", {
-    className: "obj-grid"
-  }, Objects.TYPES.map(function (ty) {
-    return /*#__PURE__*/React.createElement("button", {
-      key: ty.id,
-      className: "obj-type" + (type === ty.id ? " on" : ""),
+  }, t("obj.palette"))), Objects.GROUPS.map(function (gr) {
+    var key = "objOpen_" + gr;
+    var open = App.ui[key] != null ? App.ui[key] : true;
+    return /*#__PURE__*/React.createElement("div", {
+      key: gr,
+      className: "wp-group"
+    }, /*#__PURE__*/React.createElement("button", {
+      className: "wp-group-head",
       onClick: function onClick() {
-        return Actions.setPref({
-          placeType: ty.id
-        });
+        return Actions.ui(_defineProperty({}, key, !open));
       }
-    }, /*#__PURE__*/React.createElement(ObjectIcon, {
-      type: ty.id,
-      size: 22
-    }), /*#__PURE__*/React.createElement("span", null, t("obj.type." + ty.id)));
-  })), /*#__PURE__*/React.createElement("div", {
+    }, /*#__PURE__*/React.createElement("span", null, open ? "▾" : "▸"), " ", t("obj.group." + gr)), open && /*#__PURE__*/React.createElement("div", {
+      className: "obj-grid"
+    }, Objects.TYPES.filter(function (ty) {
+      return ty.group === gr;
+    }).map(function (ty) {
+      return /*#__PURE__*/React.createElement("button", {
+        key: ty.id,
+        className: "obj-type" + (type === ty.id ? " on" : ""),
+        onClick: function onClick() {
+          return Actions.setPref({
+            placeType: ty.id
+          });
+        }
+      }, /*#__PURE__*/React.createElement(ObjectIcon, {
+        type: ty.id,
+        size: 22
+      }), /*#__PURE__*/React.createElement("span", null, t("obj.type." + ty.id)));
+    })));
+  }), /*#__PURE__*/React.createElement("div", {
     className: "wp-note"
   }, t("obj.placeHint")), /*#__PURE__*/React.createElement("label", {
     className: "check-row wp-check"
@@ -296,7 +478,7 @@ function RoadModeBar() {
   if (!rf) return null;
   var o = App.project && App.project.objects && App.project.objects[rf.id];
   return /*#__PURE__*/React.createElement("div", {
-    className: "geom-bar",
+    className: "geom-bar road-bar",
     "data-export-skip": "1"
   }, /*#__PURE__*/React.createElement("span", {
     className: "muted"
@@ -314,7 +496,15 @@ function RoadModeBar() {
         });
       }
     }, t("obj.road." + kd));
-  })), /*#__PURE__*/React.createElement("button", {
+  })), rf.kind !== "sea" && window.World && World.active() && /*#__PURE__*/React.createElement("button", {
+    className: "chip" + (App.ui.roadFollow !== false ? " on" : ""),
+    title: t("obj.roadFollowHint"),
+    onClick: function onClick() {
+      return Actions.setPref({
+        roadFollow: App.ui.roadFollow === false
+      });
+    }
+  }, t("obj.roadFollow")), /*#__PURE__*/React.createElement("button", {
     className: "btn outline",
     onClick: function onClick() {
       return Actions.ui({
@@ -388,20 +578,28 @@ function ObjectCard(_ref3) {
       });
     }
   }), /*#__PURE__*/React.createElement("div", {
-    className: "obj-grid compact"
-  }, Objects.TYPES.map(function (ty) {
-    return /*#__PURE__*/React.createElement("button", {
-      key: ty.id,
-      className: "obj-type" + (o.type === ty.id ? " on" : ""),
-      title: t("obj.type." + ty.id),
-      onClick: function onClick() {
-        return set({
-          type: ty.id
-        });
-      }
-    }, /*#__PURE__*/React.createElement(ObjectIcon, {
-      type: ty.id,
-      size: 18
+    className: "obj-type-groups"
+  }, Objects.GROUPS.map(function (gr) {
+    return /*#__PURE__*/React.createElement("div", {
+      key: gr,
+      className: "obj-grid compact",
+      title: t("obj.group." + gr)
+    }, Objects.TYPES.filter(function (ty) {
+      return ty.group === gr;
+    }).map(function (ty) {
+      return /*#__PURE__*/React.createElement("button", {
+        key: ty.id,
+        className: "obj-type" + (o.type === ty.id ? " on" : ""),
+        title: t("obj.type." + ty.id),
+        onClick: function onClick() {
+          return set({
+            type: ty.id
+          });
+        }
+      }, /*#__PURE__*/React.createElement(ObjectIcon, {
+        type: ty.id,
+        size: 18
+      }));
     }));
   })), /*#__PURE__*/React.createElement("div", {
     className: "card-grid"

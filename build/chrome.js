@@ -1353,7 +1353,8 @@ function PwaBanner() {
   useStore();
   var P = window.PWA;
   if (!P) return null;
-  if (App.ui.card || App.ui.modal || window.World && (World.preview || World.geoBusy || World.cutPreview || World.generating)) return null; // a card, a dialog or a preview bar needs the spot
+  // a card, a dialog or a bar at the bottom (preview, road, geometry editing) needs the spot
+  if (App.ui.card || App.ui.modal || App.ui.roadFrom || App.ui.geomDraw || App.ui.geomEdit || window.World && (World.preview || World.geoBusy || World.cutPreview || World.generating)) return null;
   if (P.updateReady) {
     return /*#__PURE__*/React.createElement("div", {
       className: "pwa-banner"

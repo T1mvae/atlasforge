@@ -311,6 +311,10 @@ body.resizing .map-stage { pointer-events: none; }
   background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius);
   padding: 6px 10px; z-index: 30; box-shadow: 0 4px 14px rgba(0, 0, 0, 0.3);
 }
+/* building a road: the hint on its own line, the choices below it */
+.geom-bar.road-bar { flex-wrap: wrap; justify-content: center; width: max-content; max-width: calc(100% - 24px); }
+.road-bar > .muted { flex: 1 1 100%; text-align: center; }
+.road-bar .chip-row { flex-wrap: nowrap; }
 .map-stage.tool-split svg.mapsvg, .map-stage.tool-draw svg.mapsvg { cursor: crosshair; }
 .toolbar-sep { height: 1px; background: var(--border); margin: 4px 6px; }
 
@@ -645,6 +649,10 @@ button, .chip, .state-row, .menu-item { touch-action: manipulation; }
 /* ---------- places & roads ---------- */
 .obj-sym { fill: #f6efe0; stroke: #2e2418; stroke-width: 1.1; stroke-linejoin: round; stroke-linecap: round; paint-order: stroke; }
 .obj-sym .obj-accent { fill: #d6a93a; stroke: #2e2418; }
+.obj-sym .obj-magic { fill: #9b6fd0; stroke: #2e2418; }
+.obj-sym .obj-danger { fill: #c9483b; stroke: #2e2418; }
+.obj-sym .obj-hole { fill: #2e2418; }
+.obj-sym .obj-line { fill: none; }
 .map-object.sel .obj-sym, .map-object.sel use { filter: drop-shadow(0 0 1.5px #ff9f2e) drop-shadow(0 0 1px #ff9f2e); }
 .map-object-label {
   font-family: Georgia, "Times New Roman", serif; font-size: 7px; fill: #1f1a14; stroke: #f6efe0; stroke-width: 2.2px;
@@ -654,6 +662,11 @@ button, .chip, .state-row, .menu-item { touch-action: manipulation; }
 .obj-icon-svg { display: inline-block; vertical-align: middle; }
 .obj-icon-svg g { fill: none; stroke: currentColor; stroke-width: 1.2; stroke-linejoin: round; stroke-linecap: round; }
 .obj-icon-svg .obj-accent { fill: #d6a93a; stroke: #d6a93a; }
+.obj-icon-svg .obj-magic { fill: #9b6fd0; stroke: #9b6fd0; }
+.obj-icon-svg .obj-danger { fill: #c9483b; stroke: #c9483b; }
+.obj-icon-svg .obj-hole { fill: currentColor; }
+.obj-icon-svg .obj-line { fill: none; }
+.obj-type-groups { display: flex; flex-direction: column; gap: 5px; }
 .object-palette { width: 250px; }
 .obj-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; }
 .obj-grid.compact { grid-template-columns: repeat(9, 1fr); }

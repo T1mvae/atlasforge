@@ -47,7 +47,7 @@ body {
 .app {
   display: grid;
   grid-template-rows: 44px 1fr auto;
-  grid-template-columns: 1fr;
+  grid-template-columns: minmax(0, 1fr); /* never wider than the window: the top bar gives way */
   height: 100vh;
 }
 .app-mid { display: flex; min-height: 0; position: relative; }
@@ -73,7 +73,7 @@ body {
 .proj-name {
   background: transparent; border: 1px solid transparent; color: var(--text);
   font: inherit; font-weight: 600; padding: 4px 8px; border-radius: var(--radius);
-  width: 180px;
+  width: 180px; min-width: 60px; flex: 0 1 auto;
 }
 .proj-name:hover { border-color: var(--border); }
 .proj-name:focus { border-color: var(--accent); outline: none; background: var(--panel-2); }
@@ -118,10 +118,10 @@ body {
 .menu-sep { height: 1px; background: var(--border-soft); margin: 4px 6px; }
 
 /* ---------- Search ---------- */
-.search-wrap { position: relative; }
+.search-wrap { position: relative; min-width: 90px; flex: 0 1 auto; }
 .search-input {
   background: var(--panel-2); border: 1px solid var(--border); color: var(--text);
-  border-radius: var(--radius); height: 30px; padding: 0 10px 0 30px; width: 220px; font: inherit;
+  border-radius: var(--radius); height: 30px; padding: 0 10px 0 30px; width: 220px; max-width: 100%; font: inherit;
 }
 .search-input:focus { outline: none; border-color: var(--accent); }
 .search-icon { position: absolute; left: 9px; top: 8px; color: var(--text-faint); pointer-events: none; }
@@ -645,6 +645,10 @@ button, .chip, .state-row, .menu-item { touch-action: manipulation; }
 .card-v { flex: 1; color: var(--text); }
 .card-notes { min-height: 64px; }
 .card-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.card-title-static { font-size: 17px; font-weight: 700; }
+.card-title-static .muted { font-size: 11.5px; font-weight: 400; margin-top: 2px; }
+.card-actions .btn.outline.on { border-color: var(--accent); background: var(--accent-soft); }
+.water-label { pointer-events: auto; cursor: pointer; }
 
 /* ---------- places & roads ---------- */
 .obj-sym { fill: #f6efe0; stroke: #2e2418; stroke-width: 1.1; stroke-linejoin: round; stroke-linecap: round; paint-order: stroke; }

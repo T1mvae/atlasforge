@@ -968,7 +968,15 @@ function MapTab() {
         showDesert: v
       });
     }
-  })), /*#__PURE__*/React.createElement(Check, {
+  })), window.World && World.active() && /*#__PURE__*/React.createElement(Check, {
+    label: t("map.showWaterZones"),
+    checked: s.showWaterZones !== false,
+    onChange: function onChange(v) {
+      return set({
+        showWaterZones: v
+      });
+    }
+  }), /*#__PURE__*/React.createElement(Check, {
     label: t("map.provinceTint"),
     checked: s.provinceTint,
     onChange: function onChange(v) {

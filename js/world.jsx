@@ -446,7 +446,8 @@ function worldAnalysis() {
   const riversRef = World.preview && !World.compare ? World.preview.rivers : (App.project.world.rivers || []);
   // owners and names do not enter the analysis: political edits keep the cache (a geometry
   // edit reloads the basemap, which does)
-  const key = App.basemap.count + ":" + (World.hydro ? World.hydro.rev : 0) + ":" + World.rasterRev + ":" + App.ui.lang;
+  const key = App.basemap.count + ":" + (World.hydro ? World.hydro.rev : 0) + ":" + World.rasterRev + ":" + App.ui.lang +
+    ":" + (World.watersFresh() ? World.waters.key : ""); // the seas and gulfs, once worked out
   const c = worldAnalysisCache;
   if (!c || c.key !== key || c.bm !== App.basemap || c.riversRef !== riversRef) {
     const feats = (App.basemap.raw && App.basemap.raw.features) || [];
@@ -743,11 +744,157 @@ function RiverCard({ index }) {
   );
 }
 
+// ---------- seas, gulfs and straits: the card of a water zone ----------
+// the provinces along a zone's shore (the analysis grid under the province raster), kept
+// per zone while the zones and the provinces stay the same
+let waterCoastCache = null;
+function waterCoast(zid) {
+  const ws = World.waters, wa = worldAnalysis();
+  const key = ws.key + ":" + wa.key;
+  if (!waterCoastCache || waterCoastCache.key !== key) waterCoastCache = { key, map: new Map() };
+  const hit = waterCoastCache.map.get(zid);
+  if (hit) return hit;
+  const W = World.GW, H = World.GH, zone = ws.zone, cellOf = wa.an.cellOf, z = ws.zones[zid];
+  const prov = new Map(), lands = new Map();
+  const lid = World.dataGrid().landId;
+  const [x0, y0, x1, y1] = z.box;
+  for (let y = y0; y < y1; y++) {
+    for (let x = x0; x < x1; x++) {
+      const i = y * W + x;
+      if (zone[i] !== zid) continue;
+      const nbs = [x > 0 ? i - 1 : -1, x < W - 1 ? i + 1 : -1, y > 0 ? i - W : -1, y < H - 1 ? i + W : -1];
+      for (const j of nbs) {
+        if (j < 0 || zone[j] >= 0) continue;
+        const c = cellOf[j];
+        if (c >= 0) prov.set(c, (prov.get(c) || 0) + 1);
+        if (lid && lid[j] >= 0) lands.set(lid[j], (lands.get(lid[j]) || 0) + 1);
+      }
+    }
+  }
+  const out = { prov, lands };
+  waterCoastCache.map.set(zid, out);
+  return out;
+}
+
+function WaterCard({ pt }) {
+  useStore();
+  const [help, setHelp] = React.useState(false);
+  React.useEffect(() => { World.ensureWaters().catch((e) => console.warn("water zones", e)); });
+  const p = App.project;
+  const close = () => Actions.ui({ card: null, waterMerge: null, waterCut: false });
+  const ws = World.waters && World.waters.project === p ? World.waters : null;
+  const zid = ws ? World.waterZoneAt(pt, true) : -1;
+  if (!ws || zid < 0) {
+    return (
+      <div className="info-card minimized" data-export-skip="1" onPointerDown={(e) => e.stopPropagation()}>
+        <div className="card-head">
+          <span className="card-kind">🌊 {ws ? t("water.gone") : t("water.counting")}</span>
+          <span className="card-head-actions"><button className="btn icon" onClick={close}>✕</button></span>
+        </div>
+      </div>
+    );
+  }
+  const z = ws.zones[zid], names = World.waterNames(), rec = names[zid];
+  const km = +p.world.scaleKm || 5;
+  const title = rec.name || rec.auto;
+  if (App.ui.cardMin) {
+    return (
+      <div className="info-card minimized" data-export-skip="1" onPointerDown={(e) => e.stopPropagation()}>
+        <div className="card-head">
+          <span className="card-kind">🌊 {title}</span>
+          <span className="card-head-actions">
+            <button className="btn icon card-min-btn" title={t("card.expand")} onClick={() => Actions.ui({ cardMin: false })}>⌃</button>
+            <button className="btn icon" onClick={close}>✕</button>
+          </span>
+        </div>
+      </div>
+    );
+  }
+  const nameOf = (v) => (names[v] ? names[v].name || names[v].auto : "");
+  // shores: the states whose provinces lie along it (most shore first), and the lands
+  let shores = [], lands = 0;
+  try {
+    const wa = worldAnalysis(), co = waterCoast(zid), own = new Map();
+    co.prov.forEach((n, c) => {
+      const f = wa.feats[c];
+      const e = f ? effRegion(p, String(f.id)) : null;
+      const sid = e && e.owner && p.states[e.owner] ? e.owner : "";
+      own.set(sid, (own.get(sid) || 0) + n);
+    });
+    shores = [...own.entries()].sort((a, b) => b[1] - a[1]).map(([sid]) => (sid ? p.states[sid].name : t("card.noOwner")));
+    lands = co.lands.size;
+  } catch (e) { console.warn(e); }
+  // what it joins: a strait's two waters; otherwise its straits and the waters beside it
+  const nb = Object.keys(z.nb).map(Number).sort((a, b) => z.nb[b] - z.nb[a]);
+  const straits = nb.filter((v) => names[v] && names[v].kind === "strait");
+  const others = nb.filter((v) => straits.indexOf(v) < 0 && !(rec.kind === "strait" && z.links && z.links.indexOf(v) >= 0));
+  const into = World.displayRivers().filter((rv) => rv.pts.length && World.waterZoneAt(rv.pts[rv.pts.length - 1], true) === zid)
+    .sort((a, b) => (b.upLen || 0) - (a.upLen || 0));
+  const intoNamed = into.filter((rv) => rv.name).map((rv) => rv.name);
+  const edited = World.waterEdited(zid);
+  const zoom = () => {
+    const proj = App.basemap.proj, b = z.box;
+    MapAPI.zoomTo([proj([b[0] - 4, b[1] - 4]), proj([b[2] + 4, b[3] + 4])]);
+  };
+  return (
+    <div className="info-card water-card" data-export-skip="1" onPointerDown={(e) => e.stopPropagation()}>
+      <div className="card-head">
+        <span className="card-kind">🌊 {t("water.kind." + rec.kind)}</span>
+        <span className="card-head-actions">
+          <button className="btn icon card-min-btn" title={t("card.minimize")} onClick={() => Actions.ui({ cardMin: true })}>⌄</button>
+          <button className="btn icon" onClick={close}>✕</button>
+        </span>
+      </div>
+      {rec.label
+        ? <div className="card-title-static">{rec.name}<div className="muted">{t("water.fromLabel")}</div></div>
+        : <input className="input card-title" value={rec.name} placeholder={rec.auto}
+            onChange={(e) => World.setWaterZone(zid, { name: e.target.value }, { undo: false })}></input>}
+      <div className="card-grid">
+        <RiverParam label={t("water.kindLabel")} value={rec.kindSet ? rec.kind : null} autoLabel={t("water.kind." + rec.kindAuto)}
+          options={World.WATER_KINDS.map((k) => ({ value: k, label: t("water.kind." + k) }))}
+          onChange={(v) => World.setWaterZone(zid, { kind: v })}></RiverParam>
+        <CardRow k={t("water.area")} v={"≈ " + fmtNum(Math.round(z.area * km * km / 100) * 100) + " " + t("world.km") + "²"}></CardRow>
+        {rec.kind === "strait" && z.links && z.links.length
+          ? <CardRow k={t("water.joins")} v={z.links.map(nameOf).join(" — ")}></CardRow>
+          : null}
+        {rec.kind !== "strait" && straits.length ? <CardRow k={t("water.straits")} v={straits.map(nameOf).join(", ")}></CardRow> : null}
+        {others.length ? <CardRow k={t("water.neighbours")} v={others.map(nameOf).join(", ")}></CardRow> : null}
+        <CardRow k={t("water.shores")} v={shores.length ? shores.slice(0, 6).join(", ") + (shores.length > 6 ? " " + t("water.more").replace("{n}", shores.length - 6) : "") : t("water.noShore")}></CardRow>
+        {lands > 1 ? <CardRow k={t("water.lands")} v={String(lands)}></CardRow> : null}
+        {into.length ? <CardRow k={t("water.rivers")} v={(intoNamed.length ? intoNamed.slice(0, 4).join(", ") + (into.length > Math.min(4, intoNamed.length) ? " " + t("water.more").replace("{n}", into.length - Math.min(4, intoNamed.length)) : "") : String(into.length))}></CardRow> : null}
+        <button className="card-help-toggle" onClick={() => setHelp(!help)}>{help ? "▾ " : "ⓘ "}{t("water.howTitle")}</button>
+        {help && <div className="card-help"><p>{t("water.how")}</p></div>}
+      </div>
+      <textarea className="textarea card-notes" placeholder={t("card.notes")} value={rec.notes}
+        onChange={(e) => World.setWaterZone(zid, { notes: e.target.value }, { undo: false })}></textarea>
+      <div className="card-actions">
+        <button className={"btn outline" + (App.ui.waterMerge ? " on" : "")} onClick={() => Actions.ui({ waterMerge: App.ui.waterMerge ? null : pt, waterCut: false })}>{t("water.merge")}</button>
+        <button className={"btn outline" + (App.ui.waterCut ? " on" : "")} onClick={() => Actions.ui({ waterCut: !App.ui.waterCut, waterMerge: null })}>{t("water.cut")}</button>
+        <button className="btn outline" onClick={zoom}>{t("card.showOnMap")}</button>
+        {edited && <button className="btn outline danger" onClick={() => World.resetWaterZone(zid)}>{t("water.reset")}</button>}
+      </div>
+    </div>
+  );
+}
+
+// what a tap or a stroke on the map does now: join the zone to another, or divide it
+function WaterModeBar() {
+  useStore();
+  const cut = !!App.ui.waterCut;
+  return (
+    <div className="geom-bar road-bar" data-export-skip="1">
+      <span className="muted">{t(cut ? "water.cutHint" : "water.mergeHint")}</span>
+      <button className="btn outline" onClick={() => Actions.ui({ waterCut: false, waterMerge: null })}>{t("edit.cancel")}</button>
+    </div>
+  );
+}
+
 function WorldCard() {
   useStore();
   const card = App.ui.card;
   if (!card) return null;
   if (card.kind === "river" && World.active()) return <RiverCard index={card.index}></RiverCard>;
+  if (card.kind === "water" && World.active()) return <WaterCard pt={card.pt}></WaterCard>;
   if (card.kind === "object" && window.ObjectCard) return <ObjectCard id={card.id}></ObjectCard>;
   if ((card.kind === "label" || card.kind === "stateLabel") && window.LabelCard) return <LabelCard card={card}></LabelCard>;
   return null;
@@ -757,11 +904,15 @@ function AtlasModal() {
   useStore();
   const detail = ["overview", "areas", "provinces"].indexOf(App.ui.atlasDetail) >= 0 ? App.ui.atlasDetail : "areas";
   // the atlas describes the climate too: make sure the analysis matches the map
-  React.useEffect(() => { World.ensureAnalysis().catch((e) => console.warn(e)); }, []);
+  React.useEffect(() => {
+    World.ensureAnalysis().catch((e) => console.warn(e));
+    World.ensureWaters().catch((e) => console.warn(e)); // seas, gulfs and straits
+  }, []);
   const hyRev = World.hydroFresh() ? World.hydro.rev : 0;
+  const wKey = World.watersFresh() ? World.waters.key + JSON.stringify((App.project.world.waters || {}).names || []) : "";
   const text = React.useMemo(() => {
     try { return Atlas.build({ detail }); } catch (e) { console.error(e); return String(e); }
-  }, [detail, App.ui.lang, hyRev]);
+  }, [detail, App.ui.lang, hyRev, wKey]);
   const areaRef = React.useRef(null);
   const copy = async () => {
     try { await navigator.clipboard.writeText(text); Actions.toast(t("world.copied")); }
@@ -802,4 +953,4 @@ function AtlasModal() {
   );
 }
 
-Object.assign(window, { WorldPalette, AtlasModal, WorldSizeRail, WorldCard, worldAnalysis, CardRow, fmtNum, GeoSheet, GeoBar, CutBar, ProvinceGeo, NameRuleModal });
+Object.assign(window, { WorldPalette, AtlasModal, WorldSizeRail, WorldCard, worldAnalysis, CardRow, fmtNum, GeoSheet, GeoBar, CutBar, ProvinceGeo, NameRuleModal, WaterModeBar });

@@ -427,6 +427,7 @@ function MapTab() {
             <Check label={t("map.showDesert")} checked={s.showDesert !== false} onChange={(v) => set({ showDesert: v })}></Check>}
         </React.Fragment>
       )}
+      {window.World && World.active() && <Check label={t("map.showWaterZones")} checked={s.showWaterZones !== false} onChange={(v) => set({ showWaterZones: v })}></Check>}
       <Check label={t("map.provinceTint")} checked={s.provinceTint} onChange={(v) => set({ provinceTint: v })}></Check>
       {window.GeomEdit && GeomEdit.enabled() && (
         <React.Fragment>

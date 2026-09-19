@@ -84,7 +84,13 @@
       bandH: [0, 0, 0, 0, 0], coverH: new Array(window.World.COVER_CLASSES.length).fill(0), biomeH: new Map(),
       waters: new Map(), nb: new Map(), lands: new Map(), ranges: new Map(), rivers: new Set() }));
     const land = lid ? landmasses(W, H, lid, dg.landArea.length) : TA.components(W, H, isLand, false);
-    const water = TA.components(W, H, (i) => !isLand(i), false);
+    // the water divided into seas, gulfs, straits and lakes (World.waters) when that is
+    // worked out for the terrain as it is; otherwise every body of water whole
+    const wz = lid && window.World.watersFresh && window.World.watersFresh() ? window.World.waters : null;
+    const water = wz
+      ? { comp: wz.zone, list: wz.zones.map((z) => ({ id: z.id, area: z.area, edge: z.edge, zone: z,
+        sx: (z.lx != null ? z.lx : z.ax) * z.area, sy: (z.ly != null ? z.ly : z.ay) * z.area })) }
+      : TA.components(W, H, (i) => !isLand(i), false);
     // ranges: mountain cells less than ~2 cells apart belong to one range
     const near = new Uint8Array(N), tmp = new Uint8Array(N);
     for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
@@ -112,19 +118,19 @@
     water.list.forEach((c) => {
       c.cells = new Map();
       // a water body that touches the map edge or sea-level water is sea; enclosed lake cells are lakes
-      c.kind = c.edge ? "ocean" : "lake";
+      c.kind = c.zone ? c.zone.kind : c.edge ? "ocean" : "lake";
     });
     for (let i = 0; i < N; i++) {
       if (isLand(i)) {
         const lc = land.list[land.comp[i]];
         if (h[i] > lc.hmax) { lc.hmax = h[i]; lc.hmaxAt = i; }
-      } else if (h[i] <= 0) {
+      } else if (h[i] <= 0 && water.comp[i] >= 0) {
         const wc = water.list[water.comp[i]];
         wc.salt = true; // contains sea-level water (not only a lake surface)
       }
     }
     // enclosed water is a lake, unless it is as big as an inland sea (≥ 4000 cells)
-    water.list.forEach((c) => { if (!c.edge) c.kind = c.area >= 4000 ? "sea" : "lake"; });
+    water.list.forEach((c) => { if (!c.edge && !c.zone) c.kind = c.area >= 4000 ? "sea" : "lake"; });
     const inc = (m, k, v) => m.set(k, (m.get(k) || 0) + (v || 1));
     for (let y = 0; y < H; y++) {
       for (let x = 0; x < W; x++) {
@@ -147,7 +153,7 @@
         for (let d = 1; d <= 2; d++) {
           const nbrs = [x - d >= 0 ? i - d : -1, x + d < W ? i + d : -1, y - d >= 0 ? i - d * W : -1, y + d < H ? i + d * W : -1];
           for (const j of nbrs) {
-            if (j >= 0 && !isLand(j)) { const wc = water.comp[j]; inc(cell.waters, wc); inc(water.list[wc].cells, c); }
+            if (j >= 0 && !isLand(j) && water.comp[j] >= 0) { const wc = water.comp[j]; inc(cell.waters, wc); inc(water.list[wc].cells, c); }
           }
         }
       }
@@ -158,7 +164,7 @@
         for (let dy = -rr; dy <= rr; dy++) for (let dx = -rr; dx <= rr; dx++) {
           const x = Math.floor(pt[0]) + dx, y = Math.floor(pt[1]) + dy;
           if (x < 0 || y < 0 || x >= W || y >= H) continue;
-          if (!isLand(y * W + x)) return water.comp[y * W + x];
+          if (!isLand(y * W + x) && water.comp[y * W + x] >= 0) return water.comp[y * W + x];
         }
       }
       return -1;
@@ -344,7 +350,10 @@
     const waters = an.waters.filter((c) => c.area >= 6).sort((a, b) => b.area - a.area);
     const waterLabel = {};
     let oi = 0, lk = 0;
+    const zoneNames = an.waters.length && an.waters[0].zone ? window.World.waterNames() : null;
     waters.forEach((c) => {
+      const zn = zoneNames && zoneNames[c.id];
+      if (zn) { waterLabel[c.id] = zn.shown; c.kind = zn.kind; c.notes = zn.notes; return; }
       waterLabel[c.id] = waterName[c.id] || (c.kind === "lake" ? (ru ? "Озеро " : "Lake ") + (++lk) : (ru ? "Море " : "Sea ") + (++oi));
     });
     const ranges = an.ranges.filter((c) => c.area >= 20).sort((a, b) => b.area - a.area);
@@ -695,22 +704,47 @@
       cellsHere.forEach((ci) => { const o = ownerOf(ci); if (o) owners[o] = (owners[o] || 0) + c.cells.get(ci); });
       const ownerList = Object.keys(owners).sort((a, b) => owners[b] - owners[a]).map((o) => p.states[o].name);
       const rangesHere = N.ranges.filter((r) => an.landComp[Math.floor(r.sy / r.area) * W + Math.floor(r.sx / r.area)] === c.id).map((r) => N.rangeLabel[r.id]);
-      const seas = N.waters.filter((wc) => cellsHere.some((ci) => an.cells[ci].waters.has(wc.id))).map((wc) => N.waterLabel[wc.id]);
+      const touching = N.waters.filter((wc) => cellsHere.some((ci) => an.cells[ci].waters.has(wc.id)));
+      // the water around a landmass, and the lakes on it apart
+      const seas = touching.filter((wc) => wc.kind !== "lake").map((wc) => N.waterLabel[wc.id]);
+      const lakesOn = touching.filter((wc) => wc.kind === "lake").map((wc) => N.waterLabel[wc.id]);
       const peak = c.hmaxAt >= 0 ? at(c.hmaxAt) : null;
       L.push(ru
-        ? `- **${N.landLabel[c.id]}** — ${mapPosition(lang, cx, cy)} карты, центр (${fmt(cx * km)}, ${fmt(cy * km)}), ≈${fmt(c.area * km * km)} км², ${fmt((c.maxx - c.minx + 1) * km)} × ${fmt((c.maxy - c.miny + 1) * km)} км.${peak ? ` Высшая точка ${m(c.hmax)} (${fmt(peak[0] * km)}, ${fmt(peak[1] * km)}).` : ""}${cellsHere.length ? ` Провинций: ${cellsHere.length}. Рельеф: ${terrainPct(cellsHere)}.` : ""}${ownerList.length ? ` Государства: ${listJoin(ownerList)}.` : ""}${rangesHere.length ? ` Горы: ${listJoin(rangesHere)}.` : ""}${seas.length ? ` Омывается: ${listJoin(seas)}.` : ""}`
-        : `- **${N.landLabel[c.id]}** — ${mapPosition(lang, cx, cy)} of the map, centre (${fmt(cx * km)}, ${fmt(cy * km)}), ≈${fmt(c.area * km * km)} km², ${fmt((c.maxx - c.minx + 1) * km)} × ${fmt((c.maxy - c.miny + 1) * km)} km.${peak ? ` Highest point ${m(c.hmax)} (${fmt(peak[0] * km)}, ${fmt(peak[1] * km)}).` : ""}${cellsHere.length ? ` Provinces: ${cellsHere.length}. Terrain: ${terrainPct(cellsHere)}.` : ""}${ownerList.length ? ` States: ${listJoin(ownerList)}.` : ""}${rangesHere.length ? ` Mountains: ${listJoin(rangesHere)}.` : ""}${seas.length ? ` Coasts on: ${listJoin(seas)}.` : ""}`);
+        ? `- **${N.landLabel[c.id]}** — ${mapPosition(lang, cx, cy)} карты, центр (${fmt(cx * km)}, ${fmt(cy * km)}), ≈${fmt(c.area * km * km)} км², ${fmt((c.maxx - c.minx + 1) * km)} × ${fmt((c.maxy - c.miny + 1) * km)} км.${peak ? ` Высшая точка ${m(c.hmax)} (${fmt(peak[0] * km)}, ${fmt(peak[1] * km)}).` : ""}${cellsHere.length ? ` Провинций: ${cellsHere.length}. Рельеф: ${terrainPct(cellsHere)}.` : ""}${ownerList.length ? ` Государства: ${listJoin(ownerList)}.` : ""}${rangesHere.length ? ` Горы: ${listJoin(rangesHere)}.` : ""}${seas.length ? ` Омывается: ${listJoin(seas)}.` : ""}${lakesOn.length ? ` Озёра: ${listJoin(lakesOn)}.` : ""}`
+        : `- **${N.landLabel[c.id]}** — ${mapPosition(lang, cx, cy)} of the map, centre (${fmt(cx * km)}, ${fmt(cy * km)}), ≈${fmt(c.area * km * km)} km², ${fmt((c.maxx - c.minx + 1) * km)} × ${fmt((c.maxy - c.miny + 1) * km)} km.${peak ? ` Highest point ${m(c.hmax)} (${fmt(peak[0] * km)}, ${fmt(peak[1] * km)}).` : ""}${cellsHere.length ? ` Provinces: ${cellsHere.length}. Terrain: ${terrainPct(cellsHere)}.` : ""}${ownerList.length ? ` States: ${listJoin(ownerList)}.` : ""}${rangesHere.length ? ` Mountains: ${listJoin(rangesHere)}.` : ""}${seas.length ? ` Coasts on: ${listJoin(seas)}.` : ""}${lakesOn.length ? ` Lakes: ${listJoin(lakesOn)}.` : ""}`);
     });
     L.push("");
     if (N.waters.length) {
-      L.push(ru ? "### Моря и озёра" : "### Seas and lakes");
+      const zones = !!N.waters[0].zone;
+      L.push(zones ? (ru ? "### Моря, заливы, проливы и озёра" : "### Seas, gulfs, straits and lakes") : (ru ? "### Моря и озёра" : "### Seas and lakes"));
+      const KIND = ru ? { ocean: "океан", sea: "море", gulf: "залив", bay: "бухта", strait: "пролив", lake: "озеро" }
+        : { ocean: "ocean", sea: "sea", gulf: "gulf", bay: "bay", strait: "strait", lake: "lake" };
+      const label = (id) => N.waterLabel[id];
       N.waters.forEach((c) => {
         const owners = [...new Set([...c.cells.keys()].map(ownerOf).filter(Boolean))].map((o) => p.states[o].name);
         const cx = c.sx / c.area, cy = c.sy / c.area;
-        const kind = c.kind === "ocean" ? (ru ? "море/океан (выходит к краю карты)" : "sea/ocean (reaches the map edge)")
+        const kind = zones ? KIND[c.kind] || c.kind
+          : c.kind === "ocean" ? (ru ? "море/океан (выходит к краю карты)" : "sea/ocean (reaches the map edge)")
           : c.kind === "sea" ? (ru ? "внутреннее море" : "inland sea") : (ru ? "озеро" : "lake");
-        L.push(ru ? `- **${N.waterLabel[c.id]}** — ${kind}, ${mapPosition(lang, cx, cy)} карты, ≈${fmt(c.area * km * km)} км².${owners.length ? ` Берега: ${listJoin(owners)}.` : ""}`
-          : `- **${N.waterLabel[c.id]}** — ${kind}, ${mapPosition(lang, cx, cy)} of the map, ≈${fmt(c.area * km * km)} km².${owners.length ? ` Shores: ${listJoin(owners)}.` : ""}`);
+        const extra = [];
+        if (zones) {
+          const z = c.zone;
+          const nb = Object.keys(z.nb).map(Number).filter((v) => label(v)).sort((a, b) => z.nb[b] - z.nb[a]);
+          if (c.kind === "strait" && z.links) extra.push((ru ? "соединяет: " : "joins: ") + z.links.filter((v) => label(v)).map(label).join(ru ? " и " : " and "));
+          else {
+            const st = nb.filter((v) => an.waters[v] && an.waters[v].kind === "strait");
+            const other = nb.filter((v) => st.indexOf(v) < 0);
+            if (st.length) extra.push((ru ? "проливы: " : "straits: ") + listJoin(st.map(label)));
+            if (other.length) extra.push((ru ? "рядом: " : "beside it: ") + listJoin(other.map(label)));
+          }
+          const into = an.rivers.filter((ri) => ri.mouthWater === c.id && !(ri.rv.into >= 0) && (ri.rv.name || ri.rv.major || ri.len >= 25))
+            .sort((a, b) => b.len - a.len).map((ri) => N.riverLabel[ri.k]);
+          if (into.length) extra.push((ru ? "впадают реки: " : "rivers flowing in: ") + listJoin(into.slice(0, 8)) + (into.length > 8 ? (ru ? " и др" : " etc") : ""));
+        }
+        const more = extra.length ? " " + extra.map((e) => e[0].toUpperCase() + e.slice(1)).join(". ") + "." : "";
+        const notes = c.notes ? " " + c.notes.trim().replace(/\s+/g, " ") : "";
+        L.push(ru ? `- **${label(c.id)}** — ${kind}, ${mapPosition(lang, cx, cy)} карты, ≈${fmt(c.area * km * km)} км².${owners.length ? ` Берега: ${listJoin(owners)}.` : ""}${more}${notes}`
+          : `- **${label(c.id)}** — ${kind}, ${mapPosition(lang, cx, cy)} of the map, ≈${fmt(c.area * km * km)} km².${owners.length ? ` Shores: ${listJoin(owners)}.` : ""}${more}${notes}`);
       });
       L.push("");
     }

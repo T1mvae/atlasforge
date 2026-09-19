@@ -434,6 +434,58 @@ function featAnchor(f) {
   return (f._anchor = a);
 }
 
+// ---------- custom world: seas, gulfs and straits ----------
+// names on the water: italic serif with letter spacing, set along the zone's long axis
+// (slightly arched on long seas), as large as the zone allows (sizes in data cells)
+const WATER_LABEL = {
+  ocean: { max: 22, sp: 0.42, upper: true }, sea: { max: 12, sp: 0.22, upper: true }, gulf: { max: 8, sp: 0.14 },
+  bay: { max: 5, sp: 0.08 }, strait: { max: 4, sp: 0.06 }, lake: { max: 6, sp: 0.1 }
+};
+function waterZoneTexts(proj) {
+  const ws = World.waters, names = World.waterNames();
+  if (!ws || !names) return [];
+  const mpc = World.mapUnitsPerCell();
+  const out = [];
+  ws.zones.forEach((z) => {
+    const rec = names[z.id];
+    if (!rec || rec.label) return; // a label written on that water names it already
+    const named = !!rec.name;
+    if (!named && (rec.kind === "strait" || rec.kind === "bay")) return; // small water: only a name the painter gave
+    const st = WATER_LABEL[rec.kind] || WATER_LABEL.sea;
+    const text = rec.shown;
+    const unit = measureMapText(st.upper ? text.toUpperCase() : text, 1, COUNTRY_FONT, 400, true, st.sp);
+    let size = Math.min(z.len * 0.8 / Math.max(0.1, unit), z.wid * 0.45, st.max);
+    if (size < (named ? 2.4 : 3)) { if (!named) return; size = 2.4; } // a made-up name too small to read is left out
+    const s = size * mpc, at = proj([z.lx != null ? z.lx : z.ax, z.ly != null ? z.ly : z.ay]);
+    const ang = Math.max(-60, Math.min(60, z.angle || 0));
+    out.push({
+      key: "wz" + z.id, x: at[0], y: at[1] + s * 0.35, text, size: s, angle: ang,
+      curve: (rec.kind === "ocean" || rec.kind === "sea" || rec.kind === "gulf") && z.len > 1.6 * z.wid ? 0.1 : 0,
+      spacing: st.sp * s, italic: true, upper: !!st.upper, weight: 400, fill: "#1f4f7a", font: COUNTRY_FONT,
+      halo: s * 0.1, haloColor: "#e3eef7", className: "water-label" + (named ? "" : " auto"),
+      // a name made up from the kind is a hint on screen, never part of an exported image
+      style: named ? undefined : { opacity: 0.5 },
+      attrs: named ? { "data-wzone": z.id } : { "data-wzone": z.id, "data-export-skip": "1" }
+    });
+  });
+  return out;
+}
+function WaterZonesLayer({ proj }) {
+  const d = World.waterBordersPath(proj);
+  const card = App.ui.card;
+  const sel = card && card.kind === "water" ? World.waterZoneAt(card.pt, true) : -1;
+  const texts = waterZoneTexts(proj);
+  return (
+    <g id="water-zones">
+      {sel >= 0 && <path data-export-skip="1" d={World.waterZonePath(sel, proj)} fill="#ffcf5a" fillOpacity="0.16" fillRule="evenodd"
+        stroke="#ffb32e" strokeWidth="1.6" vectorEffect="non-scaling-stroke" pointerEvents="none"></path>}
+      {d && <path className="water-borders" d={d} fill="none" stroke="#1f4f7a" strokeOpacity="0.55" strokeWidth="1.1"
+        strokeDasharray="5 4" strokeLinecap="round" vectorEffect="non-scaling-stroke" pointerEvents="none"></path>}
+      <g className="water-labels">{texts.map((tx) => <MapText key={tx.key} t={tx}></MapText>)}</g>
+    </g>
+  );
+}
+
 function MapView() {
   useStore();
   const svgRef = useRef(null);
@@ -452,6 +504,7 @@ function MapView() {
   const brushRef = useRef(null);        // custom world: brush outline following the pen
   const riverPrevRef = useRef(null);    // custom world: river stroke preview
   const riverEditRef = useRef(null);    // custom world: new course while a river end is dragged
+  const waterCutRef = useRef(null);     // custom world: a line being drawn across the water
   const touches = useRef(new Map());    // active touch pointers (pinch zoom / two-finger pan)
   const tapRef = useRef(null);          // multi-finger tap recognizer: { t0, max, moved, starts }
   const longPressRef = useRef(null);    // finger long-press (eyedropper) timer
@@ -602,6 +655,12 @@ function MapView() {
     if (host && World.canvas && World.canvas.parentNode !== host) host.appendChild(World.canvas);
     applyView();
   });
+  // the water zones follow the terrain; worked out off the main thread once painting pauses
+  useEffect(() => {
+    if (!worldOn || !App.project || App.project.settings.showWaterZones === false || World.watersFresh()) return;
+    const tm = setTimeout(() => { World.ensureWaters().catch((e) => console.warn("water zones", e)); }, World.waters ? 600 : 50);
+    return () => clearTimeout(tm);
+  });
   useEffect(() => {
     const stage = svgRef.current && svgRef.current.parentNode;
     if (!stage || typeof ResizeObserver === "undefined") return;
@@ -729,6 +788,7 @@ function MapView() {
           App.emit();
         }
         else if (g0 && g0.mode === "paint") { young ? Actions.cancelStroke() : Actions.endStroke(); }
+        else if (g0 && g0.mode === "wcut") { if (waterCutRef.current) waterCutRef.current.style.display = "none"; }
         else if (g0 && (g0.mode === "label" || g0.mode === "lhandle")) { dragLabel.current = null; Actions.endStroke(); }
         const [a, b] = [...touches.current.values()];
         gesture.current = { mode: "pinch", dist: Math.hypot(a[0] - b[0], a[1] - b[1]), mid: clientToViewbox({ clientX: (a[0] + b[0]) / 2, clientY: (a[1] + b[1]) / 2 }) };
@@ -772,6 +832,12 @@ function MapView() {
         e.stopPropagation();
         return;
       }
+    }
+    // ---- the water card's "cut": a line drawn across the water divides it ----
+    if (App.ui.waterCut && e.button === 0 && window.World && World.active()) {
+      gesture.current = { mode: "wcut", pointerId: e.pointerId, pts: [mapPt] };
+      try { svgRef.current.setPointerCapture(e.pointerId); } catch (err) {}
+      return;
     }
     // ---- a finger tap on a label or a country name selects it, a finger drag pans ----
     if (fingerNav && (lbl || slbl) && !App.ui.roadFrom) {
@@ -925,6 +991,17 @@ function MapView() {
         g.dist = dist; g.mid = mid;
         return;
       }
+    }
+    if (g && g.mode === "wcut") {
+      const [mx, my] = clientToMap(e);
+      const last = g.pts[g.pts.length - 1];
+      const ctm = svgRef.current && svgRef.current.getScreenCTM();
+      if (Math.hypot(mx - last[0], my - last[1]) * view.current.k * ((ctm && ctm.a) || 1) > 3) {
+        g.pts.push([mx, my]);
+        const el = waterCutRef.current;
+        if (el) { el.setAttribute("d", "M" + g.pts.map((q) => q[0].toFixed(2) + "," + q[1].toFixed(2)).join("L")); el.style.display = "block"; }
+      }
+      return;
     }
     if (g && g.mode === "riverEnd") {
       const evs = e.nativeEvent && e.nativeEvent.getCoalescedEvents ? e.nativeEvent.getCoalescedEvents() : null;
@@ -1198,6 +1275,18 @@ function MapView() {
       World.strokeEnd();
       return;
     }
+    if (g && g.mode === "wcut") {
+      if (e.type === "pointerleave" && svgRef.current && svgRef.current.hasPointerCapture && svgRef.current.hasPointerCapture(e.pointerId)) return;
+      gesture.current = null;
+      try { svgRef.current.releasePointerCapture(e.pointerId); } catch (err) {}
+      if (waterCutRef.current) waterCutRef.current.style.display = "none";
+      if (e.type === "pointerup") {
+        const line = g.pts.concat([clientToMap(e)]).map((q) => World.mapToGrid(q));
+        if (World.addWaterCut(line)) { Actions.ui({ waterCut: false }); Actions.toast(t("water.cutDone")); }
+        else Actions.toast(t("water.cutShort"));
+      }
+      return;
+    }
     gesture.current = null;
     svgRef.current && svgRef.current.closest(".map-stage").classList.remove("panning");
     if (!g) return;
@@ -1299,6 +1388,26 @@ function MapView() {
         const tolData = (g.finger || e.pointerType === "touch" ? 16 : 8) / Math.max(0.0001, k * World.mapUnitsPerCell() * (svgRef.current.getScreenCTM().a || 1));
         const rv = World.preview ? null : World.riverAt(World.mapToGrid([mx, my]), tolData);
         if (rv) { Actions.ui({ card: { kind: "river", index: rv.index }, selection: [] }); return; }
+        // water: the zone under the tap opens its card (once nothing is selected); after
+        // "join with a neighbour" in a card, the tapped zone is joined to that one
+        if (!g.rid && !g.regId && !World.preview && !World.cutPreview) {
+          const gp = World.mapToGrid([mx, my]);
+          const zid = World.waterZoneAt(gp);
+          if (zid >= 0) {
+            const wm = App.ui.waterMerge;
+            if (wm) {
+              const from = World.waterZoneAt(wm, true);
+              if (from >= 0 && from !== zid && World.mergeWaterZones(from, zid)) Actions.toast(t("water.merged"));
+              Actions.ui({ waterMerge: null, card: { kind: "water", pt: wm } });
+              return;
+            }
+            const busy = App.ui.selection.length || (App.ui.regionSelection && App.ui.regionSelection.length);
+            if (!busy && App.project.settings.showWaterZones !== false) {
+              Actions.ui({ card: { kind: "water", pt: [Math.round(gp[0] * 100) / 100, Math.round(gp[1] * 100) / 100] }, selLabel: null, selStateLabel: null, selFeatLabel: null });
+              return;
+            }
+          }
+        }
         if (App.ui.card) Actions.ui({ card: null });
       }
       if (tool === "select" || tool === "pan") {
@@ -1711,6 +1820,10 @@ function MapView() {
               </g>
             );
           })()}
+          {/* ---- custom world: seas, gulfs and straits ---- */}
+          {ready && worldOn && settings.showWaterZones !== false && World.waters && World.waters.project === project && (
+            <WaterZonesLayer proj={bm.proj}></WaterZonesLayer>
+          )}
           {/* ---- custom world: the borders of a province cut being previewed ---- */}
           {ready && worldOn && World.cutPreview && (() => {
             const d = World.cutPreviewPath(bm.proj);
@@ -1925,6 +2038,7 @@ function MapView() {
               <circle ref={brushRef} style={{ display: "none" }} fill="none" stroke="#ffffff" strokeOpacity="0.9" strokeWidth="1.2" vectorEffect="non-scaling-stroke"></circle>
               <path ref={riverPrevRef} style={{ display: "none" }} fill="none" stroke="#2f6fb0" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" vectorEffect="non-scaling-stroke"></path>
               <path ref={riverEditRef} style={{ display: "none" }} fill="none" stroke="#ff9f2e" strokeWidth="3" strokeDasharray="7 4" strokeLinecap="round" strokeLinejoin="round" vectorEffect="non-scaling-stroke"></path>
+              <path ref={waterCutRef} style={{ display: "none" }} fill="none" stroke="#c0392b" strokeWidth="2.4" strokeDasharray="6 4" strokeLinecap="round" strokeLinejoin="round" vectorEffect="non-scaling-stroke"></path>
             </g>
           )}
           {/* ---- source (green) and mouth (blue) handles of the river whose card is open ---- */}
@@ -2040,6 +2154,7 @@ function MapView() {
       {worldOn && (World.cutPreview || World.generating) && window.CutBar && <CutBar></CutBar>}
       {App.ui.tool === "place" && window.ObjectPalette && ready && <ObjectPalette></ObjectPalette>}
       {window.RoadModeBar && <RoadModeBar></RoadModeBar>}
+      {worldOn && (App.ui.waterCut || App.ui.waterMerge) && window.WaterModeBar && <WaterModeBar></WaterModeBar>}
       {window.WorldCard && <WorldCard></WorldCard>}
 
       <div className="minimap" onPointerDown={onMinimapClick}>

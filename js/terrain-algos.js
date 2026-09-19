@@ -1750,6 +1750,358 @@
   }
   TA.boxBlur = boxBlur;
 
+  // ---------- seas, gulfs and straits ----------
+  // The water of the map divided the way an atlas divides it. Every water cell is
+  // flooded from the widest water (farthest from land) toward the shore; where two floods
+  // meet, the narrower one stays a zone of its own if the passage is narrow for it — a
+  // gulf behind a narrow mouth, a sea behind a chain of islands — and joins the other
+  // otherwise, so an open ocean stays one piece. Narrow water that joins two zones is a
+  // strait; a lake is one zone.
+  // input: { W, H, water (Uint8, 1 = water), km (per cell),
+  //   cuts: [[[x, y], …], …] — lines across the water that divide it (data units),
+  //   merges: [[x1, y1, x2, y2], …] — a point in each of two zones that are one,
+  //   opts: { minKm2, wideKm, straitKm, ratio, lakeKm2, seaKm2, oceanKm2, bayKm2 } }
+  // output: { zone (Int32 per cell, -1 land), zones: [{ id, kind, area (cells), edge,
+  //   ax, ay (the widest point: where the name goes), angle (long axis, degrees), len, wid
+  //   (along / across the way its name runs, cells), lx, ly (the middle of that stretch),
+  //   box [x0, y0, x1, y1], coast, border, frame
+  //   (perimeter cell edges), nb: { zone: shared cell edges }, links (the zones a strait
+  //   joins) }], borders: [{ a, b, pts }] — the lines between zones }
+  TA.waterZones = function (inp) {
+    const W = inp.W, H = inp.H, N = W * H;
+    const km = +inp.km > 0 ? +inp.km : 5, cellKm2 = km * km;
+    const o = Object.assign({ minKm2: 15000, wideKm: 70, straitKm: 60, ratio: 0.6, lakeKm2: 150000, seaKm2: 400000,
+      oceanKm2: 1500000, bayKm2: 40000 }, inp.opts || {});
+    const water = inp.water;
+    // a line drawn across the water divides it: its cells (a band two cells thick, so a
+    // flood cannot slip between diagonal cells) belong to no flood
+    const cut = new Uint8Array(N);
+    (inp.cuts || []).forEach((line) => {
+      if (!line || line.length < 2) return;
+      TA.resamplePolyline(line, 0.25).forEach((q) => {
+        for (let dy = -1; dy <= 1; dy++) {
+          for (let dx = -1; dx <= 1; dx++) {
+            const x = Math.floor(q[0]) + dx, y = Math.floor(q[1]) + dy;
+            if (x < 0 || y < 0 || x >= W || y >= H) continue;
+            if (Math.hypot(x + 0.5 - q[0], y + 0.5 - q[1]) <= 0.8) cut[y * W + x] = 1;
+          }
+        }
+      });
+    });
+    const open = new Uint8Array(N);
+    for (let i = 0; i < N; i++) open[i] = water[i] && !cut[i] ? 1 : 0;
+    // how far every water cell lies from land (the map frame is open water)
+    const landM = new Uint8Array(N);
+    for (let i = 0; i < N; i++) landM[i] = water[i] ? 0 : 1;
+    const D2 = TA.edt2(W, H, landM);
+    const d = new Float32Array(N);
+    for (let i = 0; i < N; i++) d[i] = water[i] ? Math.sqrt(Math.min(D2[i], 1e12)) : 0;
+    // flood from the widest water toward the shore
+    let n = 0;
+    const ord = new Int32Array(N);
+    for (let i = 0; i < N; i++) if (open[i]) ord[n++] = i;
+    const order = ord.subarray(0, n).sort((a, b) => d[b] - d[a]);
+    const lab = new Int32Array(N).fill(-1);
+    const parent = [], peak = [], frameR = [];
+    const find = (r) => { while (parent[r] !== r) { parent[r] = parent[parent[r]]; r = parent[r]; } return r; };
+    const onFrame = (x, y) => x === 0 || y === 0 || x === W - 1 || y === H - 1;
+    const wide = o.wideKm / 2 / km; // a zone of its own lies this far from land somewhere (cells)
+    const roots = [];
+    for (let q = 0; q < n; q++) {
+      const i = order[q], x = i % W, y = (i / W) | 0;
+      let best = -1, bestD = -1;
+      roots.length = 0;
+      for (let k = 0; k < 8; k++) {
+        const xx = x + NX[k], yy = y + NY[k];
+        if (xx < 0 || yy < 0 || xx >= W || yy >= H) continue;
+        const j = yy * W + xx;
+        if (lab[j] < 0) continue;
+        const r = find(lab[j]);
+        if (roots.indexOf(r) < 0) roots.push(r);
+        if (d[j] > bestD) { bestD = d[j]; best = j; }
+      }
+      if (!roots.length) {
+        lab[i] = parent.length; parent.push(parent.length); peak.push(d[i]); frameR.push(onFrame(x, y));
+        continue;
+      }
+      if (roots.length > 1) {
+        // two floods meet in a passage this wide: the narrower water stays apart if the
+        // passage is narrow for it and it is wide enough to be a zone at all. Two that both
+        // reach the map frame are one: the water goes on beyond it.
+        roots.sort((a, b) => peak[b] - peak[a]);
+        for (let s = 1; s < roots.length; s++) {
+          const a = find(roots[0]), b = find(roots[s]);
+          if (a === b) continue;
+          const small = peak[a] < peak[b] ? a : b, big = small === a ? b : a;
+          if (!(frameR[a] && frameR[b]) && peak[small] >= wide && d[i] < o.ratio * peak[small]) continue;
+          parent[small] = big;
+          frameR[big] = frameR[big] || frameR[small];
+        }
+      }
+      const r = find(lab[best]);
+      lab[i] = r;
+      if (onFrame(x, y)) frameR[r] = true;
+    }
+    // zones numbered in reading order
+    const zone = new Int32Array(N).fill(-1);
+    const remap = new Map();
+    for (let i = 0; i < N; i++) {
+      if (lab[i] < 0) continue;
+      const r = find(lab[i]);
+      let z = remap.get(r);
+      if (z === undefined) { z = remap.size; remap.set(r, z); }
+      zone[i] = z;
+    }
+    // the cells of a cut line join the water beside them
+    for (let pass = 0; pass < 4; pass++) {
+      let left = 0;
+      for (let i = 0; i < N; i++) {
+        if (!water[i] || zone[i] >= 0) continue;
+        const x = i % W;
+        const nbs = [x > 0 ? i - 1 : -1, x < W - 1 ? i + 1 : -1, i - W, i + W];
+        for (const j of nbs) if (j >= 0 && j < N && zone[j] >= 0 && !cut[j]) { zone[i] = zone[j]; break; }
+        if (zone[i] < 0) left++;
+      }
+      if (!left) break;
+    }
+    for (let i = 0; i < N; i++) {
+      if (!water[i] || zone[i] >= 0) continue; // a cut cell cut off from all water: any neighbour
+      const x = i % W;
+      const nbs = [x > 0 ? i - 1 : -1, x < W - 1 ? i + 1 : -1, i - W, i + W];
+      for (const j of nbs) if (j >= 0 && j < N && zone[j] >= 0) { zone[i] = zone[j]; break; }
+    }
+    let Z = remap.size;
+    // zones joined: the lake is one piece, the painter's merges, zones too small to name
+    const zp = [];
+    for (let z = 0; z < Z; z++) zp.push(z);
+    const zf = (z) => { while (zp[z] !== z) { zp[z] = zp[zp[z]]; z = zp[z]; } return z; };
+    const bodies = TA.components(W, H, (i) => water[i] === 1, true);
+    const bodyOf = new Int32Array(Z).fill(-1);
+    for (let i = 0; i < N; i++) if (zone[i] >= 0) bodyOf[zone[i]] = bodies.comp[i];
+    const isLake = (b) => b >= 0 && !bodies.list[b].edge && bodies.list[b].area * cellKm2 < o.lakeKm2;
+    const lakeRoot = new Map();
+    for (let z = 0; z < Z; z++) {
+      const b = bodyOf[z];
+      if (!isLake(b)) continue;
+      if (lakeRoot.has(b)) zp[zf(z)] = zf(lakeRoot.get(b)); else lakeRoot.set(b, z);
+    }
+    const zoneAt = (x, y) => {
+      const cx = Math.floor(x), cy = Math.floor(y);
+      for (let r = 0; r <= 4; r++) {
+        for (let dy = -r; dy <= r; dy++) {
+          for (let dx = -r; dx <= r; dx++) {
+            if (Math.max(Math.abs(dx), Math.abs(dy)) !== r) continue;
+            const xx = cx + dx, yy = cy + dy;
+            if (xx < 0 || yy < 0 || xx >= W || yy >= H) continue;
+            const z = zone[yy * W + xx];
+            if (z >= 0) return z;
+          }
+        }
+      }
+      return -1;
+    };
+    (inp.merges || []).forEach((m) => {
+      if (!m || m.length < 4) return;
+      const a = zoneAt(m[0], m[1]), b = zoneAt(m[2], m[3]);
+      if (a >= 0 && b >= 0 && zf(a) !== zf(b)) zp[zf(b)] = zf(a);
+    });
+    for (let i = 0; i < N; i++) if (zone[i] >= 0) zone[i] = zf(zone[i]);
+    // borders between zones (cell edges), and each zone's area
+    const area = new Float64Array(Z);
+    const adj = new Map();
+    const addAdj = (a, b, c) => {
+      let m = adj.get(a);
+      if (!m) { m = new Map(); adj.set(a, m); }
+      m.set(b, (m.get(b) || 0) + c);
+    };
+    // (a border along a cut line does not count: what the painter divided stays divided,
+    // however small)
+    for (let y = 0; y < H; y++) {
+      for (let x = 0; x < W; x++) {
+        const i = y * W + x, a = zone[i];
+        if (a < 0) continue;
+        area[a]++;
+        if (cut[i]) continue;
+        if (x < W - 1 && !cut[i + 1]) { const b = zone[i + 1]; if (b >= 0 && b !== a) { addAdj(a, b, 1); addAdj(b, a, 1); } }
+        if (y < H - 1 && !cut[i + W]) { const b = zone[i + W]; if (b >= 0 && b !== a) { addAdj(a, b, 1); addAdj(b, a, 1); } }
+      }
+    }
+    // a piece that lies along a cut line is there because the painter divided the water
+    const byCut = new Uint8Array(Z);
+    for (let i = 0; i < N; i++) {
+      if (!cut[i] || zone[i] < 0) continue;
+      const x = i % W;
+      byCut[zone[i]] = 1;
+      const nbs = [x > 0 ? i - 1 : -1, x < W - 1 ? i + 1 : -1, i - W, i + W];
+      for (const j of nbs) if (j >= 0 && j < N && zone[j] >= 0) byCut[zone[j]] = 1;
+    }
+    const small = [];
+    for (let z = 0; z < Z; z++) if (zp[z] === z && area[z] && !byCut[z] && area[z] * cellKm2 < o.minKm2) small.push(z);
+    small.sort((a, b) => area[a] - area[b]);
+    small.forEach((z) => {
+      if (zf(z) !== z || area[z] * cellKm2 >= o.minKm2) return;
+      const m = adj.get(z);
+      if (!m || !m.size) return; // a small lake or a pool on its own
+      let t = -1, tb = -1;
+      m.forEach((c, u) => { if (c > tb) { tb = c; t = u; } });
+      zp[z] = t;
+      area[t] += area[z];
+      m.forEach((c, u) => {
+        const mu = adj.get(u);
+        mu.delete(z);
+        if (u !== t) { addAdj(t, u, c); addAdj(u, t, c); }
+      });
+      const mt = adj.get(t);
+      if (mt) mt.delete(z);
+      adj.delete(z);
+    });
+    for (let i = 0; i < N; i++) if (zone[i] >= 0) zone[i] = zf(zone[i]);
+    // straits: water narrower than straitKm (no disc that wide fits in it) that joins zones
+    // (a cut line is shore here too: water beside the painter's divide is no strait across it)
+    const wid = new Int32Array(N);
+    for (let i = 0; i < N; i++) wid[i] = open[i] ? 0 : -1;
+    const lvl = TA.landLevels(wid, W, H, [o.straitKm / 2 / km]);
+    const thin = TA.components(W, H, (i) => open[i] === 1 && lvl[i] === 0, true);
+    const tz = thin.list.map(() => new Set());
+    for (let i = 0; i < N; i++) { const c = thin.comp[i]; if (c >= 0) tz[c].add(zone[i]); }
+    const links = new Map(), straitOf = new Int32Array(thin.list.length).fill(-1);
+    thin.list.forEach((c, k) => {
+      if (tz[k].size < 2 || [...tz[k]].some((z) => isLake(bodyOf[z]))) return;
+      straitOf[k] = Z++;
+      links.set(straitOf[k], [...tz[k]]);
+    });
+    for (let i = 0; i < N; i++) { const c = thin.comp[i]; if (c >= 0 && straitOf[c] >= 0) zone[i] = straitOf[c]; }
+    // compact numbering again, then what each zone is
+    const ids = new Map();
+    for (let i = 0; i < N; i++) {
+      const z = zone[i];
+      if (z < 0) continue;
+      let v = ids.get(z);
+      if (v === undefined) { v = ids.size; ids.set(z, v); }
+      zone[i] = v;
+    }
+    const zones = [];
+    ids.forEach((v, z) => {
+      zones[v] = { id: v, kind: "", area: 0, edge: false, body: -1, coast: 0, border: 0, frame: 0, nb: {},
+        links: links.has(z) ? links.get(z) : null, ax: 0, ay: 0, maxD: -1, box: [W, H, 0, 0] };
+    });
+    for (let y = 0; y < H; y++) {
+      for (let x = 0; x < W; x++) {
+        const i = y * W + x, v = zone[i];
+        if (v < 0) continue;
+        const Zc = zones[v];
+        const px = x + 0.5, py = y + 0.5;
+        Zc.area++;
+        if (x < Zc.box[0]) Zc.box[0] = x; if (y < Zc.box[1]) Zc.box[1] = y;
+        if (x + 1 > Zc.box[2]) Zc.box[2] = x + 1; if (y + 1 > Zc.box[3]) Zc.box[3] = y + 1;
+        if (Zc.body < 0) Zc.body = bodies.comp[i];
+        // the name goes where the zone is widest within the map (the frame counts as shore)
+        const dv = Math.min(d[i], px, W - px, py, H - py);
+        if (dv > Zc.maxD) { Zc.maxD = dv; Zc.ax = px; Zc.ay = py; }
+        const nbs = [x > 0 ? i - 1 : -1, x < W - 1 ? i + 1 : -1, y > 0 ? i - W : -1, y < H - 1 ? i + W : -1];
+        for (const j of nbs) {
+          if (j < 0) { Zc.frame++; Zc.edge = true; continue; }
+          const u = zone[j];
+          if (u < 0) Zc.coast++;
+          else if (u !== v) { Zc.border++; Zc.nb[u] = (Zc.nb[u] || 0) + 1; }
+        }
+      }
+    }
+    // strait links, numbered as the zones are now
+    zones.forEach((Zc) => {
+      if (Zc.links) Zc.links = [...new Set(Zc.links.map((z) => ids.get(zf(z))).filter((v) => v != null && v !== Zc.id))];
+      if (Zc.links && Zc.links.length < 2) Zc.links = null;
+    });
+    // the zones a zone opens onto (through a strait as well)
+    const opensTo = (Zc) => {
+      const out = new Set();
+      Object.keys(Zc.nb).forEach((k) => {
+        const u = zones[+k];
+        if (u.links) u.links.forEach((v) => { if (v !== Zc.id) out.add(v); });
+        else out.add(u.id);
+      });
+      return [...out];
+    };
+    zones.forEach((Zc) => {
+      const km2 = Zc.area * cellKm2;
+      const per = Zc.coast + Zc.border + Zc.frame || 1;
+      // an arm of bigger water, mostly shut in by land
+      const arm = Zc.coast / per >= 0.6 && opensTo(Zc).some((v) => zones[v].area >= 3 * Zc.area);
+      if (Zc.links) Zc.kind = "strait";
+      else if (isLake(Zc.body)) Zc.kind = "lake";
+      else if (Zc.edge && km2 >= o.oceanKm2) Zc.kind = "ocean";
+      else if (km2 < o.bayKm2) Zc.kind = "bay";
+      else if (arm && km2 < o.seaKm2) Zc.kind = "gulf";
+      else Zc.kind = "sea";
+      // the way a name runs from the widest point: the direction (within ±60°, level
+      // preferred) in which the zone reaches farthest; the name sits in the middle of that
+      // stretch (lx, ly), len long, wid across
+      const reach = (a) => {
+        const ux = Math.cos(a), uy = Math.sin(a), r = [0, 0];
+        for (let k = 0; k < 2; k++) {
+          const sgn = k ? 1 : -1;
+          for (let t = 0.5; t < 4000; t += 0.5) {
+            const x = Math.floor(Zc.ax + sgn * ux * t), y = Math.floor(Zc.ay + sgn * uy * t);
+            if (x < 0 || y < 0 || x >= W || y >= H || zone[y * W + x] !== Zc.id) { r[k] = t; break; }
+          }
+        }
+        return r;
+      };
+      let best = 0, bestScore = -1;
+      for (let deg = -60; deg <= 60; deg += 7.5) {
+        const r = reach(deg * Math.PI / 180);
+        const sc = (r[0] + r[1]) * (1 - 0.45 * Math.abs(deg) / 60);
+        if (sc > bestScore) { bestScore = sc; best = deg; }
+      }
+      const a0 = best * Math.PI / 180, along = reach(a0), across = reach(a0 + Math.PI / 2);
+      const shift = (along[1] - along[0]) / 2;
+      Zc.angle = best;
+      Zc.len = along[0] + along[1];
+      Zc.wid = across[0] + across[1];
+      Zc.lx = Zc.ax + Math.cos(a0) * shift;
+      Zc.ly = Zc.ay + Math.sin(a0) * shift;
+    });
+    // the lines between zones, traced along cell edges and smoothed
+    const V = W + 1, deg = new Uint8Array(V * (H + 1));
+    const segs = new Map(); // corner → [corner, zone a, zone b] per edge
+    const addSeg = (p, q, a, b) => {
+      deg[p]++; deg[q]++;
+      if (!segs.has(p)) segs.set(p, []);
+      if (!segs.has(q)) segs.set(q, []);
+      segs.get(p).push([q, a, b]);
+      segs.get(q).push([p, a, b]);
+    };
+    for (let y = 0; y < H; y++) {
+      for (let x = 0; x < W; x++) {
+        const i = y * W + x, a = zone[i];
+        if (a < 0) continue;
+        if (x < W - 1) { const b = zone[i + 1]; if (b >= 0 && b !== a) addSeg(y * V + x + 1, (y + 1) * V + x + 1, a, b); }
+        if (y < H - 1) { const b = zone[i + W]; if (b >= 0 && b !== a) addSeg((y + 1) * V + x, (y + 1) * V + x + 1, a, b); }
+      }
+    }
+    const used = new Set();
+    const ekey = (p, q) => (p < q ? p * 4194304 + q : q * 4194304 + p);
+    const borders = [];
+    const walk = (start, first) => {
+      const pts = [[start % V, (start / V) | 0]];
+      let cur = first[0];
+      used.add(ekey(start, cur));
+      const a = first[1], b = first[2];
+      for (let guard = 0; guard < N; guard++) {
+        pts.push([cur % V, (cur / V) | 0]);
+        if (deg[cur] !== 2) break;
+        const nx = segs.get(cur).find((e) => !used.has(ekey(cur, e[0])));
+        if (!nx) break;
+        used.add(ekey(cur, nx[0]));
+        cur = nx[0];
+      }
+      if (pts.length >= 2) borders.push({ a: Math.min(a, b), b: Math.max(a, b), pts: TA.rdp(TA.chaikin(pts, 3, false), 0.25) });
+    };
+    segs.forEach((list, p) => { if (deg[p] !== 2) list.forEach((e) => { if (!used.has(ekey(p, e[0]))) walk(p, e); }); });
+    segs.forEach((list, p) => list.forEach((e) => { if (!used.has(ekey(p, e[0]))) walk(p, e); })); // closed rings
+    return { zone, zones, borders };
+  };
+
   // ---------- the geography pass ----------
   // Nothing in a custom world is simulated behind the painter's back. When asked, this
   // pass makes the drawing geographically plausible and returns edited copies of the

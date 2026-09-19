@@ -681,6 +681,129 @@ function featAnchor(f) {
   } catch (e) {/* keep centroid */}
   return f._anchor = a;
 }
+
+// ---------- custom world: seas, gulfs and straits ----------
+// names on the water: italic serif with letter spacing, set along the zone's long axis
+// (slightly arched on long seas), as large as the zone allows (sizes in data cells)
+var WATER_LABEL = {
+  ocean: {
+    max: 22,
+    sp: 0.42,
+    upper: true
+  },
+  sea: {
+    max: 12,
+    sp: 0.22,
+    upper: true
+  },
+  gulf: {
+    max: 8,
+    sp: 0.14
+  },
+  bay: {
+    max: 5,
+    sp: 0.08
+  },
+  strait: {
+    max: 4,
+    sp: 0.06
+  },
+  lake: {
+    max: 6,
+    sp: 0.1
+  }
+};
+function waterZoneTexts(proj) {
+  var ws = World.waters,
+    names = World.waterNames();
+  if (!ws || !names) return [];
+  var mpc = World.mapUnitsPerCell();
+  var out = [];
+  ws.zones.forEach(function (z) {
+    var rec = names[z.id];
+    if (!rec || rec.label) return; // a label written on that water names it already
+    var named = !!rec.name;
+    if (!named && (rec.kind === "strait" || rec.kind === "bay")) return; // small water: only a name the painter gave
+    var st = WATER_LABEL[rec.kind] || WATER_LABEL.sea;
+    var text = rec.shown;
+    var unit = measureMapText(st.upper ? text.toUpperCase() : text, 1, COUNTRY_FONT, 400, true, st.sp);
+    var size = Math.min(z.len * 0.8 / Math.max(0.1, unit), z.wid * 0.45, st.max);
+    if (size < (named ? 2.4 : 3)) {
+      if (!named) return;
+      size = 2.4;
+    } // a made-up name too small to read is left out
+    var s = size * mpc,
+      at = proj([z.lx != null ? z.lx : z.ax, z.ly != null ? z.ly : z.ay]);
+    var ang = Math.max(-60, Math.min(60, z.angle || 0));
+    out.push({
+      key: "wz" + z.id,
+      x: at[0],
+      y: at[1] + s * 0.35,
+      text: text,
+      size: s,
+      angle: ang,
+      curve: (rec.kind === "ocean" || rec.kind === "sea" || rec.kind === "gulf") && z.len > 1.6 * z.wid ? 0.1 : 0,
+      spacing: st.sp * s,
+      italic: true,
+      upper: !!st.upper,
+      weight: 400,
+      fill: "#1f4f7a",
+      font: COUNTRY_FONT,
+      halo: s * 0.1,
+      haloColor: "#e3eef7",
+      className: "water-label" + (named ? "" : " auto"),
+      // a name made up from the kind is a hint on screen, never part of an exported image
+      style: named ? undefined : {
+        opacity: 0.5
+      },
+      attrs: named ? {
+        "data-wzone": z.id
+      } : {
+        "data-wzone": z.id,
+        "data-export-skip": "1"
+      }
+    });
+  });
+  return out;
+}
+function WaterZonesLayer(_ref4) {
+  var proj = _ref4.proj;
+  var d = World.waterBordersPath(proj);
+  var card = App.ui.card;
+  var sel = card && card.kind === "water" ? World.waterZoneAt(card.pt, true) : -1;
+  var texts = waterZoneTexts(proj);
+  return /*#__PURE__*/React.createElement("g", {
+    id: "water-zones"
+  }, sel >= 0 && /*#__PURE__*/React.createElement("path", {
+    "data-export-skip": "1",
+    d: World.waterZonePath(sel, proj),
+    fill: "#ffcf5a",
+    fillOpacity: "0.16",
+    fillRule: "evenodd",
+    stroke: "#ffb32e",
+    strokeWidth: "1.6",
+    vectorEffect: "non-scaling-stroke",
+    pointerEvents: "none"
+  }), d && /*#__PURE__*/React.createElement("path", {
+    className: "water-borders",
+    d: d,
+    fill: "none",
+    stroke: "#1f4f7a",
+    strokeOpacity: "0.55",
+    strokeWidth: "1.1",
+    strokeDasharray: "5 4",
+    strokeLinecap: "round",
+    vectorEffect: "non-scaling-stroke",
+    pointerEvents: "none"
+  }), /*#__PURE__*/React.createElement("g", {
+    className: "water-labels"
+  }, texts.map(function (tx) {
+    return /*#__PURE__*/React.createElement(MapText, {
+      key: tx.key,
+      t: tx
+    });
+  })));
+}
 function MapView() {
   useStore();
   var svgRef = useRef(null);
@@ -703,6 +826,7 @@ function MapView() {
   var brushRef = useRef(null); // custom world: brush outline following the pen
   var riverPrevRef = useRef(null); // custom world: river stroke preview
   var riverEditRef = useRef(null); // custom world: new course while a river end is dragged
+  var waterCutRef = useRef(null); // custom world: a line being drawn across the water
   var touches = useRef(new Map()); // active touch pointers (pinch zoom / two-finger pan)
   var tapRef = useRef(null); // multi-finger tap recognizer: { t0, max, moved, starts }
   var longPressRef = useRef(null); // finger long-press (eyedropper) timer
@@ -912,6 +1036,18 @@ function MapView() {
     if (host && World.canvas && World.canvas.parentNode !== host) host.appendChild(World.canvas);
     applyView();
   });
+  // the water zones follow the terrain; worked out off the main thread once painting pauses
+  useEffect(function () {
+    if (!worldOn || !App.project || App.project.settings.showWaterZones === false || World.watersFresh()) return;
+    var tm = setTimeout(function () {
+      World.ensureWaters()["catch"](function (e) {
+        return console.warn("water zones", e);
+      });
+    }, World.waters ? 600 : 50);
+    return function () {
+      return clearTimeout(tm);
+    };
+  });
   useEffect(function () {
     var stage = svgRef.current && svgRef.current.parentNode;
     if (!stage || typeof ResizeObserver === "undefined") return;
@@ -1097,13 +1233,15 @@ function MapView() {
           App.emit();
         } else if (g0 && g0.mode === "paint") {
           young ? Actions.cancelStroke() : Actions.endStroke();
+        } else if (g0 && g0.mode === "wcut") {
+          if (waterCutRef.current) waterCutRef.current.style.display = "none";
         } else if (g0 && (g0.mode === "label" || g0.mode === "lhandle")) {
           dragLabel.current = null;
           Actions.endStroke();
         }
-        var _ref4 = _toConsumableArray(touches.current.values()),
-          a = _ref4[0],
-          b = _ref4[1];
+        var _ref5 = _toConsumableArray(touches.current.values()),
+          a = _ref5[0],
+          b = _ref5[1];
         gesture.current = {
           mode: "pinch",
           dist: Math.hypot(a[0] - b[0], a[1] - b[1]),
@@ -1171,6 +1309,18 @@ function MapView() {
         e.stopPropagation();
         return;
       }
+    }
+    // ---- the water card's "cut": a line drawn across the water divides it ----
+    if (App.ui.waterCut && e.button === 0 && window.World && World.active()) {
+      gesture.current = {
+        mode: "wcut",
+        pointerId: e.pointerId,
+        pts: [mapPt]
+      };
+      try {
+        svgRef.current.setPointerCapture(e.pointerId);
+      } catch (err) {}
+      return;
     }
     // ---- a finger tap on a label or a country name selects it, a finger drag pans ----
     if (fingerNav && (lbl || slbl) && !App.ui.roadFrom) {
@@ -1423,9 +1573,9 @@ function MapView() {
         clearTimeout(longPressRef.current);
       }
       if (g && g.mode === "pinch" && touches.current.size >= 2) {
-        var _ref5 = _toConsumableArray(touches.current.values()),
-          a = _ref5[0],
-          b = _ref5[1];
+        var _ref6 = _toConsumableArray(touches.current.values()),
+          a = _ref6[0],
+          b = _ref6[1];
         var dist = Math.hypot(a[0] - b[0], a[1] - b[1]);
         var mid = clientToViewbox({
           clientX: (a[0] + b[0]) / 2,
@@ -1439,6 +1589,25 @@ function MapView() {
         g.mid = mid;
         return;
       }
+    }
+    if (g && g.mode === "wcut") {
+      var _clientToMap = clientToMap(e),
+        _clientToMap2 = _slicedToArray(_clientToMap, 2),
+        mx = _clientToMap2[0],
+        my = _clientToMap2[1];
+      var last = g.pts[g.pts.length - 1];
+      var ctm = svgRef.current && svgRef.current.getScreenCTM();
+      if (Math.hypot(mx - last[0], my - last[1]) * view.current.k * (ctm && ctm.a || 1) > 3) {
+        g.pts.push([mx, my]);
+        var el = waterCutRef.current;
+        if (el) {
+          el.setAttribute("d", "M" + g.pts.map(function (q) {
+            return q[0].toFixed(2) + "," + q[1].toFixed(2);
+          }).join("L"));
+          el.style.display = "block";
+        }
+      }
+      return;
     }
     if (g && g.mode === "riverEnd") {
       var evs = e.nativeEvent && e.nativeEvent.getCoalescedEvents ? e.nativeEvent.getCoalescedEvents() : null;
@@ -1467,15 +1636,15 @@ function MapView() {
     }
     // custom world: brush outline + live stroke
     if (window.World && App.ui.tool === "world" && World.active()) {
-      var _clientToMap = clientToMap(e),
-        _clientToMap2 = _slicedToArray(_clientToMap, 2),
-        mx = _clientToMap2[0],
-        my = _clientToMap2[1];
+      var _clientToMap3 = clientToMap(e),
+        _clientToMap4 = _slicedToArray(_clientToMap3, 2),
+        _mx = _clientToMap4[0],
+        _my = _clientToMap4[1];
       if (brushRef.current) {
         var hideBrush = e.pointerType === "touch" || App.ui.worldBrush === "river";
         var r = World.brushRadius(e.pressure || 0.5, e.pointerType) * World.mapUnitsPerCell();
-        brushRef.current.setAttribute("cx", mx);
-        brushRef.current.setAttribute("cy", my);
+        brushRef.current.setAttribute("cx", _mx);
+        brushRef.current.setAttribute("cy", _my);
         brushRef.current.setAttribute("r", r);
         brushRef.current.style.display = hideBrush ? "none" : "block";
       }
@@ -1527,16 +1696,16 @@ function MapView() {
     // every province.
     var gd = App.ui.geomDraw;
     if (gd && gd.pts.length && rubberRef.current) {
-      var _clientToMap3 = clientToMap(e),
-        _clientToMap4 = _slicedToArray(_clientToMap3, 2),
-        _mx = _clientToMap4[0],
-        _my = _clientToMap4[1];
-      var last = gd.pts[gd.pts.length - 1];
+      var _clientToMap5 = clientToMap(e),
+        _clientToMap6 = _slicedToArray(_clientToMap5, 2),
+        _mx2 = _clientToMap6[0],
+        _my2 = _clientToMap6[1];
+      var _last = gd.pts[gd.pts.length - 1];
       if (g && g.mode === "freehand") {
         var k = view.current.k;
-        var step = Math.hypot(last[0] - _mx, last[1] - _my);
+        var step = Math.hypot(_last[0] - _mx2, _last[1] - _my2);
         if (step > 2 / k) {
-          var hp = [_mx, _my];
+          var hp = [_mx2, _my2];
           hp.hand = true; // freehand sample: smoothing may move it; clicked vertices are anchors
           gd.pts.push(hp);
           g.moved = true;
@@ -1552,7 +1721,7 @@ function MapView() {
         rubberRef.current.style.display = "none";
         return;
       }
-      rubberRef.current.setAttribute("d", "M" + last[0].toFixed(2) + "," + last[1].toFixed(2) + "L" + _mx.toFixed(2) + "," + _my.toFixed(2));
+      rubberRef.current.setAttribute("d", "M" + _last[0].toFixed(2) + "," + _last[1].toFixed(2) + "L" + _mx2.toFixed(2) + "," + _my2.toFixed(2));
       rubberRef.current.style.display = "block";
     } else if (rubberRef.current && rubberRef.current.style.display !== "none") {
       rubberRef.current.style.display = "none";
@@ -1581,13 +1750,13 @@ function MapView() {
         Actions.beginStroke();
       }
       if (g.mode === "objdrag") {
-        var _clientToMap5 = clientToMap(e),
-          _clientToMap6 = _slicedToArray(_clientToMap5, 2),
-          _mx2 = _clientToMap6[0],
-          _my2 = _clientToMap6[1];
+        var _clientToMap7 = clientToMap(e),
+          _clientToMap8 = _slicedToArray(_clientToMap7, 2),
+          _mx3 = _clientToMap8[0],
+          _my3 = _clientToMap8[1];
         Actions.setObject(g.id, {
-          x: Math.round((g.orig[0] + _mx2 - g.start[0]) * 100) / 100,
-          y: Math.round((g.orig[1] + _my2 - g.start[1]) * 100) / 100
+          x: Math.round((g.orig[0] + _mx3 - g.start[0]) * 100) / 100,
+          y: Math.round((g.orig[1] + _my3 - g.start[1]) * 100) / 100
         }, {
           undo: false
         });
@@ -1595,12 +1764,12 @@ function MapView() {
       return;
     }
     if (g.mode === "bdmove" || g.mode === "bdresize") {
-      var _clientToMap7 = clientToMap(e),
-        _clientToMap8 = _slicedToArray(_clientToMap7, 2),
-        _mx3 = _clientToMap8[0],
-        _my3 = _clientToMap8[1];
-      var dx = _mx3 - g.start[0],
-        dy = _my3 - g.start[1];
+      var _clientToMap9 = clientToMap(e),
+        _clientToMap0 = _slicedToArray(_clientToMap9, 2),
+        _mx4 = _clientToMap0[0],
+        _my4 = _clientToMap0[1];
+      var dx = _mx4 - g.start[0],
+        dy = _my4 - g.start[1];
       if (g.mode === "bdmove") {
         Actions.setBackdrop({
           x: g.orig.x + dx,
@@ -1619,11 +1788,11 @@ function MapView() {
     if (g.mode === "vertex") {
       var sess = App.ui.geomEdit;
       if (sess && sess.rings[g.ri]) {
-        var _clientToMap9 = clientToMap(e),
-          _clientToMap0 = _slicedToArray(_clientToMap9, 2),
-          _mx4 = _clientToMap0[0],
-          _my4 = _clientToMap0[1];
-        var pt = window.GeomEdit ? GeomEdit.snap([_mx4, _my4], view.current.k) : [_mx4, _my4];
+        var _clientToMap1 = clientToMap(e),
+          _clientToMap10 = _slicedToArray(_clientToMap1, 2),
+          _mx5 = _clientToMap10[0],
+          _my5 = _clientToMap10[1];
+        var pt = window.GeomEdit ? GeomEdit.snap([_mx5, _my5], view.current.k) : [_mx5, _my5];
         // mutate in place: a shared vertex is the same object in the neighbour's ring
         var cur = sess.rings[g.ri].pts[g.vi];
         cur[0] = pt[0];
@@ -1657,16 +1826,16 @@ function MapView() {
       return;
     }
     if (g.mode === "lhandle") {
-      var _clientToMap1 = clientToMap(e),
-        _clientToMap10 = _slicedToArray(_clientToMap1, 2),
-        _mx5 = _clientToMap10[0],
-        _my5 = _clientToMap10[1];
+      var _clientToMap11 = clientToMap(e),
+        _clientToMap12 = _slicedToArray(_clientToMap11, 2),
+        _mx6 = _clientToMap12[0],
+        _my6 = _clientToMap12[1];
       var tx = g.sel.t;
       var geo = textHandleGeo(tx);
       var patch;
       if (g.which === "turn") {
         var a0 = Math.atan2(geo.turnOff[1], geo.turnOff[0]);
-        var ang = (Math.atan2(_my5 - tx.y, _mx5 - tx.x) - a0) * 180 / Math.PI;
+        var ang = (Math.atan2(_my6 - tx.y, _mx6 - tx.x) - a0) * 180 / Math.PI;
         ang = (ang % 360 + 540) % 360 - 180;
         var snap = Math.round(ang / 15) * 15;
         if (Math.abs(ang - snap) < 4) ang = snap;
@@ -1675,7 +1844,7 @@ function MapView() {
         };
       } else {
         var _a = (tx.angle || 0) * Math.PI / 180;
-        var ly = -(_mx5 - tx.x) * Math.sin(_a) + (_my5 - tx.y) * Math.cos(_a);
+        var ly = -(_mx6 - tx.x) * Math.sin(_a) + (_my6 - tx.y) * Math.cos(_a);
         var c = (-ly - tx.size * 1.3) / Math.max(1, geo.w * ARC_SAG);
         c = Math.max(-1, Math.min(1, c));
         if (Math.abs(c) < 0.06) c = 0;
@@ -1697,10 +1866,10 @@ function MapView() {
       return;
     }
     if (g.mode === "label" && dragLabel.current) {
-      var _clientToMap11 = clientToMap(e),
-        _clientToMap12 = _slicedToArray(_clientToMap11, 2),
-        _mx6 = _clientToMap12[0],
-        _my6 = _clientToMap12[1];
+      var _clientToMap13 = clientToMap(e),
+        _clientToMap14 = _slicedToArray(_clientToMap13, 2),
+        _mx7 = _clientToMap14[0],
+        _my7 = _clientToMap14[1];
       var dl = dragLabel.current;
       if (!dl.moved) {
         var _clientToViewbox1 = clientToViewbox(e),
@@ -1711,8 +1880,8 @@ function MapView() {
         Actions.beginStroke();
       }
       dl.moved = true;
-      var _dx = _mx6 - dl.start[0],
-        _dy = _my6 - dl.start[1];
+      var _dx = _mx7 - dl.start[0],
+        _dy = _my7 - dl.start[1];
       if (dl.kind === "custom") {
         Actions.setLabel(dl.id, {
           x: dl.orig[0] + _dx,
@@ -1852,6 +2021,26 @@ function MapView() {
       World.strokeEnd();
       return;
     }
+    if (g && g.mode === "wcut") {
+      if (e.type === "pointerleave" && svgRef.current && svgRef.current.hasPointerCapture && svgRef.current.hasPointerCapture(e.pointerId)) return;
+      gesture.current = null;
+      try {
+        svgRef.current.releasePointerCapture(e.pointerId);
+      } catch (err) {}
+      if (waterCutRef.current) waterCutRef.current.style.display = "none";
+      if (e.type === "pointerup") {
+        var line = g.pts.concat([clientToMap(e)]).map(function (q) {
+          return World.mapToGrid(q);
+        });
+        if (World.addWaterCut(line)) {
+          Actions.ui({
+            waterCut: false
+          });
+          Actions.toast(t("water.cutDone"));
+        } else Actions.toast(t("water.cutShort"));
+      }
+      return;
+    }
     gesture.current = null;
     svgRef.current && svgRef.current.closest(".map-stage").classList.remove("panning");
     if (!g) return;
@@ -1896,10 +2085,10 @@ function MapView() {
       var k = view.current.k;
       if (e.type !== "pointerleave") {
         // the release point ends the stroke
-        var _clientToMap13 = clientToMap(e),
-          _clientToMap14 = _slicedToArray(_clientToMap13, 2),
-          mx = _clientToMap14[0],
-          my = _clientToMap14[1];
+        var _clientToMap15 = clientToMap(e),
+          _clientToMap16 = _slicedToArray(_clientToMap15, 2),
+          mx = _clientToMap16[0],
+          my = _clientToMap16[1];
         var prev = gd.pts[gd.pts.length - 1];
         var step = Math.hypot(prev[0] - mx, prev[1] - my);
         if (step > 0.5 / k) {
@@ -1988,11 +2177,11 @@ function MapView() {
     if (g.mode === "down") {
       var tool = g.tool;
       if (tool === "label") {
-        var _clientToMap15 = clientToMap(e),
-          _clientToMap16 = _slicedToArray(_clientToMap15, 2),
-          _mx7 = _clientToMap16[0],
-          _my7 = _clientToMap16[1];
-        var id = Actions.addLabel(_mx7, _my7);
+        var _clientToMap17 = clientToMap(e),
+          _clientToMap18 = _slicedToArray(_clientToMap17, 2),
+          _mx8 = _clientToMap18[0],
+          _my8 = _clientToMap18[1];
+        var id = Actions.addLabel(_mx8, _my8);
         Actions.ui({
           tool: "select"
         });
@@ -2006,12 +2195,12 @@ function MapView() {
       if ((tool === "select" || tool === "pan") && window.World && World.active()) {
         // a river under the tap (generous finger tolerance) opens its card
         var _k = view.current.k;
-        var _clientToMap17 = clientToMap(e),
-          _clientToMap18 = _slicedToArray(_clientToMap17, 2),
-          _mx8 = _clientToMap18[0],
-          _my8 = _clientToMap18[1];
+        var _clientToMap19 = clientToMap(e),
+          _clientToMap20 = _slicedToArray(_clientToMap19, 2),
+          _mx9 = _clientToMap20[0],
+          _my9 = _clientToMap20[1];
         var tolData = (g.finger || e.pointerType === "touch" ? 16 : 8) / Math.max(0.0001, _k * World.mapUnitsPerCell() * (svgRef.current.getScreenCTM().a || 1));
-        var rv = World.preview ? null : World.riverAt(World.mapToGrid([_mx8, _my8]), tolData);
+        var rv = World.preview ? null : World.riverAt(World.mapToGrid([_mx9, _my9]), tolData);
         if (rv) {
           Actions.ui({
             card: {
@@ -2021,6 +2210,40 @@ function MapView() {
             selection: []
           });
           return;
+        }
+        // water: the zone under the tap opens its card (once nothing is selected); after
+        // "join with a neighbour" in a card, the tapped zone is joined to that one
+        if (!g.rid && !g.regId && !World.preview && !World.cutPreview) {
+          var gp = World.mapToGrid([_mx9, _my9]);
+          var zid = World.waterZoneAt(gp);
+          if (zid >= 0) {
+            var wm = App.ui.waterMerge;
+            if (wm) {
+              var from = World.waterZoneAt(wm, true);
+              if (from >= 0 && from !== zid && World.mergeWaterZones(from, zid)) Actions.toast(t("water.merged"));
+              Actions.ui({
+                waterMerge: null,
+                card: {
+                  kind: "water",
+                  pt: wm
+                }
+              });
+              return;
+            }
+            var busy = App.ui.selection.length || App.ui.regionSelection && App.ui.regionSelection.length;
+            if (!busy && App.project.settings.showWaterZones !== false) {
+              Actions.ui({
+                card: {
+                  kind: "water",
+                  pt: [Math.round(gp[0] * 100) / 100, Math.round(gp[1] * 100) / 100]
+                },
+                selLabel: null,
+                selStateLabel: null,
+                selFeatLabel: null
+              });
+              return;
+            }
+          }
         }
         if (App.ui.card) Actions.ui({
           card: null
@@ -2111,10 +2334,10 @@ function MapView() {
     };
     for (var rid in regions) consider(effOf(rid));
     for (var gid in project.groups || {}) consider(project.groups[gid]);
-    return _toConsumableArray(map.entries()).map(function (_ref6) {
-      var _ref7 = _slicedToArray(_ref6, 2),
-        id = _ref7[0],
-        v = _ref7[1];
+    return _toConsumableArray(map.entries()).map(function (_ref7) {
+      var _ref8 = _slicedToArray(_ref7, 2),
+        id = _ref8[0],
+        v = _ref8[1];
       return {
         id: id,
         colors: v.colors,
@@ -2656,7 +2879,9 @@ function MapView() {
         vectorEffect: "non-scaling-stroke"
       });
     }));
-  }(), ready && worldOn && World.cutPreview && function () {
+  }(), ready && worldOn && settings.showWaterZones !== false && World.waters && World.waters.project === project && /*#__PURE__*/React.createElement(WaterZonesLayer, {
+    proj: bm.proj
+  }), ready && worldOn && World.cutPreview && function () {
     var d = World.cutPreviewPath(bm.proj);
     return /*#__PURE__*/React.createElement("g", {
       id: "cut-preview",
@@ -3008,6 +3233,18 @@ function MapView() {
     strokeLinecap: "round",
     strokeLinejoin: "round",
     vectorEffect: "non-scaling-stroke"
+  }), /*#__PURE__*/React.createElement("path", {
+    ref: waterCutRef,
+    style: {
+      display: "none"
+    },
+    fill: "none",
+    stroke: "#c0392b",
+    strokeWidth: "2.4",
+    strokeDasharray: "6 4",
+    strokeLinecap: "round",
+    strokeLinejoin: "round",
+    vectorEffect: "non-scaling-stroke"
   })), ready && worldOn && App.ui.card && App.ui.card.kind === "river" && !World.preview && function () {
     var rv = (project.world.rivers || [])[App.ui.card.index];
     if (!rv || !rv.pts || rv.pts.length < 2) return null;
@@ -3233,7 +3470,7 @@ function MapView() {
         tool: "select"
       });
     }
-  }, t("edit.cancel"))), worldOn && App.ui.tool === "world" && window.WorldPalette && /*#__PURE__*/React.createElement(WorldPalette, null), worldOn && (World.preview || World.geoBusy) && window.GeoBar && /*#__PURE__*/React.createElement(GeoBar, null), worldOn && (World.cutPreview || World.generating) && window.CutBar && /*#__PURE__*/React.createElement(CutBar, null), App.ui.tool === "place" && window.ObjectPalette && ready && /*#__PURE__*/React.createElement(ObjectPalette, null), window.RoadModeBar && /*#__PURE__*/React.createElement(RoadModeBar, null), window.WorldCard && /*#__PURE__*/React.createElement(WorldCard, null), /*#__PURE__*/React.createElement("div", {
+  }, t("edit.cancel"))), worldOn && App.ui.tool === "world" && window.WorldPalette && /*#__PURE__*/React.createElement(WorldPalette, null), worldOn && (World.preview || World.geoBusy) && window.GeoBar && /*#__PURE__*/React.createElement(GeoBar, null), worldOn && (World.cutPreview || World.generating) && window.CutBar && /*#__PURE__*/React.createElement(CutBar, null), App.ui.tool === "place" && window.ObjectPalette && ready && /*#__PURE__*/React.createElement(ObjectPalette, null), window.RoadModeBar && /*#__PURE__*/React.createElement(RoadModeBar, null), worldOn && (App.ui.waterCut || App.ui.waterMerge) && window.WaterModeBar && /*#__PURE__*/React.createElement(WaterModeBar, null), window.WorldCard && /*#__PURE__*/React.createElement(WorldCard, null), /*#__PURE__*/React.createElement("div", {
     className: "minimap",
     onPointerDown: onMinimapClick
   }, /*#__PURE__*/React.createElement("canvas", {

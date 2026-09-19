@@ -837,7 +837,7 @@ function worldAnalysis() {
   var riversRef = World.preview && !World.compare ? World.preview.rivers : App.project.world.rivers || [];
   // owners and names do not enter the analysis: political edits keep the cache (a geometry
   // edit reloads the basemap, which does)
-  var key = App.basemap.count + ":" + (World.hydro ? World.hydro.rev : 0) + ":" + World.rasterRev + ":" + App.ui.lang;
+  var key = App.basemap.count + ":" + (World.hydro ? World.hydro.rev : 0) + ":" + World.rasterRev + ":" + App.ui.lang + ":" + (World.watersFresh() ? World.waters.key : ""); // the seas and gulfs, once worked out
   var c = worldAnalysisCache;
   if (!c || c.key !== key || c.bm !== App.basemap || c.riversRef !== riversRef) {
     var feats = App.basemap.raw && App.basemap.raw.features || [];
@@ -1479,12 +1479,330 @@ function RiverCard(_ref6) {
     }
   }, t("world.deleteRiver"))));
 }
+
+// ---------- seas, gulfs and straits: the card of a water zone ----------
+// the provinces along a zone's shore (the analysis grid under the province raster), kept
+// per zone while the zones and the provinces stay the same
+var waterCoastCache = null;
+function waterCoast(zid) {
+  var ws = World.waters,
+    wa = worldAnalysis();
+  var key = ws.key + ":" + wa.key;
+  if (!waterCoastCache || waterCoastCache.key !== key) waterCoastCache = {
+    key: key,
+    map: new Map()
+  };
+  var hit = waterCoastCache.map.get(zid);
+  if (hit) return hit;
+  var W = World.GW,
+    H = World.GH,
+    zone = ws.zone,
+    cellOf = wa.an.cellOf,
+    z = ws.zones[zid];
+  var prov = new Map(),
+    lands = new Map();
+  var lid = World.dataGrid().landId;
+  var _z$box = _slicedToArray(z.box, 4),
+    x0 = _z$box[0],
+    y0 = _z$box[1],
+    x1 = _z$box[2],
+    y1 = _z$box[3];
+  for (var y = y0; y < y1; y++) {
+    for (var x = x0; x < x1; x++) {
+      var i = y * W + x;
+      if (zone[i] !== zid) continue;
+      var nbs = [x > 0 ? i - 1 : -1, x < W - 1 ? i + 1 : -1, y > 0 ? i - W : -1, y < H - 1 ? i + W : -1];
+      for (var _i = 0, _nbs = nbs; _i < _nbs.length; _i++) {
+        var j = _nbs[_i];
+        if (j < 0 || zone[j] >= 0) continue;
+        var c = cellOf[j];
+        if (c >= 0) prov.set(c, (prov.get(c) || 0) + 1);
+        if (lid && lid[j] >= 0) lands.set(lid[j], (lands.get(lid[j]) || 0) + 1);
+      }
+    }
+  }
+  var out = {
+    prov: prov,
+    lands: lands
+  };
+  waterCoastCache.map.set(zid, out);
+  return out;
+}
+function WaterCard(_ref7) {
+  var pt = _ref7.pt;
+  useStore();
+  var _React$useState1 = React.useState(false),
+    _React$useState10 = _slicedToArray(_React$useState1, 2),
+    help = _React$useState10[0],
+    setHelp = _React$useState10[1];
+  React.useEffect(function () {
+    World.ensureWaters()["catch"](function (e) {
+      return console.warn("water zones", e);
+    });
+  });
+  var p = App.project;
+  var close = function close() {
+    return Actions.ui({
+      card: null,
+      waterMerge: null,
+      waterCut: false
+    });
+  };
+  var ws = World.waters && World.waters.project === p ? World.waters : null;
+  var zid = ws ? World.waterZoneAt(pt, true) : -1;
+  if (!ws || zid < 0) {
+    return /*#__PURE__*/React.createElement("div", {
+      className: "info-card minimized",
+      "data-export-skip": "1",
+      onPointerDown: function onPointerDown(e) {
+        return e.stopPropagation();
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      className: "card-head"
+    }, /*#__PURE__*/React.createElement("span", {
+      className: "card-kind"
+    }, "\uD83C\uDF0A ", ws ? t("water.gone") : t("water.counting")), /*#__PURE__*/React.createElement("span", {
+      className: "card-head-actions"
+    }, /*#__PURE__*/React.createElement("button", {
+      className: "btn icon",
+      onClick: close
+    }, "\u2715"))));
+  }
+  var z = ws.zones[zid],
+    names = World.waterNames(),
+    rec = names[zid];
+  var km = +p.world.scaleKm || 5;
+  var title = rec.name || rec.auto;
+  if (App.ui.cardMin) {
+    return /*#__PURE__*/React.createElement("div", {
+      className: "info-card minimized",
+      "data-export-skip": "1",
+      onPointerDown: function onPointerDown(e) {
+        return e.stopPropagation();
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      className: "card-head"
+    }, /*#__PURE__*/React.createElement("span", {
+      className: "card-kind"
+    }, "\uD83C\uDF0A ", title), /*#__PURE__*/React.createElement("span", {
+      className: "card-head-actions"
+    }, /*#__PURE__*/React.createElement("button", {
+      className: "btn icon card-min-btn",
+      title: t("card.expand"),
+      onClick: function onClick() {
+        return Actions.ui({
+          cardMin: false
+        });
+      }
+    }, "\u2303"), /*#__PURE__*/React.createElement("button", {
+      className: "btn icon",
+      onClick: close
+    }, "\u2715"))));
+  }
+  var nameOf = function nameOf(v) {
+    return names[v] ? names[v].name || names[v].auto : "";
+  };
+  // shores: the states whose provinces lie along it (most shore first), and the lands
+  var shores = [],
+    lands = 0;
+  try {
+    var wa = worldAnalysis(),
+      co = waterCoast(zid),
+      own = new Map();
+    co.prov.forEach(function (n, c) {
+      var f = wa.feats[c];
+      var e = f ? effRegion(p, String(f.id)) : null;
+      var sid = e && e.owner && p.states[e.owner] ? e.owner : "";
+      own.set(sid, (own.get(sid) || 0) + n);
+    });
+    shores = _toConsumableArray(own.entries()).sort(function (a, b) {
+      return b[1] - a[1];
+    }).map(function (_ref8) {
+      var _ref9 = _slicedToArray(_ref8, 1),
+        sid = _ref9[0];
+      return sid ? p.states[sid].name : t("card.noOwner");
+    });
+    lands = co.lands.size;
+  } catch (e) {
+    console.warn(e);
+  }
+  // what it joins: a strait's two waters; otherwise its straits and the waters beside it
+  var nb = Object.keys(z.nb).map(Number).sort(function (a, b) {
+    return z.nb[b] - z.nb[a];
+  });
+  var straits = nb.filter(function (v) {
+    return names[v] && names[v].kind === "strait";
+  });
+  var others = nb.filter(function (v) {
+    return straits.indexOf(v) < 0 && !(rec.kind === "strait" && z.links && z.links.indexOf(v) >= 0);
+  });
+  var into = World.displayRivers().filter(function (rv) {
+    return rv.pts.length && World.waterZoneAt(rv.pts[rv.pts.length - 1], true) === zid;
+  }).sort(function (a, b) {
+    return (b.upLen || 0) - (a.upLen || 0);
+  });
+  var intoNamed = into.filter(function (rv) {
+    return rv.name;
+  }).map(function (rv) {
+    return rv.name;
+  });
+  var edited = World.waterEdited(zid);
+  var zoom = function zoom() {
+    var proj = App.basemap.proj,
+      b = z.box;
+    MapAPI.zoomTo([proj([b[0] - 4, b[1] - 4]), proj([b[2] + 4, b[3] + 4])]);
+  };
+  return /*#__PURE__*/React.createElement("div", {
+    className: "info-card water-card",
+    "data-export-skip": "1",
+    onPointerDown: function onPointerDown(e) {
+      return e.stopPropagation();
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "card-head"
+  }, /*#__PURE__*/React.createElement("span", {
+    className: "card-kind"
+  }, "\uD83C\uDF0A ", t("water.kind." + rec.kind)), /*#__PURE__*/React.createElement("span", {
+    className: "card-head-actions"
+  }, /*#__PURE__*/React.createElement("button", {
+    className: "btn icon card-min-btn",
+    title: t("card.minimize"),
+    onClick: function onClick() {
+      return Actions.ui({
+        cardMin: true
+      });
+    }
+  }, "\u2304"), /*#__PURE__*/React.createElement("button", {
+    className: "btn icon",
+    onClick: close
+  }, "\u2715"))), rec.label ? /*#__PURE__*/React.createElement("div", {
+    className: "card-title-static"
+  }, rec.name, /*#__PURE__*/React.createElement("div", {
+    className: "muted"
+  }, t("water.fromLabel"))) : /*#__PURE__*/React.createElement("input", {
+    className: "input card-title",
+    value: rec.name,
+    placeholder: rec.auto,
+    onChange: function onChange(e) {
+      return World.setWaterZone(zid, {
+        name: e.target.value
+      }, {
+        undo: false
+      });
+    }
+  }), /*#__PURE__*/React.createElement("div", {
+    className: "card-grid"
+  }, /*#__PURE__*/React.createElement(RiverParam, {
+    label: t("water.kindLabel"),
+    value: rec.kindSet ? rec.kind : null,
+    autoLabel: t("water.kind." + rec.kindAuto),
+    options: World.WATER_KINDS.map(function (k) {
+      return {
+        value: k,
+        label: t("water.kind." + k)
+      };
+    }),
+    onChange: function onChange(v) {
+      return World.setWaterZone(zid, {
+        kind: v
+      });
+    }
+  }), /*#__PURE__*/React.createElement(CardRow, {
+    k: t("water.area"),
+    v: "≈ " + fmtNum(Math.round(z.area * km * km / 100) * 100) + " " + t("world.km") + "²"
+  }), rec.kind === "strait" && z.links && z.links.length ? /*#__PURE__*/React.createElement(CardRow, {
+    k: t("water.joins"),
+    v: z.links.map(nameOf).join(" — ")
+  }) : null, rec.kind !== "strait" && straits.length ? /*#__PURE__*/React.createElement(CardRow, {
+    k: t("water.straits"),
+    v: straits.map(nameOf).join(", ")
+  }) : null, others.length ? /*#__PURE__*/React.createElement(CardRow, {
+    k: t("water.neighbours"),
+    v: others.map(nameOf).join(", ")
+  }) : null, /*#__PURE__*/React.createElement(CardRow, {
+    k: t("water.shores"),
+    v: shores.length ? shores.slice(0, 6).join(", ") + (shores.length > 6 ? " " + t("water.more").replace("{n}", shores.length - 6) : "") : t("water.noShore")
+  }), lands > 1 ? /*#__PURE__*/React.createElement(CardRow, {
+    k: t("water.lands"),
+    v: String(lands)
+  }) : null, into.length ? /*#__PURE__*/React.createElement(CardRow, {
+    k: t("water.rivers"),
+    v: intoNamed.length ? intoNamed.slice(0, 4).join(", ") + (into.length > Math.min(4, intoNamed.length) ? " " + t("water.more").replace("{n}", into.length - Math.min(4, intoNamed.length)) : "") : String(into.length)
+  }) : null, /*#__PURE__*/React.createElement("button", {
+    className: "card-help-toggle",
+    onClick: function onClick() {
+      return setHelp(!help);
+    }
+  }, help ? "▾ " : "ⓘ ", t("water.howTitle")), help && /*#__PURE__*/React.createElement("div", {
+    className: "card-help"
+  }, /*#__PURE__*/React.createElement("p", null, t("water.how")))), /*#__PURE__*/React.createElement("textarea", {
+    className: "textarea card-notes",
+    placeholder: t("card.notes"),
+    value: rec.notes,
+    onChange: function onChange(e) {
+      return World.setWaterZone(zid, {
+        notes: e.target.value
+      }, {
+        undo: false
+      });
+    }
+  }), /*#__PURE__*/React.createElement("div", {
+    className: "card-actions"
+  }, /*#__PURE__*/React.createElement("button", {
+    className: "btn outline" + (App.ui.waterMerge ? " on" : ""),
+    onClick: function onClick() {
+      return Actions.ui({
+        waterMerge: App.ui.waterMerge ? null : pt,
+        waterCut: false
+      });
+    }
+  }, t("water.merge")), /*#__PURE__*/React.createElement("button", {
+    className: "btn outline" + (App.ui.waterCut ? " on" : ""),
+    onClick: function onClick() {
+      return Actions.ui({
+        waterCut: !App.ui.waterCut,
+        waterMerge: null
+      });
+    }
+  }, t("water.cut")), /*#__PURE__*/React.createElement("button", {
+    className: "btn outline",
+    onClick: zoom
+  }, t("card.showOnMap")), edited && /*#__PURE__*/React.createElement("button", {
+    className: "btn outline danger",
+    onClick: function onClick() {
+      return World.resetWaterZone(zid);
+    }
+  }, t("water.reset"))));
+}
+
+// what a tap or a stroke on the map does now: join the zone to another, or divide it
+function WaterModeBar() {
+  useStore();
+  var cut = !!App.ui.waterCut;
+  return /*#__PURE__*/React.createElement("div", {
+    className: "geom-bar road-bar",
+    "data-export-skip": "1"
+  }, /*#__PURE__*/React.createElement("span", {
+    className: "muted"
+  }, t(cut ? "water.cutHint" : "water.mergeHint")), /*#__PURE__*/React.createElement("button", {
+    className: "btn outline",
+    onClick: function onClick() {
+      return Actions.ui({
+        waterCut: false,
+        waterMerge: null
+      });
+    }
+  }, t("edit.cancel")));
+}
 function WorldCard() {
   useStore();
   var card = App.ui.card;
   if (!card) return null;
   if (card.kind === "river" && World.active()) return /*#__PURE__*/React.createElement(RiverCard, {
     index: card.index
+  });
+  if (card.kind === "water" && World.active()) return /*#__PURE__*/React.createElement(WaterCard, {
+    pt: card.pt
   });
   if (card.kind === "object" && window.ObjectCard) return /*#__PURE__*/React.createElement(ObjectCard, {
     id: card.id
@@ -1502,8 +1820,12 @@ function AtlasModal() {
     World.ensureAnalysis()["catch"](function (e) {
       return console.warn(e);
     });
+    World.ensureWaters()["catch"](function (e) {
+      return console.warn(e);
+    }); // seas, gulfs and straits
   }, []);
   var hyRev = World.hydroFresh() ? World.hydro.rev : 0;
+  var wKey = World.watersFresh() ? World.waters.key + JSON.stringify((App.project.world.waters || {}).names || []) : "";
   var text = React.useMemo(function () {
     try {
       return Atlas.build({
@@ -1513,10 +1835,10 @@ function AtlasModal() {
       console.error(e);
       return String(e);
     }
-  }, [detail, App.ui.lang, hyRev]);
+  }, [detail, App.ui.lang, hyRev, wKey]);
   var areaRef = React.useRef(null);
   var copy = /*#__PURE__*/function () {
-    var _ref7 = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee() {
+    var _ref0 = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee() {
       var _t;
       return _regenerator().w(function (_context) {
         while (1) switch (_context.p = _context.n) {
@@ -1542,7 +1864,7 @@ function AtlasModal() {
       }, _callee, null, [[0, 2]]);
     }));
     return function copy() {
-      return _ref7.apply(this, arguments);
+      return _ref0.apply(this, arguments);
     };
   }();
   var save = function save() {
@@ -1627,6 +1949,7 @@ Object.assign(window, {
   GeoBar: GeoBar,
   CutBar: CutBar,
   ProvinceGeo: ProvinceGeo,
-  NameRuleModal: NameRuleModal
+  NameRuleModal: NameRuleModal,
+  WaterModeBar: WaterModeBar
 });
 //# sourceMappingURL=world.js.map

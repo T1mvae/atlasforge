@@ -34,6 +34,7 @@ function AppRoot() {
       if (k === "escape") {
         if (window.World && World.preview && !App.ui.modal) { World.cancelGeography(); return; }
         if (App.ui.roadFrom) { Actions.ui({ roadFrom: null }); return; }
+        if (App.ui.waterCut || App.ui.waterMerge) { Actions.ui({ waterCut: false, waterMerge: null }); return; }
         if (App.ui.card) { Actions.ui({ card: null, selLabel: null, selStateLabel: null }); return; }
         if (App.ui.geomDraw) { App.ui.geomDraw = null; Actions.ui({ tool: "select" }); return; }
         if (App.ui.geomEdit) { window.GeomEdit && GeomEdit.cancelEdit(); return; }

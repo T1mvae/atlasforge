@@ -1318,6 +1318,232 @@
     return dgCache;
   };
   World.sea = sea;
+
+  // ---------------- seas, gulfs and straits ----------------
+  // The water divided into zones (TA.waterZones, run in the worker and cached per terrain
+  // and edits) plus what the painter changed, kept in project.world.waters as points and
+  // lines (data units), so a name, a merge or a cut stays with its water when the terrain
+  // is repainted:
+  //   names: [{ x, y, name, kind, notes }] — for the zone the point lies in
+  //   merges: [[x1, y1, x2, y2]]           — the zones of the two points are one
+  //   cuts: [[[x, y], …]]                  — a line from shore to shore divides the water
+  const WATER_KINDS = ["ocean", "sea", "gulf", "bay", "strait", "lake"];
+  World.WATER_KINDS = WATER_KINDS;
+  World.waters = null;
+  let watersRev = 0, watersJob = null, waterNamesCache = null;
+  const waterEdits = () => {
+    const e = (App.project && App.project.world && App.project.world.waters) || {};
+    return { names: e.names || [], merges: e.merges || [], cuts: e.cuts || [] };
+  };
+  const watersKey = () => {
+    const e = waterEdits();
+    return World.rasterRev + ":" + sea() + ":" + (+W0().scaleKm || 5) + ":" + JSON.stringify([e.merges, e.cuts]);
+  };
+  const curWaters = () => (World.waters && World.waters.project === App.project ? World.waters : null);
+  World.watersFresh = () => !!(curWaters() && World.waters.key === watersKey());
+  World.ensureWaters = function () {
+    if (!World.active()) return Promise.resolve(null);
+    if (World.watersFresh()) return Promise.resolve(World.waters);
+    const key = watersKey();
+    if (watersJob && watersJob.key === key) return watersJob.p;
+    const project = App.project, rev = ++watersRev;
+    const lid = World.landTopology().landId;
+    const water = new Uint8Array(GW * GH);
+    for (let i = 0; i < water.length; i++) water[i] = lid[i] < 0 ? 1 : 0;
+    const e = waterEdits();
+    const p = runJob({ type: "waters", rev, W: GW, H: GH, water: water.buffer, km: +W0().scaleKm || 5, cuts: e.cuts, merges: e.merges },
+      [water.buffer]).then((m) => {
+      if (watersJob && watersJob.rev === rev) watersJob = null;
+      if (rev !== watersRev || App.project !== project) return null; // superseded
+      World.waters = { key, project, zone: new Int32Array(m.zone), zones: m.zones, borders: m.borders };
+      waterNamesCache = null;
+      App.emit();
+      return World.waters;
+    }, (err) => { if (watersJob && watersJob.rev === rev) watersJob = null; throw err; });
+    watersJob = { key, rev, p };
+    return p;
+  };
+  // the zone at a data point (-1: land, or not worked out yet); near: a few cells around
+  // count too (a point set on water that painting later turned to shore)
+  World.waterZoneAt = function (g, near) {
+    const ws = curWaters();
+    if (!ws || !g) return -1;
+    const cx = Math.floor(g[0]), cy = Math.floor(g[1]);
+    const R = near ? 4 : 0;
+    for (let r = 0; r <= R; r++) {
+      for (let dy = -r; dy <= r; dy++) {
+        for (let dx = -r; dx <= r; dx++) {
+          if (Math.max(Math.abs(dx), Math.abs(dy)) !== r) continue;
+          const x = cx + dx, y = cy + dy;
+          if (x < 0 || y < 0 || x >= GW || y >= GH) continue;
+          const z = ws.zone[y * GW + x];
+          if (z >= 0) return z;
+        }
+      }
+    }
+    return -1;
+  };
+  // every zone's name, kind and notes: what the painter set for it, else a label written
+  // on that water (label: true — the map shows that label already), else a name made from
+  // its kind ("Залив 2"), numbered from the biggest
+  World.waterNames = function () {
+    const ws = curWaters();
+    if (!ws) return null;
+    const e = waterEdits(), p = App.project;
+    const labels = (p.labels || []).map((l) => [l.x, l.y, l.text]);
+    const key = ws.key + "|" + JSON.stringify(e.names) + "|" + App.ui.lang + "|" + JSON.stringify(labels);
+    if (waterNamesCache && waterNamesCache.key === key) return waterNamesCache.list;
+    const out = ws.zones.map((z) => ({ id: z.id, name: "", kind: z.kind, kindAuto: z.kind, kindSet: false, notes: "", label: false, auto: "" }));
+    labels.forEach((l) => {
+      if (!l[2]) return;
+      const zid = World.waterZoneAt(World.mapToGrid([l[0], l[1]]));
+      if (zid >= 0 && !out[zid].name) { out[zid].name = l[2]; out[zid].label = true; }
+    });
+    e.names.forEach((nm) => {
+      const zid = World.waterZoneAt([nm.x, nm.y], true);
+      if (zid < 0) return;
+      const o = out[zid];
+      if (nm.name) { o.name = nm.name; o.label = false; }
+      if (nm.kind && WATER_KINDS.indexOf(nm.kind) >= 0) { o.kind = nm.kind; o.kindSet = true; }
+      if (nm.notes) o.notes = nm.notes;
+    });
+    const tot = {}, cnt = {};
+    out.forEach((o) => { tot[o.kind] = (tot[o.kind] || 0) + 1; });
+    ws.zones.slice().sort((a, b) => b.area - a.area).forEach((z) => {
+      const o = out[z.id];
+      cnt[o.kind] = (cnt[o.kind] || 0) + 1;
+      o.auto = t("water.kind." + o.kind) + (tot[o.kind] > 1 ? " " + cnt[o.kind] : "");
+    });
+    out.forEach((o) => { o.shown = o.name || o.auto; });
+    waterNamesCache = { key, list: out };
+    return out;
+  };
+  const rp = (v) => Math.round(v * 100) / 100;
+  function editWaters(fn, opts) {
+    Actions.mut((p) => {
+      const e = p.world.waters || {};
+      const next = { names: (e.names || []).map((n) => Object.assign({}, n)), merges: (e.merges || []).map((m) => m.slice()),
+        cuts: (e.cuts || []).map((c) => c.map((q) => q.slice())) };
+      fn(next);
+      p.world.waters = next;
+    }, opts);
+  }
+  // name / kind / notes of a zone (null or "" puts it back to automatic); typing a name or
+  // notes is not an undo step, choosing a kind is
+  World.setWaterZone = function (zid, patch, opts) {
+    const ws = curWaters();
+    const z = ws && ws.zones[zid];
+    if (!z) return;
+    editWaters((e) => {
+      const mine = e.names.filter((nm) => World.waterZoneAt([nm.x, nm.y], true) === zid);
+      const rec = Object.assign({ x: rp(z.ax), y: rp(z.ay) }, ...mine, patch);
+      e.names = e.names.filter((nm) => mine.indexOf(nm) < 0);
+      ["name", "kind", "notes"].forEach((k) => { if (rec[k] == null || rec[k] === "") delete rec[k]; });
+      if (rec.name || rec.kind || rec.notes) e.names.push(rec);
+    }, opts);
+  };
+  World.mergeWaterZones = function (a, b) {
+    const ws = curWaters();
+    const za = ws && ws.zones[a], zb = ws && ws.zones[b];
+    if (!za || !zb || a === b) return false;
+    editWaters((e) => { e.merges.push([rp(za.ax), rp(za.ay), rp(zb.ax), rp(zb.ay)]); });
+    return true;
+  };
+  // a line drawn across the water divides it; an end that stops short of the shore runs
+  // on to it (or to the map edge)
+  World.addWaterCut = function (line) {
+    const pts = TA.rdp((line || []).map((q) => [q[0], q[1]]), 0.3);
+    if (pts.length < 2 || TA.polylineLength(pts) < 1) return false;
+    const lid = World.landTopology().landId;
+    const stop = (q) => {
+      const x = Math.floor(q[0]), y = Math.floor(q[1]);
+      return x < 0 || y < 0 || x >= GW || y >= GH || lid[y * GW + x] >= 0;
+    };
+    const onward = (a, b) => {
+      const dx = a[0] - b[0], dy = a[1] - b[1], l = Math.hypot(dx, dy) || 1;
+      for (let s = 0.5; s <= 80; s += 0.5) {
+        const q = [a[0] + dx / l * s, a[1] + dy / l * s];
+        if (stop(q)) return q;
+      }
+      return null;
+    };
+    if (!stop(pts[0])) { const q = onward(pts[0], pts[1]); if (q) pts.unshift(q); }
+    if (!stop(pts[pts.length - 1])) { const q = onward(pts[pts.length - 1], pts[pts.length - 2]); if (q) pts.push(q); }
+    editWaters((e) => { e.cuts.push(pts.map((q) => [rp(q[0]), rp(q[1])])); });
+    return true;
+  };
+  // forget what the painter changed about a zone: its name, kind and notes, its merges and
+  // the cuts along its edge
+  const cutTouches = (c, zid) => TA.resamplePolyline(c, 0.5).some((q) => {
+    for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) if (World.waterZoneAt([q[0] + dx, q[1] + dy]) === zid) return true;
+    return false;
+  });
+  const inZone = (x, y, zid) => World.waterZoneAt([x, y], true) === zid;
+  World.resetWaterZone = function (zid) {
+    const ws = curWaters();
+    if (!ws || !ws.zones[zid]) return;
+    editWaters((e) => {
+      e.names = e.names.filter((nm) => !inZone(nm.x, nm.y, zid));
+      e.merges = e.merges.filter((m) => !inZone(m[0], m[1], zid) && !inZone(m[2], m[3], zid));
+      e.cuts = e.cuts.filter((c) => !cutTouches(c, zid));
+    });
+  };
+  World.waterEdited = function (zid) {
+    const ws = curWaters();
+    if (!ws || !ws.zones[zid]) return false;
+    const e = waterEdits();
+    return e.names.some((nm) => inZone(nm.x, nm.y, zid)) || e.merges.some((m) => inZone(m[0], m[1], zid) || inZone(m[2], m[3], zid)) ||
+      e.cuts.some((c) => cutTouches(c, zid));
+  };
+  // the outline of one zone (its selection), traced along cell edges with the zone on the
+  // right and smoothed; cached per zone
+  World.waterZonePath = function (zid, proj) {
+    const ws = curWaters();
+    if (!ws || !ws.zones[zid]) return "";
+    ws.outlines = ws.outlines || {};
+    const hit = ws.outlines[zid];
+    if (hit && hit.proj === proj) return hit.d;
+    const zone = ws.zone, V = GW + 1;
+    const next = new Map(); // corner → corners the outline goes on to
+    const add = (a, b) => { const l = next.get(a); if (l) l.push(b); else next.set(a, [b]); };
+    const inZ = (x, y) => x >= 0 && y >= 0 && x < GW && y < GH && zone[y * GW + x] === zid;
+    for (let y = 0; y < GH; y++) {
+      for (let x = 0; x < GW; x++) {
+        if (zone[y * GW + x] !== zid) continue;
+        if (!inZ(x, y - 1)) add(y * V + x, y * V + x + 1);
+        if (!inZ(x + 1, y)) add(y * V + x + 1, (y + 1) * V + x + 1);
+        if (!inZ(x, y + 1)) add((y + 1) * V + x + 1, (y + 1) * V + x);
+        if (!inZ(x - 1, y)) add((y + 1) * V + x, y * V + x);
+      }
+    }
+    let d = "";
+    next.forEach((list, start) => {
+      while (list.length) {
+        const ring = [[start % V, (start / V) | 0]];
+        let cur = list.pop();
+        for (let guard = 0; cur !== start && guard < 1e7; guard++) {
+          ring.push([cur % V, (cur / V) | 0]);
+          const l = next.get(cur);
+          if (!l || !l.length) break;
+          cur = l.pop();
+        }
+        if (ring.length < 3) continue;
+        d += "M" + TA.chaikin(ring, 2, true).map((q) => { const m = proj(q); return m[0].toFixed(2) + "," + m[1].toFixed(2); }).join("L") + "Z";
+      }
+    });
+    ws.outlines[zid] = { proj, d };
+    return d;
+  };
+  // the lines between zones as an SVG path in map units (cached with the zones)
+  World.waterBordersPath = function (proj) {
+    const ws = curWaters();
+    if (!ws) return "";
+    if (ws.path && ws.pathProj === proj) return ws.path;
+    ws.path = ws.borders.map((b) => "M" + b.pts.map((q) => { const m = proj(q); return m[0].toFixed(2) + "," + m[1].toFixed(2); }).join("L")).join("");
+    ws.pathProj = proj;
+    return ws.path;
+  };
+
   World.riverCellsOf = function (rv) {
     // cells of a display river on the data grid (hand rivers are sampled)
     if (rv.cells) return rv.cells;

@@ -17,6 +17,11 @@ self.onmessage = (ev) => {
     if (!ready) throw new Error("worker not initialised");
     if (msg.type === "hydro") self.postMessage(hydro(msg), transferables(["temp", "prec", "biome", "lake", "basin", "down", "acc"], msg));
     else if (msg.type === "provinces") { const out = provinces(msg); self.postMessage(out, [out.labels, out.why]); }
+    else if (msg.type === "waters") {
+      const out = self.TerrainAlgos.waterZones({ W: msg.W, H: msg.H, water: new Uint8Array(msg.water), km: msg.km,
+        cuts: msg.cuts, merges: msg.merges });
+      self.postMessage({ type: "waters", rev: msg.rev, zone: out.zone.buffer, zones: out.zones, borders: out.borders }, [out.zone.buffer]);
+    }
     else if (msg.type === "geography") {
       const t0 = Date.now();
       const out = self.TerrainAlgos.geography(msg);

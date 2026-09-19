@@ -61,6 +61,13 @@ function AppRoot() {
           });
           return;
         }
+        if (App.ui.waterCut || App.ui.waterMerge) {
+          Actions.ui({
+            waterCut: false,
+            waterMerge: null
+          });
+          return;
+        }
         if (App.ui.card) {
           Actions.ui({
             card: null,

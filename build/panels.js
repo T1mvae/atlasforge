@@ -1,6 +1,7 @@
 "use strict";
 
 function _typeof(o) { "@babel/helpers - typeof"; return _typeof = "function" == typeof Symbol && "symbol" == typeof Symbol.iterator ? function (o) { return typeof o; } : function (o) { return o && "function" == typeof Symbol && o.constructor === Symbol && o !== Symbol.prototype ? "symbol" : typeof o; }, _typeof(o); }
+function _extends() { return _extends = Object.assign ? Object.assign.bind() : function (n) { for (var e = 1; e < arguments.length; e++) { var t = arguments[e]; for (var r in t) ({}).hasOwnProperty.call(t, r) && (n[r] = t[r]); } return n; }, _extends.apply(null, arguments); }
 function _defineProperty(e, r, t) { return (r = _toPropertyKey(r)) in e ? Object.defineProperty(e, r, { value: t, enumerable: !0, configurable: !0, writable: !0 }) : e[r] = t, e; }
 function _toPropertyKey(t) { var i = _toPrimitive(t, "string"); return "symbol" == _typeof(i) ? i : i + ""; }
 function _toPrimitive(t, r) { if ("object" != _typeof(t) || !t) return t; var e = t[Symbol.toPrimitive]; if (void 0 !== e) { var i = e.call(t, r || "default"); if ("object" != _typeof(i)) return i; throw new TypeError("@@toPrimitive must return a primitive value."); } return ("string" === r ? String : Number)(t); }
@@ -1638,101 +1639,9 @@ function StateTab() {
     }
   }, p.states[s.vassalOf].name)), /*#__PURE__*/React.createElement("div", {
     className: "props-section-title"
-  }, t("label.section")), function () {
-    var lsv = s.labelStyle || {};
-    var setLS = function setLS(patch) {
-      return set({
-        labelStyle: Object.assign({}, lsv, patch)
-      });
-    };
-    return /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement(Check, {
-      label: t("label.hidden"),
-      checked: !!lsv.hidden,
-      onChange: function onChange(v) {
-        return setLS({
-          hidden: v
-        });
-      }
-    }), /*#__PURE__*/React.createElement(Field, {
-      label: t("label.size") + " — " + (lsv.size ? lsv.size : t("label.auto"))
-    }, /*#__PURE__*/React.createElement("input", {
-      type: "range",
-      className: "range",
-      min: "0",
-      max: "36",
-      step: "1",
-      value: lsv.size || 0,
-      onChange: function onChange(e) {
-        return setLS({
-          size: +e.target.value || 0
-        });
-      }
-    })), /*#__PURE__*/React.createElement(Field, {
-      label: t("label.rotation") + " — " + (lsv.angle != null ? lsv.angle + "°" : t("label.auto"))
-    }, /*#__PURE__*/React.createElement("div", {
-      className: "field-row"
-    }, /*#__PURE__*/React.createElement("input", {
-      type: "range",
-      className: "range",
-      min: "-180",
-      max: "180",
-      step: "1",
-      value: lsv.angle != null ? lsv.angle : 0,
-      onChange: function onChange(e) {
-        return setLS({
-          angle: +e.target.value
-        });
-      }
-    }), lsv.angle != null && /*#__PURE__*/React.createElement("button", {
-      className: "btn outline",
-      style: {
-        height: 22,
-        fontSize: 10
-      },
-      onClick: function onClick() {
-        return setLS({
-          angle: null
-        });
-      }
-    }, t("label.auto")))), /*#__PURE__*/React.createElement(Field, {
-      label: t("label.spacing") + " — " + (lsv.spacing != null ? lsv.spacing : t("label.auto"))
-    }, /*#__PURE__*/React.createElement("div", {
-      className: "field-row"
-    }, /*#__PURE__*/React.createElement("input", {
-      type: "range",
-      className: "range",
-      min: "0",
-      max: "8",
-      step: "0.5",
-      value: lsv.spacing != null ? lsv.spacing : 0,
-      onChange: function onChange(e) {
-        return setLS({
-          spacing: +e.target.value
-        });
-      }
-    }), lsv.spacing != null && /*#__PURE__*/React.createElement("button", {
-      className: "btn outline",
-      style: {
-        height: 22,
-        fontSize: 10
-      },
-      onClick: function onClick() {
-        return setLS({
-          spacing: null
-        });
-      }
-    }, t("label.auto")))), s.labelOffset && /*#__PURE__*/React.createElement("button", {
-      className: "btn outline",
-      style: {
-        fontSize: 11
-      },
-      onClick: function onClick() {
-        return set({
-          labelOffset: null
-        });
-      }
-    }, t("label.resetPos")));
-  }(), /*#__PURE__*/React.createElement("div", {
+  }, t("label.section")), /*#__PURE__*/React.createElement(StateLabelFields, {
+    sid: sid
+  }), /*#__PURE__*/React.createElement("div", {
     className: "props-section-title"
   }, t("props.state")), /*#__PURE__*/React.createElement(Field, {
     label: t("f.capital")
@@ -1856,46 +1765,231 @@ function StateTab() {
   }, t("state.delete")));
 }
 
-// ---------- Region tab (also label editor) ----------
-function LabelEditor(_ref0) {
-  var id = _ref0.id;
+// ---------- text look: size, turn, arc, letter spacing, bold, italic, capitals, halo, shadow ----------
+// v: the current values; set(patch, opts) writes them. kind "label" (a free label) or "state"
+// (a country name: size, turn and spacing may be "auto"). Dragging a slider is one undo step.
+function TextStyleFields(_ref0) {
+  var v = _ref0.v,
+    set = _ref0.set,
+    kind = _ref0.kind,
+    defaults = _ref0.defaults;
+  var stroke = React.useRef(false);
+  var live = function live(patch) {
+    if (!stroke.current) {
+      Actions.beginStroke();
+      stroke.current = true;
+    }
+    set(patch, {
+      undo: false
+    });
+  };
+  var done = function done() {
+    if (stroke.current) {
+      Actions.endStroke();
+      stroke.current = false;
+    }
+  };
+  var slide = {
+    onPointerUp: done,
+    onPointerCancel: done,
+    onBlur: done,
+    onKeyUp: done
+  };
+  var st = kind === "state";
+  var d = defaults || {};
+  var autoBtn = function autoBtn(key) {
+    return st && v[key] != null ? /*#__PURE__*/React.createElement("button", {
+      className: "btn outline",
+      style: {
+        height: 22,
+        fontSize: 10
+      },
+      onClick: function onClick() {
+        return set(_defineProperty({}, key, null));
+      }
+    }, t("label.auto")) : null;
+  };
+  var upperOn = v.upper != null ? !!v.upper : !!d.upper;
+  var shadowOn = v.shadow != null ? !!v.shadow : !!d.shadow;
+  var halo = v.halo != null ? +v.halo : d.halo;
+  var pct = function pct(x) {
+    return Math.round(x * 100) + "%";
+  };
+  return /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement(Field, {
+    label: t("label.size") + " — " + (v.size ? Math.round(v.size) : t("label.auto"))
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "field-row"
+  }, /*#__PURE__*/React.createElement("input", _extends({
+    type: "range",
+    className: "range",
+    min: st ? 0 : 6,
+    max: st ? 48 : 96,
+    step: "1",
+    value: v.size || 0
+  }, slide, {
+    onChange: function onChange(e) {
+      return live({
+        size: +e.target.value || (st ? null : 6)
+      });
+    }
+  })), autoBtn("size"))), /*#__PURE__*/React.createElement(Field, {
+    label: t("label.rotation") + " — " + (v.angle != null ? v.angle + "°" : st ? t("label.auto") : "0°")
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "field-row"
+  }, /*#__PURE__*/React.createElement("input", _extends({
+    type: "range",
+    className: "range",
+    min: "-180",
+    max: "180",
+    step: "1",
+    value: v.angle || 0
+  }, slide, {
+    onChange: function onChange(e) {
+      return live({
+        angle: +e.target.value
+      });
+    }
+  })), autoBtn("angle"))), /*#__PURE__*/React.createElement(Field, {
+    label: t("label.curve") + " — " + (v.curve ? (v.curve > 0 ? "∩ " : "∪ ") + pct(Math.abs(v.curve)) : t("label.straight"))
+  }, /*#__PURE__*/React.createElement("input", _extends({
+    type: "range",
+    className: "range",
+    min: "-1",
+    max: "1",
+    step: "0.05",
+    value: v.curve || 0
+  }, slide, {
+    onChange: function onChange(e) {
+      return live({
+        curve: +e.target.value || null
+      });
+    }
+  }))), st ? /*#__PURE__*/React.createElement(Field, {
+    label: t("label.spacing") + " — " + (v.spacing != null ? v.spacing : t("label.auto"))
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "field-row"
+  }, /*#__PURE__*/React.createElement("input", _extends({
+    type: "range",
+    className: "range",
+    min: "0",
+    max: "8",
+    step: "0.5",
+    value: v.spacing != null ? v.spacing : 0
+  }, slide, {
+    onChange: function onChange(e) {
+      return live({
+        spacing: +e.target.value
+      });
+    }
+  })), autoBtn("spacing"))) : /*#__PURE__*/React.createElement(Field, {
+    label: t("label.spacing") + " — " + pct(v.spacing || 0)
+  }, /*#__PURE__*/React.createElement("input", _extends({
+    type: "range",
+    className: "range",
+    min: "0",
+    max: "0.8",
+    step: "0.02",
+    value: v.spacing || 0
+  }, slide, {
+    onChange: function onChange(e) {
+      return live({
+        spacing: +e.target.value || null
+      });
+    }
+  }))), /*#__PURE__*/React.createElement("div", {
+    className: "chip-row text-style-chips"
+  }, !st && /*#__PURE__*/React.createElement("button", {
+    className: "chip" + (v.bold ? " on" : ""),
+    onClick: function onClick() {
+      return set({
+        bold: !v.bold
+      });
+    }
+  }, /*#__PURE__*/React.createElement("b", null, t("label.bold"))), /*#__PURE__*/React.createElement("button", {
+    className: "chip" + (v.italic ? " on" : ""),
+    onClick: function onClick() {
+      return set({
+        italic: v.italic ? null : true
+      });
+    }
+  }, /*#__PURE__*/React.createElement("i", null, t("label.italic"))), /*#__PURE__*/React.createElement("button", {
+    className: "chip" + (upperOn ? " on" : ""),
+    onClick: function onClick() {
+      return set({
+        upper: !upperOn
+      });
+    }
+  }, t("label.upper")), /*#__PURE__*/React.createElement("button", {
+    className: "chip" + (shadowOn ? " on" : ""),
+    onClick: function onClick() {
+      return set({
+        shadow: !shadowOn
+      });
+    }
+  }, t("label.shadow"))), /*#__PURE__*/React.createElement(Field, {
+    label: t("label.halo") + " — " + pct(halo)
+  }, /*#__PURE__*/React.createElement("input", _extends({
+    type: "range",
+    className: "range",
+    min: "0",
+    max: "0.3",
+    step: "0.01",
+    value: halo
+  }, slide, {
+    onChange: function onChange(e) {
+      return live({
+        halo: +e.target.value
+      });
+    }
+  }))), !st && /*#__PURE__*/React.createElement(Field, {
+    label: t("label.haloColor")
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "field-row"
+  }, /*#__PURE__*/React.createElement("input", {
+    type: "color",
+    className: "color-input",
+    value: v.haloColor || d.haloColor || "#ffffff",
+    onChange: function onChange(e) {
+      return set({
+        haloColor: e.target.value
+      });
+    }
+  }), v.haloColor && /*#__PURE__*/React.createElement("button", {
+    className: "btn outline",
+    style: {
+      height: 22,
+      fontSize: 10
+    },
+    onClick: function onClick() {
+      return set({
+        haloColor: null
+      });
+    }
+  }, t("label.auto")))));
+}
+
+// a free label: its text, colour and look
+function LabelFields(_ref1) {
+  var id = _ref1.id;
   var p = App.project;
   var l = p.labels.find(function (x) {
     return x.id === id;
   });
   if (!l) return null;
-  var set = function set(patch) {
-    return Actions.setLabel(id, patch, {
-      undo: false
-    });
+  var set = function set(patch, opts) {
+    return Actions.setLabel(id, patch, opts);
   };
-  return /*#__PURE__*/React.createElement("div", {
-    className: "props-body"
-  }, /*#__PURE__*/React.createElement(TextField, {
+  return /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement(TextField, {
     label: t("f.text"),
     value: l.text,
     onChange: function onChange(v) {
       return set({
         text: v
+      }, {
+        undo: false
       });
     }
   }), /*#__PURE__*/React.createElement(Field, {
-    label: t("f.size") + " — " + l.size
-  }, /*#__PURE__*/React.createElement("input", {
-    type: "range",
-    className: "range",
-    min: "6",
-    max: "72",
-    step: "1",
-    value: l.size,
-    onChange: function onChange(e) {
-      return set({
-        size: +e.target.value
-      });
-    }
-  })), /*#__PURE__*/React.createElement("div", {
-    className: "field-row"
-  }, /*#__PURE__*/React.createElement(Field, {
     label: t("f.color")
   }, /*#__PURE__*/React.createElement("input", {
     type: "color",
@@ -1906,28 +2000,154 @@ function LabelEditor(_ref0) {
         color: e.target.value
       });
     }
-  })), /*#__PURE__*/React.createElement(Check, {
-    label: "Bold",
-    checked: l.bold,
-    onChange: function onChange(v) {
-      return set({
-        bold: v
-      });
+  })), /*#__PURE__*/React.createElement(TextStyleFields, {
+    v: l,
+    set: set,
+    kind: "label",
+    defaults: {
+      halo: 0.05,
+      haloColor: p.settings.sea
     }
-  })), /*#__PURE__*/React.createElement("button", {
+  }), /*#__PURE__*/React.createElement("div", {
+    className: "muted",
+    style: {
+      fontSize: 11
+    }
+  }, t("label.handlesHint")), /*#__PURE__*/React.createElement("button", {
     className: "btn outline danger",
     onClick: function onClick() {
       Actions.deleteLabel(id);
       Actions.ui({
-        selLabel: null
+        selLabel: null,
+        card: null
       });
     }
-  }, "\u2715 ", t("misc.none") === "—" ? App.ui.lang === "ru" ? "Удалить подпись" : "Delete label" : "Delete"));
+  }, "\u2715 ", t("label.delete")));
+}
+
+// a country's name on the map: hidden, look, position
+function StateLabelFields(_ref10) {
+  var sid = _ref10.sid;
+  var p = App.project;
+  var s = p.states[sid];
+  if (!s) return null;
+  var ls = s.labelStyle || {};
+  var set = function set(patch, opts) {
+    return Actions.setState(sid, {
+      labelStyle: Object.assign({}, ls, patch)
+    }, opts);
+  };
+  var atlas = p.settings.labelAtlas !== false;
+  return /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement(Check, {
+    label: t("label.hidden"),
+    checked: !!ls.hidden,
+    onChange: function onChange(v) {
+      return set({
+        hidden: v
+      });
+    }
+  }), /*#__PURE__*/React.createElement(TextStyleFields, {
+    v: ls,
+    set: set,
+    kind: "state",
+    defaults: {
+      halo: 0.13,
+      upper: atlas,
+      shadow: atlas
+    }
+  }), /*#__PURE__*/React.createElement("div", {
+    className: "muted",
+    style: {
+      fontSize: 11
+    }
+  }, t("label.handlesHint")), /*#__PURE__*/React.createElement("div", {
+    className: "field-row"
+  }, s.labelOffset && /*#__PURE__*/React.createElement("button", {
+    className: "btn outline",
+    style: {
+      fontSize: 11
+    },
+    onClick: function onClick() {
+      return Actions.setState(sid, {
+        labelOffset: null
+      });
+    }
+  }, t("label.resetPos")), s.labelStyle && Object.keys(s.labelStyle).length > 0 && /*#__PURE__*/React.createElement("button", {
+    className: "btn outline",
+    style: {
+      fontSize: 11
+    },
+    onClick: function onClick() {
+      return Actions.setState(sid, {
+        labelStyle: null
+      });
+    }
+  }, t("label.reset"))));
+}
+
+// ---------- Region tab (also label editor) ----------
+function LabelEditor(_ref11) {
+  var id = _ref11.id;
+  return /*#__PURE__*/React.createElement("div", {
+    className: "props-body"
+  }, /*#__PURE__*/React.createElement(LabelFields, {
+    id: id
+  }));
+}
+
+// the text card over the map (shown on tablets even with the side panel closed)
+function LabelCard(_ref12) {
+  var card = _ref12.card;
+  useStore();
+  var p = App.project;
+  var close = function close() {
+    return Actions.ui({
+      card: null,
+      selLabel: null,
+      selStateLabel: null
+    });
+  };
+  var isState = card.kind === "stateLabel";
+  var title = isState ? p.states[card.id] ? p.states[card.id].name : "" : t("label.cardTitle");
+  if (isState ? !p.states[card.id] : !p.labels.find(function (x) {
+    return x.id === card.id;
+  })) return null;
+  var minimized = !!App.ui.cardMin;
+  return /*#__PURE__*/React.createElement("div", {
+    className: "info-card label-card" + (minimized ? " minimized" : ""),
+    "data-export-skip": "1",
+    onPointerDown: function onPointerDown(e) {
+      return e.stopPropagation();
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "card-head"
+  }, /*#__PURE__*/React.createElement("span", {
+    className: "card-kind"
+  }, isState ? "🏳 " + t("label.stateCardTitle") + ": " + title : "𝐓 " + title), /*#__PURE__*/React.createElement("span", {
+    className: "card-head-actions"
+  }, /*#__PURE__*/React.createElement("button", {
+    className: "btn icon card-min-btn",
+    title: t(minimized ? "card.expand" : "card.minimize"),
+    onClick: function onClick() {
+      return Actions.ui({
+        cardMin: !minimized
+      });
+    }
+  }, minimized ? "⌃" : "⌄"), /*#__PURE__*/React.createElement("button", {
+    className: "btn icon",
+    onClick: close
+  }, "\u2715"))), !minimized && /*#__PURE__*/React.createElement("div", {
+    className: "card-fields-col"
+  }, isState ? /*#__PURE__*/React.createElement(StateLabelFields, {
+    sid: card.id
+  }) : /*#__PURE__*/React.createElement(LabelFields, {
+    id: card.id
+  })));
 }
 
 // ---------- per-region name label editor (move / rotate / size / hide) ----------
-function FeatLabelEditor(_ref1) {
-  var id = _ref1.id;
+function FeatLabelEditor(_ref13) {
+  var id = _ref13.id;
   var p = App.project;
   var ov = (p.featLabels || {})[id] || {};
   var set = function set(patch) {
@@ -1999,9 +2219,9 @@ function FeatLabelEditor(_ref1) {
 
 // ---------- region selection editor (Region mode) ----------
 var META_FIELDS = ["culture", "language", "religion", "terrain", "climate", "historicalPeriod", "politicalStatus", "population", "development"];
-function NewRegionForm(_ref10) {
-  var onCreate = _ref10.onCreate,
-    defaultType = _ref10.defaultType;
+function NewRegionForm(_ref14) {
+  var onCreate = _ref14.onCreate,
+    defaultType = _ref14.defaultType;
   var _React$useState15 = React.useState(""),
     _React$useState16 = _slicedToArray(_React$useState15, 2),
     name = _React$useState16[0],
@@ -2786,6 +3006,10 @@ Object.assign(window, {
   Toolbar: Toolbar,
   StatesPanel: StatesPanel,
   PropsPanel: PropsPanel,
-  PanelResizer: PanelResizer
+  PanelResizer: PanelResizer,
+  LabelCard: LabelCard,
+  LabelFields: LabelFields,
+  StateLabelFields: StateLabelFields,
+  TextStyleFields: TextStyleFields
 });
 //# sourceMappingURL=panels.js.map

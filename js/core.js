@@ -761,10 +761,13 @@
     });
     return id;
   };
+  // null in the patch removes a key (a look back to its default)
   Actions.setLabel = function (id, patch, opts) {
     Actions.mut((p) => {
       const l = p.labels.find((l) => l.id === id);
-      if (l) Object.assign(l, patch);
+      if (!l) return;
+      Object.assign(l, patch);
+      for (const k in patch) if (patch[k] == null) delete l[k];
     }, opts);
   };
   Actions.deleteLabel = function (id) {

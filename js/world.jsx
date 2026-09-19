@@ -733,6 +733,7 @@ function WorldCard() {
   if (!card) return null;
   if (card.kind === "river" && World.active()) return <RiverCard index={card.index}></RiverCard>;
   if (card.kind === "object" && window.ObjectCard) return <ObjectCard id={card.id}></ObjectCard>;
+  if ((card.kind === "label" || card.kind === "stateLabel") && window.LabelCard) return <LabelCard card={card}></LabelCard>;
   return null;
 }
 

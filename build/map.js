@@ -5,6 +5,7 @@ function _nonIterableRest() { throw new TypeError("Invalid attempt to destructur
 function _iterableToArrayLimit(r, l) { var t = null == r ? null : "undefined" != typeof Symbol && r[Symbol.iterator] || r["@@iterator"]; if (null != t) { var e, n, i, u, a = [], f = !0, o = !1; try { if (i = (t = t.call(r)).next, 0 === l) { if (Object(t) !== t) return; f = !1; } else for (; !(f = (e = i.call(t)).done) && (a.push(e.value), a.length !== l); f = !0); } catch (r) { o = !0, n = r; } finally { try { if (!f && null != t["return"] && (u = t["return"](), Object(u) !== u)) return; } finally { if (o) throw n; } } return a; } }
 function _arrayWithHoles(r) { if (Array.isArray(r)) return r; }
 function _createForOfIteratorHelper(r, e) { var t = "undefined" != typeof Symbol && r[Symbol.iterator] || r["@@iterator"]; if (!t) { if (Array.isArray(r) || (t = _unsupportedIterableToArray(r)) || e && r && "number" == typeof r.length) { t && (r = t); var _n = 0, F = function F() {}; return { s: F, n: function n() { return _n >= r.length ? { done: !0 } : { done: !1, value: r[_n++] }; }, e: function e(r) { throw r; }, f: F }; } throw new TypeError("Invalid attempt to iterate non-iterable instance.\nIn order to be iterable, non-array objects must have a [Symbol.iterator]() method."); } var o, a = !0, u = !1; return { s: function s() { t = t.call(r); }, n: function n() { var r = t.next(); return a = r.done, r; }, e: function e(r) { u = !0, o = r; }, f: function f() { try { a || null == t["return"] || t["return"](); } finally { if (u) throw o; } } }; }
+function _extends() { return _extends = Object.assign ? Object.assign.bind() : function (n) { for (var e = 1; e < arguments.length; e++) { var t = arguments[e]; for (var r in t) ({}).hasOwnProperty.call(t, r) && (n[r] = t[r]); } return n; }, _extends.apply(null, arguments); }
 function _toConsumableArray(r) { return _arrayWithoutHoles(r) || _iterableToArray(r) || _unsupportedIterableToArray(r) || _nonIterableSpread(); }
 function _nonIterableSpread() { throw new TypeError("Invalid attempt to spread non-iterable instance.\nIn order to be iterable, non-array objects must have a [Symbol.iterator]() method."); }
 function _unsupportedIterableToArray(r, a) { if (r) { if ("string" == typeof r) return _arrayLikeToArray(r, a); var t = {}.toString.call(r).slice(8, -1); return "Object" === t && r.constructor && (t = r.constructor.name), "Map" === t || "Set" === t ? Array.from(r) : "Arguments" === t || /^(?:Ui|I)nt(?:8|16|32)(?:Clamped)?Array$/.test(t) ? _arrayLikeToArray(r, a) : void 0; } }
@@ -261,6 +262,250 @@ var RegionShape = React.memo(function RegionShape(_ref2) {
   });
 });
 
+// ---------- map text: rotation, arcs, letter spacing, italic, capitals, halo, shadow ----------
+// canvas can't read CSS variables: resolve the UI font stack before measuring
+function resolveFont(ff) {
+  if (ff && ff.indexOf("var(--font-ui)") >= 0) {
+    var v = getComputedStyle(document.documentElement).getPropertyValue("--font-ui").trim();
+    return ff.replace("var(--font-ui)", v || "sans-serif");
+  }
+  return ff || "sans-serif";
+}
+var COUNTRY_FONT = 'Georgia, "Times New Roman", "Noto Serif", "Liberation Serif", serif';
+var textMeasure = {
+  ctx: null,
+  cache: new Map()
+};
+// width of a line of text in map units (letter spacing ls in map units too)
+function measureMapText(str, size, font, weight, italic, ls) {
+  var key = str + "|" + size + "|" + font + "|" + weight + "|" + (italic ? 1 : 0) + "|" + ls;
+  var w = textMeasure.cache.get(key);
+  if (w != null) return w;
+  if (!textMeasure.ctx) textMeasure.ctx = document.createElement("canvas").getContext("2d");
+  var ctx = textMeasure.ctx;
+  // measure at 100 px and scale: canvases round small font sizes
+  ctx.font = (italic ? "italic " : "") + (weight || 400) + " 100px " + resolveFont(font);
+  w = ctx.measureText(str).width * size / 100 + (ls || 0) * Math.max(0, str.length - 1);
+  if (textMeasure.cache.size > 2000) textMeasure.cache.clear();
+  textMeasure.cache.set(key, w);
+  return w;
+}
+// the circle arc a curved line of text sits on: its middle at (x, y), bent by curve
+// (−1…1; > 0 an arch, < 0 a bowl), running on past both ends of the text so no letter falls off
+var ARC_SAG = 0.32; // sagitta over the text width at curve 1
+// tight: only as long as the text (the selection frame)
+function mapTextArc(x, y, width, curve, tight) {
+  var half = Math.max(1, width) / 2;
+  var s = Math.abs(curve) * Math.max(1, width) * ARC_SAG;
+  var R = (half * half + s * s) / (2 * s);
+  var phi = Math.min(Math.PI * 0.98, tight ? half / R : half / R * 1.35 + 0.12);
+  var up = curve > 0;
+  var cy = up ? y + R : y - R;
+  var dx = R * Math.sin(phi),
+    ey = up ? cy - R * Math.cos(phi) : cy + R * Math.cos(phi);
+  return "M".concat((x - dx).toFixed(2), ",").concat(ey.toFixed(2), " A").concat(R.toFixed(2), ",").concat(R.toFixed(2), " 0 ").concat(phi > Math.PI / 2 ? 1 : 0, " ").concat(up ? 1 : 0, " ").concat((x + dx).toFixed(2), ",").concat(ey.toFixed(2));
+}
+// one line of map text. t: { key, x, y, text, size, angle, curve, spacing (map units),
+// italic, upper, bold (weight), fill, font, halo (stroke width), haloColor, shadow,
+// className, style, attrs (data-* on the group) }
+function MapText(_ref3) {
+  var tx = _ref3.t;
+  var str = tx.upper ? String(tx.text).toUpperCase() : String(tx.text);
+  var curved = tx.curve && Math.abs(tx.curve) > 0.02;
+  var pathId = "tp-" + tx.key;
+  var common = {
+    className: tx.className,
+    fontSize: tx.size,
+    fill: tx.fill,
+    fontWeight: tx.weight,
+    fontStyle: tx.italic ? "italic" : undefined,
+    stroke: tx.halo > 0 ? tx.haloColor : undefined,
+    strokeWidth: tx.halo > 0 ? tx.halo : undefined,
+    paintOrder: "stroke",
+    filter: tx.shadow ? "url(#lblShadow)" : undefined,
+    style: Object.assign({
+      fontFamily: tx.font,
+      userSelect: "none",
+      letterSpacing: (tx.spacing || 0) + "px"
+    }, tx.style || {})
+  };
+  var w = curved ? measureMapText(str, tx.size, tx.font, tx.weight, tx.italic, tx.spacing) : 0;
+  return /*#__PURE__*/React.createElement("g", _extends({
+    transform: tx.angle ? "rotate(".concat(tx.angle, " ").concat(tx.x, " ").concat(tx.y, ")") : undefined
+  }, tx.attrs || {}), curved && /*#__PURE__*/React.createElement("path", {
+    id: pathId,
+    d: mapTextArc(tx.x, tx.y, w, tx.curve),
+    fill: "none",
+    stroke: "none"
+  }), curved ? /*#__PURE__*/React.createElement("text", _extends({}, common, {
+    textAnchor: "middle"
+  }), /*#__PURE__*/React.createElement("textPath", {
+    href: "#" + pathId,
+    xlinkHref: "#" + pathId,
+    startOffset: "50%"
+  }, str)) : /*#__PURE__*/React.createElement("text", _extends({}, common, {
+    x: tx.x,
+    y: tx.y,
+    textAnchor: "middle"
+  }), str));
+}
+// what a free label or a country name looks like, as MapText input
+function freeLabelText(l, settings) {
+  var size = l.size || 18;
+  return {
+    key: "l" + l.id,
+    x: l.x,
+    y: l.y,
+    text: l.text || "",
+    size: size,
+    angle: l.angle || 0,
+    curve: l.curve || 0,
+    spacing: (l.spacing || 0) * size,
+    italic: !!l.italic,
+    upper: !!l.upper,
+    weight: l.bold ? 700 : 400,
+    fill: l.color || settings.labelColor,
+    font: l.font || settings.labelFont,
+    halo: size * (l.halo != null ? l.halo : 0.05),
+    haloColor: l.haloColor || settings.sea,
+    shadow: !!l.shadow,
+    attrs: {
+      "data-label": l.id
+    },
+    style: {
+      cursor: "move"
+    }
+  };
+}
+// where the frame and the two handles of a selected line of text go (map units)
+function textHandleGeo(tx) {
+  var str = tx.upper ? String(tx.text).toUpperCase() : String(tx.text);
+  var w = measureMapText(str, tx.size, tx.font, tx.weight, tx.italic, tx.spacing);
+  var a = (tx.angle || 0) * Math.PI / 180,
+    ca = Math.cos(a),
+    sa = Math.sin(a);
+  var loc = function loc(lx, ly) {
+    return [tx.x + lx * ca - ly * sa, tx.y + lx * sa + ly * ca];
+  };
+  var turnOff = [w / 2 + tx.size * 0.8, -tx.size * 0.35];
+  return {
+    w: w,
+    loc: loc,
+    turnOff: turnOff,
+    turn: loc(turnOff[0], turnOff[1]),
+    bend: loc(0, -tx.size * 1.3 - (tx.curve || 0) * w * ARC_SAG),
+    frame: [[-w / 2 - tx.size * 0.25, -tx.size * 0.95], [w / 2 + tx.size * 0.25, tx.size * 0.3]]
+  };
+}
+// the selected free label or country name, and how to change it
+var textSel = {
+  stateLabels: []
+}; // the map keeps the latest computed country names here
+function selectedText() {
+  var p = App.project;
+  if (!p) return null;
+  if (App.ui.selLabel) {
+    var l = p.labels.find(function (x) {
+      return x.id === App.ui.selLabel;
+    });
+    if (l) return {
+      kind: "custom",
+      id: l.id,
+      t: freeLabelText(l, p.settings)
+    };
+  }
+  if (App.ui.selStateLabel) {
+    var _l = textSel.stateLabels.find(function (x) {
+      return x.sid === App.ui.selStateLabel;
+    });
+    if (_l) return {
+      kind: "state",
+      id: _l.sid,
+      t: stateLabelText(_l, p.settings)
+    };
+  }
+  return null;
+}
+function setTextStyle(sel, patch) {
+  if (sel.kind === "custom") {
+    Actions.setLabel(sel.id, patch, {
+      undo: false
+    });
+    return;
+  }
+  var st = App.project.states[sel.id];
+  if (st) Actions.setState(sel.id, {
+    labelStyle: Object.assign({}, st.labelStyle || {}, patch)
+  }, {
+    undo: false
+  });
+}
+function selectText(kind, id) {
+  Actions.ui(kind === "custom" ? {
+    selLabel: id,
+    selStateLabel: null,
+    selFeatLabel: null,
+    card: {
+      kind: "label",
+      id: id
+    },
+    selection: []
+  } : {
+    selStateLabel: id,
+    selLabel: null,
+    selFeatLabel: null,
+    card: {
+      kind: "stateLabel",
+      id: id
+    },
+    selection: []
+  });
+}
+function clearTextSelection() {
+  var c = App.ui.card;
+  var textCard = c && (c.kind === "label" || c.kind === "stateLabel");
+  Actions.ui(Object.assign({
+    selLabel: null,
+    selFeatLabel: null,
+    selStateLabel: null
+  }, textCard ? {
+    card: null
+  } : {}));
+}
+function stateLabelText(l, settings) {
+  var ls = l.style || {};
+  var upper = ls.upper != null ? !!ls.upper : l.atlas;
+  var style = {
+    fill: settings.labelColor,
+    stroke: contrastBW(settings.labelColor),
+    cursor: "move",
+    textTransform: "none"
+  };
+  if (ls.shadow === false) style.filter = "none";
+  return {
+    key: "s" + l.sid,
+    x: l.x,
+    y: l.y,
+    text: l.name,
+    size: l.size,
+    angle: l.angle || 0,
+    curve: ls.curve || 0,
+    spacing: l.spacing || 0,
+    italic: !!ls.italic,
+    upper: upper,
+    weight: l.atlas ? 700 : 600,
+    font: l.atlas ? COUNTRY_FONT : "var(--font-ui)",
+    className: l.atlas ? "country-label" : "country-label plain",
+    halo: ls.halo != null ? l.size * ls.halo : Math.max(0.5, l.size * 0.13),
+    haloColor: style.stroke,
+    shadow: !!ls.shadow && !l.atlas,
+    style: style,
+    attrs: {
+      "data-slabel": l.sid
+    }
+  };
+}
+
 // ---------- state label computation ----------
 // Atlas-style country labels that STAY INSIDE their territory:
 //  1) collect owned regions per country;
@@ -406,7 +651,8 @@ function computeStateLabels(project, basemap) {
         angle: angle,
         spacing: spacing,
         flag: st.flag,
-        atlas: project.settings.labelAtlas !== false
+        atlas: project.settings.labelAtlas !== false,
+        style: ls
       });
     },
     _ret;
@@ -515,11 +761,11 @@ function MapView() {
     if (zoomRef.current) zoomRef.current.setAttribute("transform", "translate(".concat(v.x, ",").concat(v.y, ") scale(").concat(v.k, ")"));
     if (zoomTextRef.current) zoomTextRef.current.textContent = Math.round(v.k * 100) + "%";
     if (window.World && World.active()) World.place(svgRef.current, v);
-    var ends = svgRef.current && svgRef.current.querySelector("#river-ends");
-    if (ends) {
+    var handles = svgRef.current && svgRef.current.querySelectorAll("#river-ends [data-rpx], #label-handles [data-rpx]");
+    if (handles && handles.length) {
       var ctm = svgRef.current.getScreenCTM();
       var per = v.k * (ctm && ctm.a || 1); // screen px per map unit
-      var _iterator2 = _createForOfIteratorHelper(ends.querySelectorAll("[data-rpx]")),
+      var _iterator2 = _createForOfIteratorHelper(handles),
         _step2;
       try {
         for (_iterator2.s(); !(_step2 = _iterator2.n()).done;) {
@@ -851,10 +1097,13 @@ function MapView() {
           App.emit();
         } else if (g0 && g0.mode === "paint") {
           young ? Actions.cancelStroke() : Actions.endStroke();
+        } else if (g0 && (g0.mode === "label" || g0.mode === "lhandle")) {
+          dragLabel.current = null;
+          Actions.endStroke();
         }
-        var _ref3 = _toConsumableArray(touches.current.values()),
-          a = _ref3[0],
-          b = _ref3[1];
+        var _ref4 = _toConsumableArray(touches.current.values()),
+          a = _ref4[0],
+          b = _ref4[1];
         gesture.current = {
           mode: "pinch",
           dist: Math.hypot(a[0] - b[0], a[1] - b[1]),
@@ -868,8 +1117,10 @@ function MapView() {
     }
     var rid = e.target.dataset ? e.target.dataset.id : null;
     var regId = e.target.dataset ? e.target.dataset.regionId : null;
-    var lbl = e.target.dataset ? e.target.dataset.label : null;
-    var slbl = e.target.dataset ? e.target.dataset.slabel : null;
+    var lblEl = e.target.closest ? e.target.closest("[data-label]") : null;
+    var slblEl = e.target.closest ? e.target.closest("[data-slabel]") : null;
+    var lbl = lblEl ? lblEl.getAttribute("data-label") : null;
+    var slbl = !lbl && slblEl ? slblEl.getAttribute("data-slabel") : null;
     var flbl = e.target.dataset ? e.target.dataset.flabel : null;
     var _clientToViewbox5 = clientToViewbox(e),
       _clientToViewbox6 = _slicedToArray(_clientToViewbox5, 2),
@@ -900,6 +1151,36 @@ function MapView() {
         } catch (err) {}
       }
       e.stopPropagation();
+      return;
+    }
+    // ---- the turn / bend handles of the selected label or country name ----
+    var lhEl = e.target.closest ? e.target.closest("[data-lhandle]") : null;
+    if (lhEl && e.button === 0) {
+      var sel = selectedText();
+      if (sel) {
+        Actions.beginStroke();
+        gesture.current = {
+          mode: "lhandle",
+          which: lhEl.getAttribute("data-lhandle"),
+          pointerId: e.pointerId,
+          sel: sel
+        };
+        try {
+          svgRef.current.setPointerCapture(e.pointerId);
+        } catch (err) {}
+        e.stopPropagation();
+        return;
+      }
+    }
+    // ---- a finger tap on a label or a country name selects it, a finger drag pans ----
+    if (fingerNav && (lbl || slbl) && !App.ui.roadFrom) {
+      gesture.current = {
+        mode: "lbltap",
+        kind: lbl ? "custom" : "state",
+        id: lbl || slbl,
+        vx: vx,
+        vy: vy
+      };
       return;
     }
     // ---- places (cities, fortresses…) ----
@@ -1078,7 +1359,7 @@ function MapView() {
       e.stopPropagation();
       return;
     }
-    if (tool === "select" && (lbl || slbl)) {
+    if ((tool === "select" || tool === "label") && (lbl || slbl)) {
       dragLabel.current = {
         kind: lbl ? "custom" : "state",
         id: lbl || slbl,
@@ -1096,9 +1377,10 @@ function MapView() {
         dragLabel.current.orig = [l.x, l.y];
       }
       gesture.current = {
-        mode: "label"
+        mode: "label",
+        vx: vx,
+        vy: vy
       };
-      Actions.beginStroke();
       e.stopPropagation();
       return;
     }
@@ -1141,9 +1423,9 @@ function MapView() {
         clearTimeout(longPressRef.current);
       }
       if (g && g.mode === "pinch" && touches.current.size >= 2) {
-        var _ref4 = _toConsumableArray(touches.current.values()),
-          a = _ref4[0],
-          b = _ref4[1];
+        var _ref5 = _toConsumableArray(touches.current.values()),
+          a = _ref5[0],
+          b = _ref5[1];
         var dist = Math.hypot(a[0] - b[0], a[1] - b[1]);
         var mid = clientToViewbox({
           clientX: (a[0] + b[0]) / 2,
@@ -1356,15 +1638,81 @@ function MapView() {
       }
       return;
     }
-    if (g.mode === "label" && dragLabel.current) {
+    if (g.mode === "lbltap") {
+      var _clientToViewbox9 = clientToViewbox(e),
+        _clientToViewbox0 = _slicedToArray(_clientToViewbox9, 2),
+        _vx = _clientToViewbox0[0],
+        _vy = _clientToViewbox0[1];
+      if (Math.hypot(_vx - g.vx, _vy - g.vy) > 5) {
+        gesture.current = {
+          mode: "panning",
+          vx: g.vx,
+          vy: g.vy,
+          lx: _vx,
+          ly: _vy,
+          panOk: true
+        };
+        svgRef.current.closest(".map-stage").classList.add("panning");
+      }
+      return;
+    }
+    if (g.mode === "lhandle") {
       var _clientToMap1 = clientToMap(e),
         _clientToMap10 = _slicedToArray(_clientToMap1, 2),
         _mx5 = _clientToMap10[0],
         _my5 = _clientToMap10[1];
+      var tx = g.sel.t;
+      var geo = textHandleGeo(tx);
+      var patch;
+      if (g.which === "turn") {
+        var a0 = Math.atan2(geo.turnOff[1], geo.turnOff[0]);
+        var ang = (Math.atan2(_my5 - tx.y, _mx5 - tx.x) - a0) * 180 / Math.PI;
+        ang = (ang % 360 + 540) % 360 - 180;
+        var snap = Math.round(ang / 15) * 15;
+        if (Math.abs(ang - snap) < 4) ang = snap;
+        patch = {
+          angle: Math.round(ang)
+        };
+      } else {
+        var _a = (tx.angle || 0) * Math.PI / 180;
+        var ly = -(_mx5 - tx.x) * Math.sin(_a) + (_my5 - tx.y) * Math.cos(_a);
+        var c = (-ly - tx.size * 1.3) / Math.max(1, geo.w * ARC_SAG);
+        c = Math.max(-1, Math.min(1, c));
+        if (Math.abs(c) < 0.06) c = 0;
+        patch = {
+          curve: Math.round(c * 100) / 100
+        };
+      }
+      g.pending = patch;
+      if (!g.raf) {
+        g.raf = true;
+        requestAnimationFrame(function () {
+          g.raf = false;
+          if (g.pending) {
+            setTextStyle(g.sel, g.pending);
+            g.pending = null;
+          }
+        });
+      }
+      return;
+    }
+    if (g.mode === "label" && dragLabel.current) {
+      var _clientToMap11 = clientToMap(e),
+        _clientToMap12 = _slicedToArray(_clientToMap11, 2),
+        _mx6 = _clientToMap12[0],
+        _my6 = _clientToMap12[1];
       var dl = dragLabel.current;
+      if (!dl.moved) {
+        var _clientToViewbox1 = clientToViewbox(e),
+          _clientToViewbox10 = _slicedToArray(_clientToViewbox1, 2),
+          _vx2 = _clientToViewbox10[0],
+          _vy2 = _clientToViewbox10[1];
+        if (Math.hypot(_vx2 - g.vx, _vy2 - g.vy) < 3) return; // a tap, not a drag yet
+        Actions.beginStroke();
+      }
       dl.moved = true;
-      var _dx = _mx5 - dl.start[0],
-        _dy = _my5 - dl.start[1];
+      var _dx = _mx6 - dl.start[0],
+        _dy = _my6 - dl.start[1];
       if (dl.kind === "custom") {
         Actions.setLabel(dl.id, {
           x: dl.orig[0] + _dx,
@@ -1397,43 +1745,43 @@ function MapView() {
       return;
     }
     if (g.mode === "marquee") {
-      var _clientToViewbox9 = clientToViewbox(e),
-        _clientToViewbox0 = _slicedToArray(_clientToViewbox9, 2),
-        _vx = _clientToViewbox0[0],
-        _vy = _clientToViewbox0[1];
+      var _clientToViewbox11 = clientToViewbox(e),
+        _clientToViewbox12 = _slicedToArray(_clientToViewbox11, 2),
+        _vx3 = _clientToViewbox12[0],
+        _vy3 = _clientToViewbox12[1];
       var _r2 = marqueeRef.current;
       if (_r2) {
         var _v = view.current;
-        var x = Math.min(g.x0, _vx),
-          y = Math.min(g.y0, _vy);
+        var x = Math.min(g.x0, _vx3),
+          y = Math.min(g.y0, _vy3);
         _r2.setAttribute("x", (x - _v.x) / _v.k);
         _r2.setAttribute("y", (y - _v.y) / _v.k);
-        _r2.setAttribute("width", Math.abs(_vx - g.x0) / _v.k);
-        _r2.setAttribute("height", Math.abs(_vy - g.y0) / _v.k);
+        _r2.setAttribute("width", Math.abs(_vx3 - g.x0) / _v.k);
+        _r2.setAttribute("height", Math.abs(_vy3 - g.y0) / _v.k);
         _r2.style.display = "block";
-        g.x1 = _vx;
-        g.y1 = _vy;
+        g.x1 = _vx3;
+        g.y1 = _vy3;
       }
       return;
     }
     if (g.mode === "down" || g.mode === "panning") {
-      var _clientToViewbox1 = clientToViewbox(e),
-        _clientToViewbox10 = _slicedToArray(_clientToViewbox1, 2),
-        _vx2 = _clientToViewbox10[0],
-        _vy2 = _clientToViewbox10[1];
-      var _dist = Math.hypot(_vx2 - g.vx, _vy2 - g.vy);
+      var _clientToViewbox13 = clientToViewbox(e),
+        _clientToViewbox14 = _slicedToArray(_clientToViewbox13, 2),
+        _vx4 = _clientToViewbox14[0],
+        _vy4 = _clientToViewbox14[1];
+      var _dist = Math.hypot(_vx4 - g.vx, _vy4 - g.vy);
       if (g.mode === "down" && _dist > 4 && g.panOk) {
         g.mode = "panning";
-        g.lx = _vx2;
-        g.ly = _vy2;
+        g.lx = _vx4;
+        g.ly = _vy4;
         svgRef.current.closest(".map-stage").classList.add("panning");
       }
       if (g.mode === "panning") {
         var _g$lx, _g$ly;
         var _v2 = view.current;
-        setView(_v2.x + (_vx2 - ((_g$lx = g.lx) !== null && _g$lx !== void 0 ? _g$lx : g.vx)), _v2.y + (_vy2 - ((_g$ly = g.ly) !== null && _g$ly !== void 0 ? _g$ly : g.vy)), _v2.k);
-        g.lx = _vx2;
-        g.ly = _vy2;
+        setView(_v2.x + (_vx4 - ((_g$lx = g.lx) !== null && _g$lx !== void 0 ? _g$lx : g.vx)), _v2.y + (_vy4 - ((_g$ly = g.ly) !== null && _g$ly !== void 0 ? _g$ly : g.vy)), _v2.k);
+        g.lx = _vx4;
+        g.ly = _vy4;
       }
     }
   }, [clientToViewbox, clientToMap, paintRegion, setView]);
@@ -1473,6 +1821,19 @@ function MapView() {
         World.endEditCancel();
       }
       App.emit();
+      return;
+    }
+    if (g && g.mode === "lhandle") {
+      if (e.type === "pointerleave" && svgRef.current && svgRef.current.hasPointerCapture && svgRef.current.hasPointerCapture(e.pointerId)) return;
+      gesture.current = null;
+      try {
+        svgRef.current.releasePointerCapture(e.pointerId);
+      } catch (err) {}
+      if (g.pending) {
+        setTextStyle(g.sel, g.pending);
+        g.pending = null;
+      }
+      Actions.endStroke();
       return;
     }
     if (g && g.mode === "world") {
@@ -1535,10 +1896,10 @@ function MapView() {
       var k = view.current.k;
       if (e.type !== "pointerleave") {
         // the release point ends the stroke
-        var _clientToMap11 = clientToMap(e),
-          _clientToMap12 = _slicedToArray(_clientToMap11, 2),
-          mx = _clientToMap12[0],
-          my = _clientToMap12[1];
+        var _clientToMap13 = clientToMap(e),
+          _clientToMap14 = _slicedToArray(_clientToMap13, 2),
+          mx = _clientToMap14[0],
+          my = _clientToMap14[1];
         var prev = gd.pts[gd.pts.length - 1];
         var step = Math.hypot(prev[0] - mx, prev[1] - my);
         if (step > 0.5 / k) {
@@ -1573,20 +1934,21 @@ function MapView() {
       App.emit();
       return;
     }
+    if (g.mode === "lbltap") {
+      selectText(g.kind, g.id);
+      return;
+    }
     if (g.mode === "label") {
       var dl = dragLabel.current;
       dragLabel.current = null;
-      Actions.endStroke();
-      if (dl && !dl.moved && dl.kind === "custom") {
-        Actions.ui({
-          selLabel: dl.id,
-          panel: "region",
-          selection: []
-        });
+      if (dl && (dl.moved || dl.kind === "feat")) Actions.endStroke();
+      if (dl && !dl.moved && (dl.kind === "custom" || dl.kind === "state")) {
+        selectText(dl.kind, dl.id);
       } else if (dl && !dl.moved && dl.kind === "feat") {
         Actions.ui({
           selFeatLabel: dl.id,
           selLabel: null,
+          selStateLabel: null,
           panel: "region",
           selection: []
         });
@@ -1626,17 +1988,15 @@ function MapView() {
     if (g.mode === "down") {
       var tool = g.tool;
       if (tool === "label") {
-        var _clientToMap13 = clientToMap(e),
-          _clientToMap14 = _slicedToArray(_clientToMap13, 2),
-          _mx6 = _clientToMap14[0],
-          _my6 = _clientToMap14[1];
-        var id = Actions.addLabel(_mx6, _my6);
+        var _clientToMap15 = clientToMap(e),
+          _clientToMap16 = _slicedToArray(_clientToMap15, 2),
+          _mx7 = _clientToMap16[0],
+          _my7 = _clientToMap16[1];
+        var id = Actions.addLabel(_mx7, _my7);
         Actions.ui({
-          selLabel: id,
-          panel: "region",
-          selection: [],
           tool: "select"
         });
+        selectText("custom", id);
         return;
       }
       if (tool === "fill" && g.rid) {
@@ -1646,12 +2006,12 @@ function MapView() {
       if ((tool === "select" || tool === "pan") && window.World && World.active()) {
         // a river under the tap (generous finger tolerance) opens its card
         var _k = view.current.k;
-        var _clientToMap15 = clientToMap(e),
-          _clientToMap16 = _slicedToArray(_clientToMap15, 2),
-          _mx7 = _clientToMap16[0],
-          _my7 = _clientToMap16[1];
+        var _clientToMap17 = clientToMap(e),
+          _clientToMap18 = _slicedToArray(_clientToMap17, 2),
+          _mx8 = _clientToMap18[0],
+          _my8 = _clientToMap18[1];
         var tolData = (g.finger || e.pointerType === "touch" ? 16 : 8) / Math.max(0.0001, _k * World.mapUnitsPerCell() * (svgRef.current.getScreenCTM().a || 1));
-        var rv = World.preview ? null : World.riverAt(World.mapToGrid([_mx7, _my7]), tolData);
+        var rv = World.preview ? null : World.riverAt(World.mapToGrid([_mx8, _my8]), tolData);
         if (rv) {
           Actions.ui({
             card: {
@@ -1670,25 +2030,16 @@ function MapView() {
         if (App.ui.selectMode === "region") {
           var regId = g.regId || provRegionRef.current[g.rid];
           if (regId) {
-            Actions.ui({
-              selLabel: null,
-              selFeatLabel: null
-            });
+            clearTextSelection();
             Actions.selectRegions([regId], g.shift);
           } else if (!g.shift) {
             Actions.clearRegionSelection();
           }
         } else if (g.rid) {
-          Actions.ui({
-            selLabel: null,
-            selFeatLabel: null
-          });
+          clearTextSelection();
           Actions.select([g.rid], g.shift);
         } else if (!g.shift) {
-          Actions.ui({
-            selLabel: null,
-            selFeatLabel: null
-          });
+          clearTextSelection();
           Actions.select([], false);
         }
       }
@@ -1760,10 +2111,10 @@ function MapView() {
     };
     for (var rid in regions) consider(effOf(rid));
     for (var gid in project.groups || {}) consider(project.groups[gid]);
-    return _toConsumableArray(map.entries()).map(function (_ref5) {
-      var _ref6 = _slicedToArray(_ref5, 2),
-        id = _ref6[0],
-        v = _ref6[1];
+    return _toConsumableArray(map.entries()).map(function (_ref6) {
+      var _ref7 = _slicedToArray(_ref6, 2),
+        id = _ref7[0],
+        v = _ref7[1];
       return {
         id: id,
         colors: v.colors,
@@ -1774,6 +2125,7 @@ function MapView() {
   var stateLabels = useMemo(function () {
     return ready ? computeStateLabels(project, bm) : [];
   }, [App.version, ready]);
+  textSel.stateLabels = stateLabels;
 
   // named-autonomy overlays: union each autonomy's regions into one outline (same
   // topology-independent approach as the country border) + a label anchor. Works
@@ -2511,9 +2863,8 @@ function MapView() {
     }, "\u2605");
   }), ready && settings.showStateLabels && stateLabels.map(function (l) {
     var flagW = l.size * 1.4;
-    return /*#__PURE__*/React.createElement("g", {
-      key: "sl" + l.sid,
-      transform: "rotate(".concat(l.angle || 0, " ").concat(l.x, " ").concat(l.y, ")")
+    return /*#__PURE__*/React.createElement(React.Fragment, {
+      key: "sl" + l.sid
     }, settings.showFlags && l.flag && /*#__PURE__*/React.createElement("image", {
       "data-slabel": l.sid,
       href: l.flag,
@@ -2522,44 +2873,18 @@ function MapView() {
       width: flagW,
       height: flagW * 0.62,
       preserveAspectRatio: "xMidYMid slice",
+      transform: l.angle ? "rotate(".concat(l.angle, " ").concat(l.x, " ").concat(l.y, ")") : undefined,
       style: {
         cursor: "move"
       }
-    }), /*#__PURE__*/React.createElement("text", {
-      "data-slabel": l.sid,
-      className: l.atlas ? "country-label" : "country-label plain",
-      x: l.x,
-      y: l.y,
-      textAnchor: "middle",
-      fontSize: l.size,
-      strokeWidth: Math.max(0.5, l.size * 0.13),
-      style: {
-        fill: settings.labelColor,
-        stroke: contrastBW(settings.labelColor),
-        letterSpacing: (l.spacing || 0) + "px",
-        cursor: "move"
-      }
-    }, l.name));
+    }), /*#__PURE__*/React.createElement(MapText, {
+      t: stateLabelText(l, settings)
+    }));
   }), ready && project.labels.map(function (l) {
-    return /*#__PURE__*/React.createElement("text", {
+    return /*#__PURE__*/React.createElement(MapText, {
       key: l.id,
-      "data-label": l.id,
-      x: l.x,
-      y: l.y,
-      textAnchor: "middle",
-      fontSize: l.size,
-      fill: l.color || settings.labelColor,
-      fontWeight: l.bold ? 700 : 400,
-      stroke: settings.sea,
-      strokeWidth: l.size * 0.05,
-      paintOrder: "stroke",
-      style: {
-        cursor: "move",
-        fontFamily: settings.labelFont,
-        userSelect: "none",
-        outline: App.ui.selLabel === l.id ? "1px dashed #ff9f2e" : "none"
-      }
-    }, l.text);
+      t: freeLabelText(l, settings)
+    });
   })), App.ui.geomDraw && App.ui.geomDraw.pts.length > 0 && function () {
     var k = view.current.k;
     var pts = App.ui.geomDraw.pts;
@@ -2716,6 +3041,61 @@ function MapView() {
       id: "river-ends",
       "data-export-skip": "1"
     }, handle("source", rv.pts[0], "#3a9a5b"), handle("mouth", rv.pts[rv.pts.length - 1], "#1f5fa8"));
+  }(), ready && !App.ui.present && (App.ui.tool === "select" || App.ui.tool === "label") && function () {
+    var sel = selectedText();
+    if (!sel) return null;
+    var tx = sel.t,
+      geo = textHandleGeo(tx);
+    var ctm = svgRef.current && svgRef.current.getScreenCTM();
+    var per = view.current.k * (ctm && ctm.a || 1);
+    var handle = function handle(which, pt, color) {
+      return /*#__PURE__*/React.createElement("g", {
+        key: which,
+        "data-lhandle": which,
+        className: "label-handle"
+      }, /*#__PURE__*/React.createElement("circle", {
+        "data-rpx": "22",
+        cx: pt[0],
+        cy: pt[1],
+        r: 22 / per,
+        fill: "#000000",
+        fillOpacity: "0.001"
+      }), /*#__PURE__*/React.createElement("circle", {
+        "data-rpx": "8",
+        cx: pt[0],
+        cy: pt[1],
+        r: 8 / per,
+        fill: color,
+        stroke: "#ffffff",
+        strokeWidth: "2",
+        vectorEffect: "non-scaling-stroke"
+      }));
+    };
+    var curved = tx.curve && Math.abs(tx.curve) > 0.02;
+    return /*#__PURE__*/React.createElement("g", {
+      id: "label-handles",
+      "data-export-skip": "1"
+    }, /*#__PURE__*/React.createElement("g", {
+      transform: tx.angle ? "rotate(".concat(tx.angle, " ").concat(tx.x, " ").concat(tx.y, ")") : undefined,
+      pointerEvents: "none"
+    }, curved ? /*#__PURE__*/React.createElement("path", {
+      d: mapTextArc(tx.x, tx.y, geo.w, tx.curve, true),
+      fill: "none",
+      stroke: "#ff9f2e",
+      strokeWidth: "1.2",
+      strokeDasharray: "5 4",
+      vectorEffect: "non-scaling-stroke"
+    }) : /*#__PURE__*/React.createElement("rect", {
+      x: tx.x + geo.frame[0][0],
+      y: tx.y + geo.frame[0][1],
+      width: geo.frame[1][0] - geo.frame[0][0],
+      height: geo.frame[1][1] - geo.frame[0][1],
+      fill: "none",
+      stroke: "#ff9f2e",
+      strokeWidth: "1.2",
+      strokeDasharray: "5 4",
+      vectorEffect: "non-scaling-stroke"
+    })), handle("turn", geo.turn, "#ff9f2e"), handle("bend", geo.bend, "#2f7fd0"));
   }(), /*#__PURE__*/React.createElement("rect", {
     ref: marqueeRef,
     "data-export-skip": "1",

@@ -1458,6 +1458,9 @@ function WorldCard() {
   if (card.kind === "object" && window.ObjectCard) return /*#__PURE__*/React.createElement(ObjectCard, {
     id: card.id
   });
+  if ((card.kind === "label" || card.kind === "stateLabel") && window.LabelCard) return /*#__PURE__*/React.createElement(LabelCard, {
+    card: card
+  });
   return null;
 }
 function AtlasModal() {

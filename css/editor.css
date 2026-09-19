@@ -767,6 +767,9 @@ button, .chip, .state-row, .menu-item { touch-action: manipulation; }
 .card-ends-text { font-size: 12px; line-height: 1.35; color: var(--text-dim); }
 .card-ends .btn { align-self: flex-start; }
 #river-ends .river-end { cursor: grab; touch-action: none; }
+#label-handles .label-handle { cursor: grab; touch-action: none; }
+.text-style-chips { flex-wrap: wrap; }
+.label-card .card-fields-col { display: flex; flex-direction: column; gap: 8px; }
 @media (pointer: coarse) {
   .card-select { padding: 8px 10px; font-size: 16px; }
 }

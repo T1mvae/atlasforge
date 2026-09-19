@@ -63,7 +63,9 @@ function AppRoot() {
         }
         if (App.ui.card) {
           Actions.ui({
-            card: null
+            card: null,
+            selLabel: null,
+            selStateLabel: null
           });
           return;
         }
@@ -92,7 +94,8 @@ function AppRoot() {
         }
         Actions.ui({
           selLabel: null,
-          selFeatLabel: null
+          selFeatLabel: null,
+          selStateLabel: null
         });
         Actions.clearRegionSelection();
         Actions.select([], false);
@@ -170,7 +173,8 @@ function AppRoot() {
         if (App.ui.selLabel) {
           Actions.deleteLabel(App.ui.selLabel);
           Actions.ui({
-            selLabel: null
+            selLabel: null,
+            card: null
           });
           return;
         }

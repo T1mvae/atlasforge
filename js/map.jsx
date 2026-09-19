@@ -185,6 +185,137 @@ const RegionShape = React.memo(function RegionShape({ id, d, fill, fillOpacity, 
   );
 });
 
+// ---------- map text: rotation, arcs, letter spacing, italic, capitals, halo, shadow ----------
+// canvas can't read CSS variables: resolve the UI font stack before measuring
+function resolveFont(ff) {
+  if (ff && ff.indexOf("var(--font-ui)") >= 0) {
+    const v = getComputedStyle(document.documentElement).getPropertyValue("--font-ui").trim();
+    return ff.replace("var(--font-ui)", v || "sans-serif");
+  }
+  return ff || "sans-serif";
+}
+const COUNTRY_FONT = 'Georgia, "Times New Roman", "Noto Serif", "Liberation Serif", serif';
+const textMeasure = { ctx: null, cache: new Map() };
+// width of a line of text in map units (letter spacing ls in map units too)
+function measureMapText(str, size, font, weight, italic, ls) {
+  const key = str + "|" + size + "|" + font + "|" + weight + "|" + (italic ? 1 : 0) + "|" + ls;
+  let w = textMeasure.cache.get(key);
+  if (w != null) return w;
+  if (!textMeasure.ctx) textMeasure.ctx = document.createElement("canvas").getContext("2d");
+  const ctx = textMeasure.ctx;
+  // measure at 100 px and scale: canvases round small font sizes
+  ctx.font = (italic ? "italic " : "") + (weight || 400) + " 100px " + resolveFont(font);
+  w = ctx.measureText(str).width * size / 100 + (ls || 0) * Math.max(0, str.length - 1);
+  if (textMeasure.cache.size > 2000) textMeasure.cache.clear();
+  textMeasure.cache.set(key, w);
+  return w;
+}
+// the circle arc a curved line of text sits on: its middle at (x, y), bent by curve
+// (−1…1; > 0 an arch, < 0 a bowl), running on past both ends of the text so no letter falls off
+const ARC_SAG = 0.32; // sagitta over the text width at curve 1
+// tight: only as long as the text (the selection frame)
+function mapTextArc(x, y, width, curve, tight) {
+  const half = Math.max(1, width) / 2;
+  const s = Math.abs(curve) * Math.max(1, width) * ARC_SAG;
+  const R = (half * half + s * s) / (2 * s);
+  const phi = Math.min(Math.PI * 0.98, tight ? half / R : (half / R) * 1.35 + 0.12);
+  const up = curve > 0;
+  const cy = up ? y + R : y - R;
+  const dx = R * Math.sin(phi), ey = up ? cy - R * Math.cos(phi) : cy + R * Math.cos(phi);
+  return `M${(x - dx).toFixed(2)},${ey.toFixed(2)} A${R.toFixed(2)},${R.toFixed(2)} 0 ${phi > Math.PI / 2 ? 1 : 0} ${up ? 1 : 0} ${(x + dx).toFixed(2)},${ey.toFixed(2)}`;
+}
+// one line of map text. t: { key, x, y, text, size, angle, curve, spacing (map units),
+// italic, upper, bold (weight), fill, font, halo (stroke width), haloColor, shadow,
+// className, style, attrs (data-* on the group) }
+function MapText({ t: tx }) {
+  const str = tx.upper ? String(tx.text).toUpperCase() : String(tx.text);
+  const curved = tx.curve && Math.abs(tx.curve) > 0.02;
+  const pathId = "tp-" + tx.key;
+  const common = {
+    className: tx.className, fontSize: tx.size, fill: tx.fill, fontWeight: tx.weight, fontStyle: tx.italic ? "italic" : undefined,
+    stroke: tx.halo > 0 ? tx.haloColor : undefined, strokeWidth: tx.halo > 0 ? tx.halo : undefined, paintOrder: "stroke",
+    filter: tx.shadow ? "url(#lblShadow)" : undefined,
+    style: Object.assign({ fontFamily: tx.font, userSelect: "none", letterSpacing: (tx.spacing || 0) + "px" }, tx.style || {})
+  };
+  const w = curved ? measureMapText(str, tx.size, tx.font, tx.weight, tx.italic, tx.spacing) : 0;
+  return (
+    <g transform={tx.angle ? `rotate(${tx.angle} ${tx.x} ${tx.y})` : undefined} {...(tx.attrs || {})}>
+      {curved && <path id={pathId} d={mapTextArc(tx.x, tx.y, w, tx.curve)} fill="none" stroke="none"></path>}
+      {curved
+        ? <text {...common} textAnchor="middle"><textPath href={"#" + pathId} xlinkHref={"#" + pathId} startOffset="50%">{str}</textPath></text>
+        : <text {...common} x={tx.x} y={tx.y} textAnchor="middle">{str}</text>}
+    </g>
+  );
+}
+// what a free label or a country name looks like, as MapText input
+function freeLabelText(l, settings) {
+  const size = l.size || 18;
+  return {
+    key: "l" + l.id, x: l.x, y: l.y, text: l.text || "", size, angle: l.angle || 0, curve: l.curve || 0,
+    spacing: (l.spacing || 0) * size, italic: !!l.italic, upper: !!l.upper, weight: l.bold ? 700 : 400,
+    fill: l.color || settings.labelColor, font: l.font || settings.labelFont,
+    halo: size * (l.halo != null ? l.halo : 0.05), haloColor: l.haloColor || settings.sea, shadow: !!l.shadow,
+    attrs: { "data-label": l.id }, style: { cursor: "move" }
+  };
+}
+// where the frame and the two handles of a selected line of text go (map units)
+function textHandleGeo(tx) {
+  const str = tx.upper ? String(tx.text).toUpperCase() : String(tx.text);
+  const w = measureMapText(str, tx.size, tx.font, tx.weight, tx.italic, tx.spacing);
+  const a = (tx.angle || 0) * Math.PI / 180, ca = Math.cos(a), sa = Math.sin(a);
+  const loc = (lx, ly) => [tx.x + lx * ca - ly * sa, tx.y + lx * sa + ly * ca];
+  const turnOff = [w / 2 + tx.size * 0.8, -tx.size * 0.35];
+  return {
+    w, loc, turnOff,
+    turn: loc(turnOff[0], turnOff[1]),
+    bend: loc(0, -tx.size * 1.3 - (tx.curve || 0) * w * ARC_SAG),
+    frame: [[-w / 2 - tx.size * 0.25, -tx.size * 0.95], [w / 2 + tx.size * 0.25, tx.size * 0.3]]
+  };
+}
+// the selected free label or country name, and how to change it
+const textSel = { stateLabels: [] }; // the map keeps the latest computed country names here
+function selectedText() {
+  const p = App.project;
+  if (!p) return null;
+  if (App.ui.selLabel) {
+    const l = p.labels.find((x) => x.id === App.ui.selLabel);
+    if (l) return { kind: "custom", id: l.id, t: freeLabelText(l, p.settings) };
+  }
+  if (App.ui.selStateLabel) {
+    const l = textSel.stateLabels.find((x) => x.sid === App.ui.selStateLabel);
+    if (l) return { kind: "state", id: l.sid, t: stateLabelText(l, p.settings) };
+  }
+  return null;
+}
+function setTextStyle(sel, patch) {
+  if (sel.kind === "custom") { Actions.setLabel(sel.id, patch, { undo: false }); return; }
+  const st = App.project.states[sel.id];
+  if (st) Actions.setState(sel.id, { labelStyle: Object.assign({}, st.labelStyle || {}, patch) }, { undo: false });
+}
+function selectText(kind, id) {
+  Actions.ui(kind === "custom"
+    ? { selLabel: id, selStateLabel: null, selFeatLabel: null, card: { kind: "label", id }, selection: [] }
+    : { selStateLabel: id, selLabel: null, selFeatLabel: null, card: { kind: "stateLabel", id }, selection: [] });
+}
+function clearTextSelection() {
+  const c = App.ui.card;
+  const textCard = c && (c.kind === "label" || c.kind === "stateLabel");
+  Actions.ui(Object.assign({ selLabel: null, selFeatLabel: null, selStateLabel: null }, textCard ? { card: null } : {}));
+}
+function stateLabelText(l, settings) {
+  const ls = l.style || {};
+  const upper = ls.upper != null ? !!ls.upper : l.atlas;
+  const style = { fill: settings.labelColor, stroke: contrastBW(settings.labelColor), cursor: "move", textTransform: "none" };
+  if (ls.shadow === false) style.filter = "none";
+  return {
+    key: "s" + l.sid, x: l.x, y: l.y, text: l.name, size: l.size, angle: l.angle || 0, curve: ls.curve || 0,
+    spacing: l.spacing || 0, italic: !!ls.italic, upper, weight: l.atlas ? 700 : 600,
+    font: l.atlas ? COUNTRY_FONT : "var(--font-ui)", className: l.atlas ? "country-label" : "country-label plain",
+    halo: ls.halo != null ? l.size * ls.halo : Math.max(0.5, l.size * 0.13), haloColor: style.stroke,
+    shadow: !!ls.shadow && !l.atlas, style, attrs: { "data-slabel": l.sid }
+  };
+}
+
 // ---------- state label computation ----------
 // Atlas-style country labels that STAY INSIDE their territory:
 //  1) collect owned regions per country;
@@ -280,7 +411,7 @@ function computeStateLabels(project, basemap) {
     if (ls.angle != null) angle = +ls.angle;
     const off = st.labelOffset || [0, 0];
     out.push({ sid, name: st.name, x: ax + off[0], y: ay + off[1], size, angle, spacing,
-               flag: st.flag, atlas: project.settings.labelAtlas !== false });
+               flag: st.flag, atlas: project.settings.labelAtlas !== false, style: ls });
   }
   return out;
 }
@@ -375,11 +506,11 @@ function MapView() {
     if (zoomRef.current) zoomRef.current.setAttribute("transform", `translate(${v.x},${v.y}) scale(${v.k})`);
     if (zoomTextRef.current) zoomTextRef.current.textContent = Math.round(v.k * 100) + "%";
     if (window.World && World.active()) World.place(svgRef.current, v);
-    const ends = svgRef.current && svgRef.current.querySelector("#river-ends");
-    if (ends) {
+    const handles = svgRef.current && svgRef.current.querySelectorAll("#river-ends [data-rpx], #label-handles [data-rpx]");
+    if (handles && handles.length) {
       const ctm = svgRef.current.getScreenCTM();
       const per = v.k * ((ctm && ctm.a) || 1); // screen px per map unit
-      for (const el of ends.querySelectorAll("[data-rpx]")) el.setAttribute("r", (+el.getAttribute("data-rpx") / per).toFixed(3));
+      for (const el of handles) el.setAttribute("r", (+el.getAttribute("data-rpx") / per).toFixed(3));
     }
     // places keep a readable size at every zoom (no React render per zoom step)
     const og = svgRef.current && svgRef.current.querySelector("#objects");
@@ -598,6 +729,7 @@ function MapView() {
           App.emit();
         }
         else if (g0 && g0.mode === "paint") { young ? Actions.cancelStroke() : Actions.endStroke(); }
+        else if (g0 && (g0.mode === "label" || g0.mode === "lhandle")) { dragLabel.current = null; Actions.endStroke(); }
         const [a, b] = [...touches.current.values()];
         gesture.current = { mode: "pinch", dist: Math.hypot(a[0] - b[0], a[1] - b[1]), mid: clientToViewbox({ clientX: (a[0] + b[0]) / 2, clientY: (a[1] + b[1]) / 2 }) };
         return;
@@ -605,8 +737,10 @@ function MapView() {
     }
     const rid = e.target.dataset ? e.target.dataset.id : null;
     const regId = e.target.dataset ? e.target.dataset.regionId : null;
-    const lbl = e.target.dataset ? e.target.dataset.label : null;
-    const slbl = e.target.dataset ? e.target.dataset.slabel : null;
+    const lblEl = e.target.closest ? e.target.closest("[data-label]") : null;
+    const slblEl = e.target.closest ? e.target.closest("[data-slabel]") : null;
+    const lbl = lblEl ? lblEl.getAttribute("data-label") : null;
+    const slbl = !lbl && slblEl ? slblEl.getAttribute("data-slabel") : null;
     const flbl = e.target.dataset ? e.target.dataset.flabel : null;
     const [vx, vy] = clientToViewbox(e);
     const mapPt = clientToMap(e);
@@ -625,6 +759,23 @@ function MapView() {
         try { svgRef.current.setPointerCapture(e.pointerId); } catch (err) {}
       }
       e.stopPropagation();
+      return;
+    }
+    // ---- the turn / bend handles of the selected label or country name ----
+    const lhEl = e.target.closest ? e.target.closest("[data-lhandle]") : null;
+    if (lhEl && e.button === 0) {
+      const sel = selectedText();
+      if (sel) {
+        Actions.beginStroke();
+        gesture.current = { mode: "lhandle", which: lhEl.getAttribute("data-lhandle"), pointerId: e.pointerId, sel };
+        try { svgRef.current.setPointerCapture(e.pointerId); } catch (err) {}
+        e.stopPropagation();
+        return;
+      }
+    }
+    // ---- a finger tap on a label or a country name selects it, a finger drag pans ----
+    if (fingerNav && (lbl || slbl) && !App.ui.roadFrom) {
+      gesture.current = { mode: "lbltap", kind: lbl ? "custom" : "state", id: lbl || slbl, vx, vy };
       return;
     }
     // ---- places (cities, fortresses…) ----
@@ -726,7 +877,7 @@ function MapView() {
       e.stopPropagation();
       return;
     }
-    if (tool === "select" && (lbl || slbl)) {
+    if ((tool === "select" || tool === "label") && (lbl || slbl)) {
       dragLabel.current = { kind: lbl ? "custom" : "state", id: lbl || slbl, start: mapPt, moved: false, orig: null };
       if (slbl) {
         const st = App.project.states[slbl];
@@ -735,8 +886,7 @@ function MapView() {
         const l = App.project.labels.find((x) => x.id === lbl);
         dragLabel.current.orig = [l.x, l.y];
       }
-      gesture.current = { mode: "label" };
-      Actions.beginStroke();
+      gesture.current = { mode: "label", vx, vy };
       e.stopPropagation();
       return;
     }
@@ -907,9 +1057,49 @@ function MapView() {
       }
       return;
     }
+    if (g.mode === "lbltap") {
+      const [vx, vy] = clientToViewbox(e);
+      if (Math.hypot(vx - g.vx, vy - g.vy) > 5) {
+        gesture.current = { mode: "panning", vx: g.vx, vy: g.vy, lx: vx, ly: vy, panOk: true };
+        svgRef.current.closest(".map-stage").classList.add("panning");
+      }
+      return;
+    }
+    if (g.mode === "lhandle") {
+      const [mx, my] = clientToMap(e);
+      const tx = g.sel.t;
+      const geo = textHandleGeo(tx);
+      let patch;
+      if (g.which === "turn") {
+        const a0 = Math.atan2(geo.turnOff[1], geo.turnOff[0]);
+        let ang = (Math.atan2(my - tx.y, mx - tx.x) - a0) * 180 / Math.PI;
+        ang = ((ang % 360) + 540) % 360 - 180;
+        const snap = Math.round(ang / 15) * 15;
+        if (Math.abs(ang - snap) < 4) ang = snap;
+        patch = { angle: Math.round(ang) };
+      } else {
+        const a = (tx.angle || 0) * Math.PI / 180;
+        const ly = -(mx - tx.x) * Math.sin(a) + (my - tx.y) * Math.cos(a);
+        let c = (-ly - tx.size * 1.3) / Math.max(1, geo.w * ARC_SAG);
+        c = Math.max(-1, Math.min(1, c));
+        if (Math.abs(c) < 0.06) c = 0;
+        patch = { curve: Math.round(c * 100) / 100 };
+      }
+      g.pending = patch;
+      if (!g.raf) {
+        g.raf = true;
+        requestAnimationFrame(() => { g.raf = false; if (g.pending) { setTextStyle(g.sel, g.pending); g.pending = null; } });
+      }
+      return;
+    }
     if (g.mode === "label" && dragLabel.current) {
       const [mx, my] = clientToMap(e);
       const dl = dragLabel.current;
+      if (!dl.moved) {
+        const [vx, vy] = clientToViewbox(e);
+        if (Math.hypot(vx - g.vx, vy - g.vy) < 3) return; // a tap, not a drag yet
+        Actions.beginStroke();
+      }
       dl.moved = true;
       const dx = mx - dl.start[0], dy = my - dl.start[1];
       if (dl.kind === "custom") {
@@ -991,6 +1181,14 @@ function MapView() {
       App.emit();
       return;
     }
+    if (g && g.mode === "lhandle") {
+      if (e.type === "pointerleave" && svgRef.current && svgRef.current.hasPointerCapture && svgRef.current.hasPointerCapture(e.pointerId)) return;
+      gesture.current = null;
+      try { svgRef.current.releasePointerCapture(e.pointerId); } catch (err) {}
+      if (g.pending) { setTextStyle(g.sel, g.pending); g.pending = null; }
+      Actions.endStroke();
+      return;
+    }
     if (g && g.mode === "world") {
       if (e.type === "pointerleave" && svgRef.current && svgRef.current.hasPointerCapture && svgRef.current.hasPointerCapture(e.pointerId)) return;
       gesture.current = null;
@@ -1053,14 +1251,15 @@ function MapView() {
       App.emit();
       return;
     }
+    if (g.mode === "lbltap") { selectText(g.kind, g.id); return; }
     if (g.mode === "label") {
       const dl = dragLabel.current;
       dragLabel.current = null;
-      Actions.endStroke();
-      if (dl && !dl.moved && dl.kind === "custom") {
-        Actions.ui({ selLabel: dl.id, panel: "region", selection: [] });
+      if (dl && (dl.moved || dl.kind === "feat")) Actions.endStroke();
+      if (dl && !dl.moved && (dl.kind === "custom" || dl.kind === "state")) {
+        selectText(dl.kind, dl.id);
       } else if (dl && !dl.moved && dl.kind === "feat") {
-        Actions.ui({ selFeatLabel: dl.id, selLabel: null, panel: "region", selection: [] });
+        Actions.ui({ selFeatLabel: dl.id, selLabel: null, selStateLabel: null, panel: "region", selection: [] });
       }
       return;
     }
@@ -1088,7 +1287,8 @@ function MapView() {
       if (tool === "label") {
         const [mx, my] = clientToMap(e);
         const id = Actions.addLabel(mx, my);
-        Actions.ui({ selLabel: id, panel: "region", selection: [], tool: "select" });
+        Actions.ui({ tool: "select" });
+        selectText("custom", id);
         return;
       }
       if (tool === "fill" && g.rid) { fillByOwner(g.rid); return; }
@@ -1105,16 +1305,16 @@ function MapView() {
         if (App.ui.selectMode === "region") {
           const regId = g.regId || provRegionRef.current[g.rid];
           if (regId) {
-            Actions.ui({ selLabel: null, selFeatLabel: null });
+            clearTextSelection();
             Actions.selectRegions([regId], g.shift);
           } else if (!g.shift) {
             Actions.clearRegionSelection();
           }
         } else if (g.rid) {
-          Actions.ui({ selLabel: null, selFeatLabel: null });
+          clearTextSelection();
           Actions.select([g.rid], g.shift);
         } else if (!g.shift) {
-          Actions.ui({ selLabel: null, selFeatLabel: null });
+          clearTextSelection();
           Actions.select([], false);
         }
       }
@@ -1173,6 +1373,7 @@ function MapView() {
   }, [App.version]);
 
   const stateLabels = useMemo(() => (ready ? computeStateLabels(project, bm) : []), [App.version, ready]);
+  textSel.stateLabels = stateLabels;
 
   // named-autonomy overlays: union each autonomy's regions into one outline (same
   // topology-independent approach as the country border) + a label anchor. Works
@@ -1661,30 +1862,18 @@ function MapView() {
             {ready && settings.showStateLabels && stateLabels.map((l) => {
               const flagW = l.size * 1.4;
               return (
-                <g key={"sl" + l.sid} transform={`rotate(${l.angle || 0} ${l.x} ${l.y})`}>
+                <React.Fragment key={"sl" + l.sid}>
                   {settings.showFlags && l.flag && (
                     <image data-slabel={l.sid} href={l.flag} x={l.x - flagW / 2} y={l.y - l.size * 1.9}
                       width={flagW} height={flagW * 0.62} preserveAspectRatio="xMidYMid slice"
+                      transform={l.angle ? `rotate(${l.angle} ${l.x} ${l.y})` : undefined}
                       style={{ cursor: "move" }}></image>
                   )}
-                  <text data-slabel={l.sid}
-                    className={l.atlas ? "country-label" : "country-label plain"}
-                    x={l.x} y={l.y} textAnchor="middle" fontSize={l.size}
-                    strokeWidth={Math.max(0.5, l.size * 0.13)}
-                    style={{ fill: settings.labelColor, stroke: contrastBW(settings.labelColor), letterSpacing: (l.spacing || 0) + "px", cursor: "move" }}>
-                    {l.name}
-                  </text>
-                </g>
+                  <MapText t={stateLabelText(l, settings)}></MapText>
+                </React.Fragment>
               );
             })}
-            {ready && project.labels.map((l) => (
-              <text key={l.id} data-label={l.id} x={l.x} y={l.y} textAnchor="middle"
-                fontSize={l.size} fill={l.color || settings.labelColor}
-                fontWeight={l.bold ? 700 : 400} stroke={settings.sea} strokeWidth={l.size * 0.05} paintOrder="stroke"
-                style={{ cursor: "move", fontFamily: settings.labelFont, userSelect: "none", outline: App.ui.selLabel === l.id ? "1px dashed #ff9f2e" : "none" }}>
-                {l.text}
-              </text>
-            ))}
+            {ready && project.labels.map((l) => <MapText key={l.id} t={freeLabelText(l, settings)}></MapText>)}
           </g>
           {/* ---- manual edit overlays (split/draw preview, vertex editor) ---- */}
           {App.ui.geomDraw && App.ui.geomDraw.pts.length > 0 && (() => {
@@ -1757,6 +1946,33 @@ function MapView() {
               <g id="river-ends" data-export-skip="1">
                 {handle("source", rv.pts[0], "#3a9a5b")}
                 {handle("mouth", rv.pts[rv.pts.length - 1], "#1f5fa8")}
+              </g>
+            );
+          })()}
+          {/* ---- the selected label or country name: a frame, a turn handle and a bend handle ---- */}
+          {ready && !App.ui.present && (App.ui.tool === "select" || App.ui.tool === "label") && (() => {
+            const sel = selectedText();
+            if (!sel) return null;
+            const tx = sel.t, geo = textHandleGeo(tx);
+            const ctm = svgRef.current && svgRef.current.getScreenCTM();
+            const per = view.current.k * ((ctm && ctm.a) || 1);
+            const handle = (which, pt, color) => (
+              <g key={which} data-lhandle={which} className="label-handle">
+                <circle data-rpx="22" cx={pt[0]} cy={pt[1]} r={22 / per} fill="#000000" fillOpacity="0.001"></circle>
+                <circle data-rpx="8" cx={pt[0]} cy={pt[1]} r={8 / per} fill={color} stroke="#ffffff" strokeWidth="2" vectorEffect="non-scaling-stroke"></circle>
+              </g>
+            );
+            const curved = tx.curve && Math.abs(tx.curve) > 0.02;
+            return (
+              <g id="label-handles" data-export-skip="1">
+                <g transform={tx.angle ? `rotate(${tx.angle} ${tx.x} ${tx.y})` : undefined} pointerEvents="none">
+                  {curved
+                    ? <path d={mapTextArc(tx.x, tx.y, geo.w, tx.curve, true)} fill="none" stroke="#ff9f2e" strokeWidth="1.2" strokeDasharray="5 4" vectorEffect="non-scaling-stroke"></path>
+                    : <rect x={tx.x + geo.frame[0][0]} y={tx.y + geo.frame[0][1]} width={geo.frame[1][0] - geo.frame[0][0]} height={geo.frame[1][1] - geo.frame[0][1]}
+                        fill="none" stroke="#ff9f2e" strokeWidth="1.2" strokeDasharray="5 4" vectorEffect="non-scaling-stroke"></rect>}
+                </g>
+                {handle("turn", geo.turn, "#ff9f2e")}
+                {handle("bend", geo.bend, "#2f7fd0")}
               </g>
             );
           })()}

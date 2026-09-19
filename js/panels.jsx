@@ -659,31 +659,7 @@ function StateTab() {
 
       {/* ---- manual label overrides (auto placement is the default) ---- */}
       <div className="props-section-title">{t("label.section")}</div>
-      {(() => {
-        const lsv = s.labelStyle || {};
-        const setLS = (patch) => set({ labelStyle: Object.assign({}, lsv, patch) });
-        return (
-          <React.Fragment>
-            <Check label={t("label.hidden")} checked={!!lsv.hidden} onChange={(v) => setLS({ hidden: v })}></Check>
-            <Field label={t("label.size") + " — " + (lsv.size ? lsv.size : t("label.auto"))}>
-              <input type="range" className="range" min="0" max="36" step="1" value={lsv.size || 0} onChange={(e) => setLS({ size: +e.target.value || 0 })}></input>
-            </Field>
-            <Field label={t("label.rotation") + " — " + (lsv.angle != null ? lsv.angle + "°" : t("label.auto"))}>
-              <div className="field-row">
-                <input type="range" className="range" min="-180" max="180" step="1" value={lsv.angle != null ? lsv.angle : 0} onChange={(e) => setLS({ angle: +e.target.value })}></input>
-                {lsv.angle != null && <button className="btn outline" style={{ height: 22, fontSize: 10 }} onClick={() => setLS({ angle: null })}>{t("label.auto")}</button>}
-              </div>
-            </Field>
-            <Field label={t("label.spacing") + " — " + (lsv.spacing != null ? lsv.spacing : t("label.auto"))}>
-              <div className="field-row">
-                <input type="range" className="range" min="0" max="8" step="0.5" value={lsv.spacing != null ? lsv.spacing : 0} onChange={(e) => setLS({ spacing: +e.target.value })}></input>
-                {lsv.spacing != null && <button className="btn outline" style={{ height: 22, fontSize: 10 }} onClick={() => setLS({ spacing: null })}>{t("label.auto")}</button>}
-              </div>
-            </Field>
-            {s.labelOffset && <button className="btn outline" style={{ fontSize: 11 }} onClick={() => set({ labelOffset: null })}>{t("label.resetPos")}</button>}
-          </React.Fragment>
-        );
-      })()}
+      <StateLabelFields sid={sid}></StateLabelFields>
 
       <div className="props-section-title">{t("props.state")}</div>
       <Field label={t("f.capital")}>
@@ -714,25 +690,144 @@ function StateTab() {
   );
 }
 
-// ---------- Region tab (also label editor) ----------
-function LabelEditor({ id }) {
+// ---------- text look: size, turn, arc, letter spacing, bold, italic, capitals, halo, shadow ----------
+// v: the current values; set(patch, opts) writes them. kind "label" (a free label) or "state"
+// (a country name: size, turn and spacing may be "auto"). Dragging a slider is one undo step.
+function TextStyleFields({ v, set, kind, defaults }) {
+  const stroke = React.useRef(false);
+  const live = (patch) => {
+    if (!stroke.current) { Actions.beginStroke(); stroke.current = true; }
+    set(patch, { undo: false });
+  };
+  const done = () => { if (stroke.current) { Actions.endStroke(); stroke.current = false; } };
+  const slide = { onPointerUp: done, onPointerCancel: done, onBlur: done, onKeyUp: done };
+  const st = kind === "state";
+  const d = defaults || {};
+  const autoBtn = (key) => (st && v[key] != null
+    ? <button className="btn outline" style={{ height: 22, fontSize: 10 }} onClick={() => set({ [key]: null })}>{t("label.auto")}</button> : null);
+  const upperOn = v.upper != null ? !!v.upper : !!d.upper;
+  const shadowOn = v.shadow != null ? !!v.shadow : !!d.shadow;
+  const halo = v.halo != null ? +v.halo : d.halo;
+  const pct = (x) => Math.round(x * 100) + "%";
+  return (
+    <React.Fragment>
+      <Field label={t("label.size") + " — " + (v.size ? Math.round(v.size) : t("label.auto"))}>
+        <div className="field-row">
+          <input type="range" className="range" min={st ? 0 : 6} max={st ? 48 : 96} step="1" value={v.size || 0} {...slide}
+            onChange={(e) => live({ size: +e.target.value || (st ? null : 6) })}></input>
+          {autoBtn("size")}
+        </div>
+      </Field>
+      <Field label={t("label.rotation") + " — " + (v.angle != null ? v.angle + "°" : st ? t("label.auto") : "0°")}>
+        <div className="field-row">
+          <input type="range" className="range" min="-180" max="180" step="1" value={v.angle || 0} {...slide} onChange={(e) => live({ angle: +e.target.value })}></input>
+          {autoBtn("angle")}
+        </div>
+      </Field>
+      <Field label={t("label.curve") + " — " + (v.curve ? (v.curve > 0 ? "∩ " : "∪ ") + pct(Math.abs(v.curve)) : t("label.straight"))}>
+        <input type="range" className="range" min="-1" max="1" step="0.05" value={v.curve || 0} {...slide} onChange={(e) => live({ curve: +e.target.value || null })}></input>
+      </Field>
+      {st ? (
+        <Field label={t("label.spacing") + " — " + (v.spacing != null ? v.spacing : t("label.auto"))}>
+          <div className="field-row">
+            <input type="range" className="range" min="0" max="8" step="0.5" value={v.spacing != null ? v.spacing : 0} {...slide} onChange={(e) => live({ spacing: +e.target.value })}></input>
+            {autoBtn("spacing")}
+          </div>
+        </Field>
+      ) : (
+        <Field label={t("label.spacing") + " — " + pct(v.spacing || 0)}>
+          <input type="range" className="range" min="0" max="0.8" step="0.02" value={v.spacing || 0} {...slide} onChange={(e) => live({ spacing: +e.target.value || null })}></input>
+        </Field>
+      )}
+      <div className="chip-row text-style-chips">
+        {!st && <button className={"chip" + (v.bold ? " on" : "")} onClick={() => set({ bold: !v.bold })}><b>{t("label.bold")}</b></button>}
+        <button className={"chip" + (v.italic ? " on" : "")} onClick={() => set({ italic: v.italic ? null : true })}><i>{t("label.italic")}</i></button>
+        <button className={"chip" + (upperOn ? " on" : "")} onClick={() => set({ upper: !upperOn })}>{t("label.upper")}</button>
+        <button className={"chip" + (shadowOn ? " on" : "")} onClick={() => set({ shadow: !shadowOn })}>{t("label.shadow")}</button>
+      </div>
+      <Field label={t("label.halo") + " — " + pct(halo)}>
+        <input type="range" className="range" min="0" max="0.3" step="0.01" value={halo} {...slide} onChange={(e) => live({ halo: +e.target.value })}></input>
+      </Field>
+      {!st && (
+        <Field label={t("label.haloColor")}>
+          <div className="field-row">
+            <input type="color" className="color-input" value={v.haloColor || d.haloColor || "#ffffff"} onChange={(e) => set({ haloColor: e.target.value })}></input>
+            {v.haloColor && <button className="btn outline" style={{ height: 22, fontSize: 10 }} onClick={() => set({ haloColor: null })}>{t("label.auto")}</button>}
+          </div>
+        </Field>
+      )}
+    </React.Fragment>
+  );
+}
+
+// a free label: its text, colour and look
+function LabelFields({ id }) {
   const p = App.project;
   const l = p.labels.find((x) => x.id === id);
   if (!l) return null;
-  const set = (patch) => Actions.setLabel(id, patch, { undo: false });
+  const set = (patch, opts) => Actions.setLabel(id, patch, opts);
   return (
-    <div className="props-body">
-      <TextField label={t("f.text")} value={l.text} onChange={(v) => set({ text: v })}></TextField>
-      <Field label={t("f.size") + " — " + l.size}>
-        <input type="range" className="range" min="6" max="72" step="1" value={l.size} onChange={(e) => set({ size: +e.target.value })}></input>
+    <React.Fragment>
+      <TextField label={t("f.text")} value={l.text} onChange={(v) => set({ text: v }, { undo: false })}></TextField>
+      <Field label={t("f.color")}>
+        <input type="color" className="color-input" value={l.color || "#222222"} onChange={(e) => set({ color: e.target.value })}></input>
       </Field>
+      <TextStyleFields v={l} set={set} kind="label" defaults={{ halo: 0.05, haloColor: p.settings.sea }}></TextStyleFields>
+      <div className="muted" style={{ fontSize: 11 }}>{t("label.handlesHint")}</div>
+      <button className="btn outline danger" onClick={() => { Actions.deleteLabel(id); Actions.ui({ selLabel: null, card: null }); }}>✕ {t("label.delete")}</button>
+    </React.Fragment>
+  );
+}
+
+// a country's name on the map: hidden, look, position
+function StateLabelFields({ sid }) {
+  const p = App.project;
+  const s = p.states[sid];
+  if (!s) return null;
+  const ls = s.labelStyle || {};
+  const set = (patch, opts) => Actions.setState(sid, { labelStyle: Object.assign({}, ls, patch) }, opts);
+  const atlas = p.settings.labelAtlas !== false;
+  return (
+    <React.Fragment>
+      <Check label={t("label.hidden")} checked={!!ls.hidden} onChange={(v) => set({ hidden: v })}></Check>
+      <TextStyleFields v={ls} set={set} kind="state" defaults={{ halo: 0.13, upper: atlas, shadow: atlas }}></TextStyleFields>
+      <div className="muted" style={{ fontSize: 11 }}>{t("label.handlesHint")}</div>
       <div className="field-row">
-        <Field label={t("f.color")}>
-          <input type="color" className="color-input" value={l.color || "#222222"} onChange={(e) => set({ color: e.target.value })}></input>
-        </Field>
-        <Check label="Bold" checked={l.bold} onChange={(v) => set({ bold: v })}></Check>
+        {s.labelOffset && <button className="btn outline" style={{ fontSize: 11 }} onClick={() => Actions.setState(sid, { labelOffset: null })}>{t("label.resetPos")}</button>}
+        {s.labelStyle && Object.keys(s.labelStyle).length > 0 && <button className="btn outline" style={{ fontSize: 11 }} onClick={() => Actions.setState(sid, { labelStyle: null })}>{t("label.reset")}</button>}
       </div>
-      <button className="btn outline danger" onClick={() => { Actions.deleteLabel(id); Actions.ui({ selLabel: null }); }}>✕ {t("misc.none") === "—" ? (App.ui.lang === "ru" ? "Удалить подпись" : "Delete label") : "Delete"}</button>
+    </React.Fragment>
+  );
+}
+
+// ---------- Region tab (also label editor) ----------
+function LabelEditor({ id }) {
+  return <div className="props-body"><LabelFields id={id}></LabelFields></div>;
+}
+
+// the text card over the map (shown on tablets even with the side panel closed)
+function LabelCard({ card }) {
+  useStore();
+  const p = App.project;
+  const close = () => Actions.ui({ card: null, selLabel: null, selStateLabel: null });
+  const isState = card.kind === "stateLabel";
+  const title = isState ? (p.states[card.id] ? p.states[card.id].name : "") : t("label.cardTitle");
+  if (isState ? !p.states[card.id] : !p.labels.find((x) => x.id === card.id)) return null;
+  const minimized = !!App.ui.cardMin;
+  return (
+    <div className={"info-card label-card" + (minimized ? " minimized" : "")} data-export-skip="1" onPointerDown={(e) => e.stopPropagation()}>
+      <div className="card-head">
+        <span className="card-kind">{isState ? "🏳 " + t("label.stateCardTitle") + ": " + title : "𝐓 " + title}</span>
+        <span className="card-head-actions">
+          <button className="btn icon card-min-btn" title={t(minimized ? "card.expand" : "card.minimize")} onClick={() => Actions.ui({ cardMin: !minimized })}>{minimized ? "⌃" : "⌄"}</button>
+          <button className="btn icon" onClick={close}>✕</button>
+        </span>
+      </div>
+      {!minimized && (
+        <div className="card-fields-col">
+          {isState ? <StateLabelFields sid={card.id}></StateLabelFields> : <LabelFields id={card.id}></LabelFields>}
+        </div>
+      )}
     </div>
   );
 }
@@ -1077,4 +1172,4 @@ function PanelResizer() {
   return <div className="panel-resizer" title={t("props.resize")} onPointerDown={onDown}></div>;
 }
 
-Object.assign(window, { Toolbar, StatesPanel, PropsPanel, PanelResizer });
+Object.assign(window, { Toolbar, StatesPanel, PropsPanel, PanelResizer, LabelCard, LabelFields, StateLabelFields, TextStyleFields });

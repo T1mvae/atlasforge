@@ -130,15 +130,75 @@ function RegionLayersPanel() {
   );
 }
 
+// the painter's regions (custom worlds): pick one, then paint provinces into it
+function MacroRegionList() {
+  const p = App.project;
+  const regions = p.macroRegions || {};
+  const order = (p.macroRegionOrder || []).filter((id) => regions[id]);
+  const counts = {};
+  let inRegions = 0;
+  for (const pid in p.macroRegionOf || {}) {
+    const id = p.macroRegionOf[pid];
+    if (!regions[id] || !App.basemap.byId[pid]) continue;
+    counts[id] = (counts[id] || 0) + 1;
+    inRegions++;
+  }
+  const free = Math.max(0, (App.basemap.count || 0) - inRegions);
+  const add = () => {
+    const sel = App.ui.selection;
+    const id = Actions.addMacroRegion(null, sel.length ? sel : null);
+    Actions.ui({ card: { kind: "macroRegion", id }, cardMin: false });
+  };
+  return (
+    <React.Fragment>
+      <div className="panel-head">
+        <span>{t("mregion.title")}</span>
+        <button className="btn icon" title={t("mregion.add")} onClick={add} style={{ height: 22, width: 22, fontSize: 15 }}>+</button>
+      </div>
+      <div className="states-list">
+        {order.length === 0 && <div className="empty-hint">{t("mregion.none")}</div>}
+        {order.map((id) => {
+          const r = regions[id];
+          return (
+            <div key={id} className={"state-row" + (App.ui.activeMacroRegion === id ? " active" : "")}
+              onClick={() => Actions.ui({ activeMacroRegion: id, card: { kind: "macroRegion", id }, cardMin: false })}>
+              <span className="state-swatch" style={{ background: r.color }}></span>
+              <span className="state-row-name">{r.name || t("misc.unnamed")}</span>
+              <span className="state-row-count">{counts[id] || 0}</span>
+            </div>
+          );
+        })}
+      </div>
+      <div className="mregion-foot">
+        <div className="muted">{t("mregion.hint")}</div>
+        <div className="muted">{t("mregion.free").replace("{n}", free)}</div>
+        {window.suggestMacroRegions && (
+          <button className="btn outline" disabled={!free || !App.basemap.count} onClick={() => window.suggestMacroRegions()}>{t("mregion.suggest")}</button>
+        )}
+      </div>
+    </React.Fragment>
+  );
+}
+
 function StatesPanel() {
   useStore();
   const p = App.project;
   if (!p) return <div className="states-panel"></div>;
   const counts = stateStats();
+  const worldOn = !!(window.World && World.active());
+  const regionsView = worldOn && App.ui.leftView === "regions";
   return (
     <div className="states-panel" data-screen-label="States panel">
       <ModeBar></ModeBar>
       {App.ui.selectMode === "region" && <RegionLayersPanel></RegionLayersPanel>}
+      {worldOn && (
+        <div className="left-views">
+          <button className={"left-view" + (!regionsView ? " on" : "")} onClick={() => Actions.setPref({ leftView: "states" })}>{t("states.title")}</button>
+          <button className={"left-view" + (regionsView ? " on" : "")} onClick={() => Actions.setPref({ leftView: "regions" })}>{t("mregion.title")}</button>
+        </div>
+      )}
+      {regionsView ? <MacroRegionList></MacroRegionList> : (
+      <React.Fragment>
       <div className="panel-head">
         <span>{t("states.title")}</span>
         <button className="btn icon" title={t("states.add")} onClick={() => Actions.addState()} style={{ height: 22, width: 22, fontSize: 15 }}>+</button>
@@ -164,6 +224,8 @@ function StatesPanel() {
           );
         })}
       </div>
+      </React.Fragment>
+      )}
     </div>
   );
 }
@@ -363,7 +425,8 @@ function MapTab() {
   const set = (patch) => Actions.setSettings(patch, { undo: false });
   const mode = s.mapMode || "color";
   const supportsRegions = RegionModel.supportsRegions();
-  const displayModes = ["country", "province", "culture", "religion", "language", "terrain"].concat(
+  const displayModes = ["country", "province", "culture", "religion", "language", "terrain"]
+    .concat(window.World && World.active() ? ["macroRegion"] : []).concat(
     supportsRegions ? ["stateRegion", "historicalRegion", "culturalRegion", "geographicalRegion", "politicalRegion"] : []);
   return (
     <div className="props-body">
@@ -402,7 +465,7 @@ function MapTab() {
       {/* ---- borders: region / country / coast are SEPARATE layers & toggles ---- */}
       <div className="props-section-title">{t("map.sectionBorders")}</div>
       {App.basemap.topo
-        ? <Check label={t("map.showRegionBorders")} checked={s.showRegionBorders !== undefined ? s.showRegionBorders !== false : s.innerBorders !== false} onChange={(v) => set({ showRegionBorders: v })}></Check>
+        ? <Check label={tw("map.showRegionBorders")} checked={s.showRegionBorders !== undefined ? s.showRegionBorders !== false : s.innerBorders !== false} onChange={(v) => set({ showRegionBorders: v })}></Check>
         : <Check label={t("map.showProvinceBorders")} checked={s.showProvinceBorders !== false} onChange={(v) => set({ showProvinceBorders: v })}></Check>}
       <Field label={t("map.borderW") + " — " + s.borderW.toFixed(1)}>
         <input type="range" className="range" min="0" max="3" step="0.1" value={s.borderW} onChange={(e) => set({ borderW: +e.target.value })}></input>
@@ -428,7 +491,7 @@ function MapTab() {
         </React.Fragment>
       )}
       {window.World && World.active() && <Check label={t("map.showWaterZones")} checked={s.showWaterZones !== false} onChange={(v) => set({ showWaterZones: v })}></Check>}
-      <Check label={t("map.provinceTint")} checked={s.provinceTint} onChange={(v) => set({ provinceTint: v })}></Check>
+      <Check label={tw("map.provinceTint")} checked={s.provinceTint} onChange={(v) => set({ provinceTint: v })}></Check>
       {window.GeomEdit && GeomEdit.enabled() && (
         <React.Fragment>
           <div className="props-section-title">{t("snap.title")}</div>
@@ -959,13 +1022,48 @@ function RegionPropsPanel() {
   );
 }
 
+// the region (custom worlds) the selected provinces belong to
+function MacroRegionField({ sel }) {
+  const p = App.project;
+  const regions = p.macroRegions || {};
+  const order = (p.macroRegionOrder || []).filter((id) => regions[id]);
+  const first = window.macroRegionOf(p, sel[0]) || "";
+  const common = sel.every((x) => (window.macroRegionOf(p, x) || "") === first) ? first : "__mixed";
+  const change = (v) => {
+    if (v === "__mixed") return;
+    if (v === "__new") {
+      const nm = prompt(t("mregion.newAsk"), "");
+      if (nm === null) return;
+      Actions.addMacroRegion(nm.trim() || null, sel);
+      return;
+    }
+    Actions.assignMacroRegion(sel, v || null);
+  };
+  return (
+    <Field label={t("mregion.field")}>
+      <div className="field-row">
+        <select className="select" value={common} onChange={(e) => change(e.target.value)}>
+          {common === "__mixed" && <option value="__mixed">···</option>}
+          <option value="">{t("mregion.noneOpt")}</option>
+          {order.map((id) => <option key={id} value={id}>{regions[id].name || t("misc.unnamed")}</option>)}
+          <option value="__new">{t("mregion.newOpt")}</option>
+        </select>
+        {common && common !== "__mixed" && (
+          <button className="btn outline" style={{ height: 30, flex: "none" }} title={t("mregion.open")}
+            onClick={() => Actions.ui({ card: { kind: "macroRegion", id: common }, cardMin: false })}>›</button>
+        )}
+      </div>
+    </Field>
+  );
+}
+
 function RegionTab() {
   const p = App.project;
   if (App.ui.selectMode === "region") return <RegionPropsPanel></RegionPropsPanel>;
   const sel = App.ui.selection;
   if (App.ui.selFeatLabel) return <FeatLabelEditor id={App.ui.selFeatLabel}></FeatLabelEditor>;
   if (App.ui.selLabel) return <LabelEditor id={App.ui.selLabel}></LabelEditor>;
-  if (!sel.length) return <div className="props-body"><div className="muted">{t("region.none")}</div></div>;
+  if (!sel.length) return <div className="props-body"><div className="muted">{tw("region.none")}</div></div>;
 
   const rid = sel[0];
   const r0 = p.regions[rid] || {};
@@ -1026,12 +1124,12 @@ function RegionTab() {
     <div className="props-body">
       {multi ? (
         <React.Fragment>
-          <div className="muted"><b style={{ color: "var(--text)" }}>{sel.length}</b> {t("region.multi")}</div>
+          <div className="muted"><b style={{ color: "var(--text)" }}>{sel.length}</b> {tw("region.multi")}</div>
           {window.GeomEdit && GeomEdit.enabled() ? (
             <button className="btn primary" onClick={() => {
-              const nm = prompt(t("edit.mergeNameAsk"), (p.regions[sel[0]] && p.regions[sel[0]].name) || (App.basemap.byId[sel[0]] || {}).name || "");
+              const nm = prompt(tw("edit.mergeNameAsk"), (p.regions[sel[0]] && p.regions[sel[0]].name) || (App.basemap.byId[sel[0]] || {}).name || "");
               if (nm !== null) Actions.mergeRegionsGeometry(sel, nm || null);
-            }}>{t("edit.merge")}</button>
+            }}>{tw("edit.merge")}</button>
           ) : (
             <button className="btn primary" onClick={() => Actions.groupRegions(sel)}>{t("group.merge")}</button>
           )}
@@ -1070,6 +1168,7 @@ function RegionTab() {
           {ownerOptions.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}
         </select>
       </Field>
+      {window.World && World.active() && <MacroRegionField sel={sel}></MacroRegionField>}
       <Field label={t("f.status")}>
         <select className="select" value={r.status || "core"} onChange={(e) => setAll({ status: e.target.value })}>
           {STATUSES.map((st) => <option key={st} value={st}>{t("status." + st)}</option>)}
@@ -1083,7 +1182,7 @@ function RegionTab() {
           {r.color && <button className="btn outline" style={{ height: 26, fontSize: 11 }} onClick={() => setAll({ color: null })}>↺</button>}
         </div>
       </Field>
-      <div className="props-section-title">{t("props.region")}</div>
+      <div className="props-section-title">{tw("props.region")}</div>
       {!multi && <TextField label={t("f.population")} value={r.population} onChange={(v) => setAll({ population: v })}></TextField>}
       <ComboField label={t("f.culture")} listKey="culture" stateField="culture" value={commonMeta("culture")} onChange={(v) => setAll({ culture: v })}></ComboField>
       <ComboField label={t("f.language")} listKey="language" stateField="language" value={commonMeta("language")} onChange={(v) => setAll({ language: v })}></ComboField>
@@ -1100,10 +1199,10 @@ function RegionTab() {
               <div className="props-section-title">{t("edit.section")}</div>
               <div className="field-row" style={{ flexWrap: "wrap", gap: 4 }}>
                 <button className="btn outline" style={{ fontSize: 11 }} onClick={() => GeomEdit.startEdit(rid)}>{t("edit.editBorders")}</button>
-                <button className="btn outline" style={{ fontSize: 11 }} onClick={() => { Actions.ui({ tool: "split" }); Actions.toast(t("edit.splitHint")); }}>{t("edit.splitBtn")}</button>
+                <button className="btn outline" style={{ fontSize: 11 }} onClick={() => { Actions.ui({ tool: "split" }); Actions.toast(tw("edit.splitHint")); }}>{t("edit.splitBtn")}</button>
                 <button className="btn outline" style={{ fontSize: 11 }} title={t("edit.healHint")} onClick={() => Actions.healGaps([rid])}>{t("edit.healBtnHot")}</button>
                 <button className="btn outline danger" style={{ fontSize: 11 }} onClick={() => {
-                  if (!confirm(t("edit.deleteAsk"))) return;
+                  if (!confirm(tw("edit.deleteAsk"))) return;
                   const merge = confirm(t("edit.deleteMergeAsk"));
                   Actions.deleteRegionGeometry(rid, merge ? "merge" : "hole");
                 }}>{t("edit.deleteBtn")}</button>
@@ -1134,7 +1233,7 @@ function PropsPanel() {
       <div className="props-tabs">
         {["map", "state", "region", "catalog"].map((k) => (
           <button key={k} className={"props-tab" + (tab === k ? " active" : "")} onClick={() => Actions.ui({ panel: k })}>
-            {t("props." + k)}
+            {k === "region" ? tw("props.region") : t("props." + k)}
           </button>
         ))}
       </div>

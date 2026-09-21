@@ -1775,6 +1775,276 @@ function WaterCard(_ref7) {
   }, t("water.reset"))));
 }
 
+// ---------- regions: provinces grouped by the painter ----------
+// feature id → index into the analysis (kept with the analysis)
+function analysisIndex(wa) {
+  if (!wa.idxOf) wa.idxOf = new Map(wa.feats.map(function (f, i) {
+    return [String(f.id), i];
+  }));
+  return wa.idxOf;
+}
+// regions made from the atlas's own areas (neighbouring provinces of one owner with shared
+// geography) for every province in no region yet — one undo step, to rename and adjust
+function suggestMacroRegions() {
+  var p = App.project;
+  var wa = worldAnalysis();
+  var lang = App.ui.lang === "ru" ? "ru" : "en";
+  var ownerOf = function ownerOf(i) {
+    var e = effRegion(p, String(wa.feats[i].id));
+    return e && e.owner && p.states[e.owner] ? e.owner : null;
+  };
+  var provName = function provName(i) {
+    var f = wa.feats[i],
+      r = p.regions[String(f.id)];
+    return r && r.name || f.properties && f.properties.name || String(f.id);
+  };
+  var areas = Atlas.areas(wa.an, wa.names, wa.feats, ownerOf, lang, provName, function (i) {
+    return !!window.macroRegionOf(p, wa.feats[i].id);
+  });
+  if (!areas.length) {
+    Actions.toast(t("mregion.suggestNone"));
+    return 0;
+  }
+  var rank = function rank(o) {
+    var k = p.stateOrder.indexOf(o);
+    return k < 0 ? 1e9 : k;
+  };
+  areas.sort(function (a, b) {
+    return rank(a.owner) - rank(b.owner) || b.area - a.area;
+  });
+  // a name used twice gets what the area is named after (the sea, the river), then whose
+  // it is, then a number
+  var taken = new Set(Object.values(p.macroRegions || {}).map(function (r) {
+    return r.name;
+  }));
+  var tally = function tally(names) {
+    var c = {};
+    names.forEach(function (n) {
+      c[n] = (c[n] || 0) + 1;
+    });
+    return c;
+  };
+  var names = areas.map(function (a) {
+    return a.name;
+  });
+  var c = tally(names);
+  names = names.map(function (n, k) {
+    return c[n] > 1 && areas[k].feature ? n + " (" + areas[k].feature + ")" : n;
+  });
+  c = tally(names);
+  names = names.map(function (n, k) {
+    return c[n] > 1 || taken.has(n) ? n + " — " + (areas[k].owner && p.states[areas[k].owner] ? p.states[areas[k].owner].name : t("legend.unowned")) : n;
+  });
+  var list = areas.map(function (a, k) {
+    var name = names[k];
+    var base = name;
+    for (var n = 2; taken.has(name); n++) name = base + " " + n;
+    taken.add(name);
+    return {
+      name: name,
+      pids: a.provinces.map(function (i) {
+        return String(wa.feats[i].id);
+      })
+    };
+  });
+  Actions.addMacroRegions(list);
+  Actions.toast(t("mregion.suggested").replace("{n}", list.length));
+  return list.length;
+}
+function MacroRegionCard(_ref0) {
+  var id = _ref0.id;
+  useStore();
+  var p = App.project;
+  var mr = p && p.macroRegions && p.macroRegions[id];
+  if (!mr) return null;
+  var close = function close() {
+    return Actions.ui({
+      card: null
+    });
+  };
+  var pids = Object.keys(p.macroRegionOf || {}).filter(function (pid) {
+    return p.macroRegionOf[pid] === id && App.basemap.byId[pid];
+  });
+  if (App.ui.cardMin) {
+    return /*#__PURE__*/React.createElement("div", {
+      className: "info-card minimized",
+      "data-export-skip": "1",
+      onPointerDown: function onPointerDown(e) {
+        return e.stopPropagation();
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      className: "card-head"
+    }, /*#__PURE__*/React.createElement("span", {
+      className: "card-kind"
+    }, /*#__PURE__*/React.createElement("span", {
+      className: "state-swatch",
+      style: {
+        background: mr.color
+      }
+    }), " ", mr.name), /*#__PURE__*/React.createElement("span", {
+      className: "card-head-actions"
+    }, /*#__PURE__*/React.createElement("button", {
+      className: "btn icon card-min-btn",
+      title: t("card.expand"),
+      onClick: function onClick() {
+        return Actions.ui({
+          cardMin: false
+        });
+      }
+    }, "\u2303"), /*#__PURE__*/React.createElement("button", {
+      className: "btn icon",
+      onClick: close
+    }, "\u2715"))));
+  }
+  // what the analysis says about its provinces
+  var km = +(p.world && p.world.scaleKm) || 5;
+  var area = 0,
+    states = [],
+    lands = 0,
+    terrain = "";
+  try {
+    var wa = worldAnalysis(),
+      idxOf = analysisIndex(wa);
+    var own = new Map(),
+      landSet = new Set(),
+      idx = [];
+    pids.forEach(function (pid) {
+      var i = idxOf.get(pid);
+      if (i == null) return;
+      idx.push(i);
+      var c = wa.an.cells[i];
+      area += c.land;
+      c.lands.forEach(function (v, k) {
+        return landSet.add(k);
+      });
+      var e = effRegion(p, pid);
+      var sid = e && e.owner && p.states[e.owner] ? e.owner : "";
+      own.set(sid, (own.get(sid) || 0) + 1);
+    });
+    states = _toConsumableArray(own.entries()).sort(function (a, b) {
+      return b[1] - a[1];
+    }).map(function (_ref1) {
+      var _ref10 = _slicedToArray(_ref1, 2),
+        sid = _ref10[0],
+        n = _ref10[1];
+      return (sid ? p.states[sid].name : t("card.noOwner")) + (own.size > 1 ? " (" + n + ")" : "");
+    });
+    lands = landSet.size;
+    terrain = Atlas.terrainPct(wa.an, idx, App.ui.lang === "ru" ? "ru" : "en");
+  } catch (e) {
+    console.warn(e);
+  }
+  var set = function set(patch) {
+    return Actions.setMacroRegion(id, patch, {
+      undo: false
+    });
+  };
+  return /*#__PURE__*/React.createElement("div", {
+    className: "info-card",
+    "data-export-skip": "1",
+    onPointerDown: function onPointerDown(e) {
+      return e.stopPropagation();
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "card-head"
+  }, /*#__PURE__*/React.createElement("span", {
+    className: "card-kind"
+  }, "\u25A6 ", t("mregion.card")), /*#__PURE__*/React.createElement("span", {
+    className: "card-head-actions"
+  }, /*#__PURE__*/React.createElement("button", {
+    className: "btn icon card-min-btn",
+    title: t("card.minimize"),
+    onClick: function onClick() {
+      return Actions.ui({
+        cardMin: true
+      });
+    }
+  }, "\u2304"), /*#__PURE__*/React.createElement("button", {
+    className: "btn icon",
+    onClick: close
+  }, "\u2715"))), /*#__PURE__*/React.createElement("div", {
+    className: "field-row"
+  }, /*#__PURE__*/React.createElement("input", {
+    type: "color",
+    className: "color-input",
+    value: mr.color,
+    onChange: function onChange(e) {
+      return Actions.setMacroRegion(id, {
+        color: e.target.value
+      }, {
+        undo: false
+      });
+    }
+  }), /*#__PURE__*/React.createElement("input", {
+    className: "input card-title",
+    value: mr.name,
+    placeholder: t("mregion.namePh"),
+    onChange: function onChange(e) {
+      return set({
+        name: e.target.value
+      });
+    }
+  })), /*#__PURE__*/React.createElement("div", {
+    className: "card-grid"
+  }, /*#__PURE__*/React.createElement(CardRow, {
+    k: t("mregion.provinces"),
+    v: String(pids.length)
+  }), area ? /*#__PURE__*/React.createElement(CardRow, {
+    k: t("water.area"),
+    v: "≈ " + fmtNum(Math.round(area * km * km / 100) * 100) + " " + t("world.km") + "²"
+  }) : null, states.length ? /*#__PURE__*/React.createElement(CardRow, {
+    k: t("mregion.states"),
+    v: states.join(", ")
+  }) : null, lands > 1 ? /*#__PURE__*/React.createElement(CardRow, {
+    k: t("mregion.lands"),
+    v: String(lands)
+  }) : null, terrain ? /*#__PURE__*/React.createElement(CardRow, {
+    k: t("mregion.terrain"),
+    v: terrain
+  }) : null, !pids.length && /*#__PURE__*/React.createElement("div", {
+    className: "muted"
+  }, t("mregion.emptyHint"))), /*#__PURE__*/React.createElement("textarea", {
+    className: "textarea card-notes",
+    placeholder: t("card.notes"),
+    value: mr.notes || "",
+    onChange: function onChange(e) {
+      return set({
+        notes: e.target.value
+      });
+    }
+  }), /*#__PURE__*/React.createElement("div", {
+    className: "card-actions"
+  }, /*#__PURE__*/React.createElement("button", {
+    className: "btn outline",
+    onClick: function onClick() {
+      Actions.setPref({
+        leftView: "regions"
+      });
+      Actions.ui({
+        activeMacroRegion: id,
+        tool: "paint"
+      });
+    }
+  }, t("mregion.paint")), /*#__PURE__*/React.createElement("button", {
+    className: "btn outline",
+    disabled: !pids.length,
+    onClick: function onClick() {
+      Actions.select(pids, false);
+      Actions.ui({
+        card: {
+          kind: "macroRegion",
+          id: id
+        }
+      });
+    }
+  }, t("mregion.select")), /*#__PURE__*/React.createElement("button", {
+    className: "btn outline danger",
+    onClick: function onClick() {
+      if (confirm(t("mregion.deleteAsk").replace("{r}", mr.name))) Actions.deleteMacroRegion(id);
+    }
+  }, t("mregion.delete"))));
+}
+
 // what a tap or a stroke on the map does now: join the zone to another, or divide it
 function WaterModeBar() {
   useStore();
@@ -1803,6 +2073,9 @@ function WorldCard() {
   });
   if (card.kind === "water" && World.active()) return /*#__PURE__*/React.createElement(WaterCard, {
     pt: card.pt
+  });
+  if (card.kind === "macroRegion" && World.active()) return /*#__PURE__*/React.createElement(MacroRegionCard, {
+    id: card.id
   });
   if (card.kind === "object" && window.ObjectCard) return /*#__PURE__*/React.createElement(ObjectCard, {
     id: card.id
@@ -1838,7 +2111,7 @@ function AtlasModal() {
   }, [detail, App.ui.lang, hyRev, wKey]);
   var areaRef = React.useRef(null);
   var copy = /*#__PURE__*/function () {
-    var _ref0 = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee() {
+    var _ref11 = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee() {
       var _t;
       return _regenerator().w(function (_context) {
         while (1) switch (_context.p = _context.n) {
@@ -1864,7 +2137,7 @@ function AtlasModal() {
       }, _callee, null, [[0, 2]]);
     }));
     return function copy() {
-      return _ref0.apply(this, arguments);
+      return _ref11.apply(this, arguments);
     };
   }();
   var save = function save() {
@@ -1950,6 +2223,7 @@ Object.assign(window, {
   CutBar: CutBar,
   ProvinceGeo: ProvinceGeo,
   NameRuleModal: NameRuleModal,
-  WaterModeBar: WaterModeBar
+  WaterModeBar: WaterModeBar,
+  suggestMacroRegions: suggestMacroRegions
 });
 //# sourceMappingURL=world.js.map

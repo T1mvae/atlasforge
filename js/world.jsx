@@ -877,6 +877,120 @@ function WaterCard({ pt }) {
   );
 }
 
+// ---------- regions: provinces grouped by the painter ----------
+// feature id → index into the analysis (kept with the analysis)
+function analysisIndex(wa) {
+  if (!wa.idxOf) wa.idxOf = new Map(wa.feats.map((f, i) => [String(f.id), i]));
+  return wa.idxOf;
+}
+// regions made from the atlas's own areas (neighbouring provinces of one owner with shared
+// geography) for every province in no region yet — one undo step, to rename and adjust
+function suggestMacroRegions() {
+  const p = App.project;
+  const wa = worldAnalysis();
+  const lang = App.ui.lang === "ru" ? "ru" : "en";
+  const ownerOf = (i) => { const e = effRegion(p, String(wa.feats[i].id)); return e && e.owner && p.states[e.owner] ? e.owner : null; };
+  const provName = (i) => { const f = wa.feats[i], r = p.regions[String(f.id)]; return (r && r.name) || (f.properties && f.properties.name) || String(f.id); };
+  const areas = Atlas.areas(wa.an, wa.names, wa.feats, ownerOf, lang, provName, (i) => !!window.macroRegionOf(p, wa.feats[i].id));
+  if (!areas.length) { Actions.toast(t("mregion.suggestNone")); return 0; }
+  const rank = (o) => { const k = p.stateOrder.indexOf(o); return k < 0 ? 1e9 : k; };
+  areas.sort((a, b) => (rank(a.owner) - rank(b.owner)) || (b.area - a.area));
+  // a name used twice gets what the area is named after (the sea, the river), then whose
+  // it is, then a number
+  const taken = new Set(Object.values(p.macroRegions || {}).map((r) => r.name));
+  const tally = (names) => { const c = {}; names.forEach((n) => { c[n] = (c[n] || 0) + 1; }); return c; };
+  let names = areas.map((a) => a.name);
+  let c = tally(names);
+  names = names.map((n, k) => (c[n] > 1 && areas[k].feature ? n + " (" + areas[k].feature + ")" : n));
+  c = tally(names);
+  names = names.map((n, k) => (c[n] > 1 || taken.has(n)
+    ? n + " — " + (areas[k].owner && p.states[areas[k].owner] ? p.states[areas[k].owner].name : t("legend.unowned")) : n));
+  const list = areas.map((a, k) => {
+    let name = names[k];
+    const base = name;
+    for (let n = 2; taken.has(name); n++) name = base + " " + n;
+    taken.add(name);
+    return { name, pids: a.provinces.map((i) => String(wa.feats[i].id)) };
+  });
+  Actions.addMacroRegions(list);
+  Actions.toast(t("mregion.suggested").replace("{n}", list.length));
+  return list.length;
+}
+
+function MacroRegionCard({ id }) {
+  useStore();
+  const p = App.project;
+  const mr = p && p.macroRegions && p.macroRegions[id];
+  if (!mr) return null;
+  const close = () => Actions.ui({ card: null });
+  const pids = Object.keys(p.macroRegionOf || {}).filter((pid) => p.macroRegionOf[pid] === id && App.basemap.byId[pid]);
+  if (App.ui.cardMin) {
+    return (
+      <div className="info-card minimized" data-export-skip="1" onPointerDown={(e) => e.stopPropagation()}>
+        <div className="card-head">
+          <span className="card-kind"><span className="state-swatch" style={{ background: mr.color }}></span> {mr.name}</span>
+          <span className="card-head-actions">
+            <button className="btn icon card-min-btn" title={t("card.expand")} onClick={() => Actions.ui({ cardMin: false })}>⌃</button>
+            <button className="btn icon" onClick={close}>✕</button>
+          </span>
+        </div>
+      </div>
+    );
+  }
+  // what the analysis says about its provinces
+  const km = +(p.world && p.world.scaleKm) || 5;
+  let area = 0, states = [], lands = 0, terrain = "";
+  try {
+    const wa = worldAnalysis(), idxOf = analysisIndex(wa);
+    const own = new Map(), landSet = new Set(), idx = [];
+    pids.forEach((pid) => {
+      const i = idxOf.get(pid);
+      if (i == null) return;
+      idx.push(i);
+      const c = wa.an.cells[i];
+      area += c.land;
+      c.lands.forEach((v, k) => landSet.add(k));
+      const e = effRegion(p, pid);
+      const sid = e && e.owner && p.states[e.owner] ? e.owner : "";
+      own.set(sid, (own.get(sid) || 0) + 1);
+    });
+    states = [...own.entries()].sort((a, b) => b[1] - a[1])
+      .map(([sid, n]) => (sid ? p.states[sid].name : t("card.noOwner")) + (own.size > 1 ? " (" + n + ")" : ""));
+    lands = landSet.size;
+    terrain = Atlas.terrainPct(wa.an, idx, App.ui.lang === "ru" ? "ru" : "en");
+  } catch (e) { console.warn(e); }
+  const set = (patch) => Actions.setMacroRegion(id, patch, { undo: false });
+  return (
+    <div className="info-card" data-export-skip="1" onPointerDown={(e) => e.stopPropagation()}>
+      <div className="card-head">
+        <span className="card-kind">▦ {t("mregion.card")}</span>
+        <span className="card-head-actions">
+          <button className="btn icon card-min-btn" title={t("card.minimize")} onClick={() => Actions.ui({ cardMin: true })}>⌄</button>
+          <button className="btn icon" onClick={close}>✕</button>
+        </span>
+      </div>
+      <div className="field-row">
+        <input type="color" className="color-input" value={mr.color} onChange={(e) => Actions.setMacroRegion(id, { color: e.target.value }, { undo: false })}></input>
+        <input className="input card-title" value={mr.name} placeholder={t("mregion.namePh")} onChange={(e) => set({ name: e.target.value })}></input>
+      </div>
+      <div className="card-grid">
+        <CardRow k={t("mregion.provinces")} v={String(pids.length)}></CardRow>
+        {area ? <CardRow k={t("water.area")} v={"≈ " + fmtNum(Math.round(area * km * km / 100) * 100) + " " + t("world.km") + "²"}></CardRow> : null}
+        {states.length ? <CardRow k={t("mregion.states")} v={states.join(", ")}></CardRow> : null}
+        {lands > 1 ? <CardRow k={t("mregion.lands")} v={String(lands)}></CardRow> : null}
+        {terrain ? <CardRow k={t("mregion.terrain")} v={terrain}></CardRow> : null}
+        {!pids.length && <div className="muted">{t("mregion.emptyHint")}</div>}
+      </div>
+      <textarea className="textarea card-notes" placeholder={t("card.notes")} value={mr.notes || ""} onChange={(e) => set({ notes: e.target.value })}></textarea>
+      <div className="card-actions">
+        <button className="btn outline" onClick={() => { Actions.setPref({ leftView: "regions" }); Actions.ui({ activeMacroRegion: id, tool: "paint" }); }}>{t("mregion.paint")}</button>
+        <button className="btn outline" disabled={!pids.length} onClick={() => { Actions.select(pids, false); Actions.ui({ card: { kind: "macroRegion", id } }); }}>{t("mregion.select")}</button>
+        <button className="btn outline danger" onClick={() => { if (confirm(t("mregion.deleteAsk").replace("{r}", mr.name))) Actions.deleteMacroRegion(id); }}>{t("mregion.delete")}</button>
+      </div>
+    </div>
+  );
+}
+
 // what a tap or a stroke on the map does now: join the zone to another, or divide it
 function WaterModeBar() {
   useStore();
@@ -895,6 +1009,7 @@ function WorldCard() {
   if (!card) return null;
   if (card.kind === "river" && World.active()) return <RiverCard index={card.index}></RiverCard>;
   if (card.kind === "water" && World.active()) return <WaterCard pt={card.pt}></WaterCard>;
+  if (card.kind === "macroRegion" && World.active()) return <MacroRegionCard id={card.id}></MacroRegionCard>;
   if (card.kind === "object" && window.ObjectCard) return <ObjectCard id={card.id}></ObjectCard>;
   if ((card.kind === "label" || card.kind === "stateLabel") && window.LabelCard) return <LabelCard card={card}></LabelCard>;
   return null;
@@ -953,4 +1068,5 @@ function AtlasModal() {
   );
 }
 
-Object.assign(window, { WorldPalette, AtlasModal, WorldSizeRail, WorldCard, worldAnalysis, CardRow, fmtNum, GeoSheet, GeoBar, CutBar, ProvinceGeo, NameRuleModal, WaterModeBar });
+Object.assign(window, { WorldPalette, AtlasModal, WorldSizeRail, WorldCard, worldAnalysis, CardRow, fmtNum, GeoSheet, GeoBar, CutBar, ProvinceGeo, NameRuleModal, WaterModeBar,
+  suggestMacroRegions });

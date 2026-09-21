@@ -204,6 +204,11 @@ var TERRAIN_COLORS = {
 // province base so the region overlay reads clearly; provinces always stay the base.
 function provinceFill(displayMode, r, states, settings, feat, project) {
   if (displayMode === "terrain") return TERRAIN_COLORS[feat && feat.terrain] || settings.land;
+  if (displayMode === "macroRegion") {
+    // the painter's regions; a province outside any shows the land under it
+    var mid = feat ? window.macroRegionOf(project, feat.id) : null;
+    return mid ? project.macroRegions[mid].color : "rgba(0,0,0,0)";
+  }
   if (displayMode === "province") return feat ? ColorUtil.provinceTint(settings.land, feat.id) : settings.land;
   if (["culture", "religion", "language"].includes(displayMode)) {
     var value = window.Metadata && Metadata.value(project, displayMode, r, feat);
@@ -852,7 +857,9 @@ function MapView() {
   }, [App.version]);
 
   // ---------- mid-level region layer ----------
-  var displayMode = project ? project.displayMode || "country" : "country";
+  // the regions tab of the left panel shows the provinces by region while it is open
+  var regionsView = !!(project && App.ui.leftView === "regions" && window.World && World.active());
+  var displayMode = project ? regionsView ? "macroRegion" : project.displayMode || "country" : "country";
   var regionMode = App.ui.selectMode === "region";
   var regionDisplay = !!RegionModel.modeType[displayMode];
   var activeLayer = ready && RegionModel.supportsRegions() ? RegionModel.activeLayer() : null;
@@ -1063,6 +1070,25 @@ function MapView() {
   // ---------- painting ----------
   var paintRegion = useCallback(function (rid, erase) {
     if (!rid) return;
+    if (App.ui.leftView === "regions" && window.World && World.active()) {
+      var p = App.project,
+        cur = window.macroRegionOf(p, rid);
+      if (erase) {
+        if (cur) Actions.assignMacroRegion([rid], null, {
+          undo: false
+        });
+        return;
+      }
+      var mid = App.ui.activeMacroRegion;
+      if (!mid || !p.macroRegions || !p.macroRegions[mid]) {
+        Actions.toast(t("mregion.paintNone"));
+        return;
+      }
+      if (cur !== mid) Actions.assignMacroRegion([rid], mid, {
+        undo: false
+      });
+      return;
+    }
     if (erase) {
       var _e = effOf(rid);
       if (_e && _e.owner) Actions.assign([rid], null, {
@@ -1081,6 +1107,24 @@ function MapView() {
     });
   }, [effOf]);
   var fillByOwner = useCallback(function (rid) {
+    if (App.ui.leftView === "regions" && window.World && World.active()) {
+      var _p = App.project,
+        mid = App.ui.activeMacroRegion;
+      if (!mid || !_p.macroRegions || !_p.macroRegions[mid]) {
+        Actions.toast(t("mregion.paintNone"));
+        return;
+      }
+      var _e2 = effOf(rid),
+        owner = _e2 ? _e2.owner || null : null;
+      var _targets = bm.features.filter(function (f) {
+        var e = effOf(f.id);
+        return (e ? e.owner || null : null) === owner && (f.id === rid || !window.macroRegionOf(_p, f.id));
+      }).map(function (f) {
+        return f.id;
+      });
+      Actions.assignMacroRegion(_targets, mid);
+      return;
+    }
     var sid = App.ui.activeState;
     if (!sid) {
       Actions.toast(t("hint.paintNoState"));
@@ -1183,6 +1227,16 @@ function MapView() {
             worldBrush: b
           });
           Actions.toast(t("input.pickedBrush").replace("{b}", t("world.brush." + b)));
+        }
+        return;
+      }
+      if (App.ui.leftView === "regions" && window.World && World.active()) {
+        var mid = rid ? window.macroRegionOf(App.project, rid) : null;
+        if (mid) {
+          Actions.ui({
+            activeMacroRegion: mid
+          });
+          Actions.toast(t("mregion.picked").replace("{r}", App.project.macroRegions[mid].name));
         }
         return;
       }
@@ -2730,7 +2784,7 @@ function MapView() {
     id: "regions",
     clipPath: ready && bm.clipLand && bm.landPath ? "url(#land-clip)" : undefined,
     pointerEvents: regionInteractive ? "none" : "auto",
-    opacity: worldOn ? settings.worldFillOpacity != null ? settings.worldFillOpacity : 0.62 : undefined
+    opacity: worldOn ? Math.max(regionsView ? 0.55 : 0, settings.worldFillOpacity != null ? settings.worldFillOpacity : 0.62) : undefined
   }, ready && bm.features.map(function (f) {
     var effR = effOf(f.id);
     // painted worlds: unowned land stays see-through so the terrain shows
@@ -3369,7 +3423,30 @@ function MapView() {
     return t(ty === "state-grid" ? "stat.states" : ty === "region-grid" ? "stat.regions" : "stat.provinces");
   }()), App.regionData.status === "ready" && App.regionData.regions.length > 0 && /*#__PURE__*/React.createElement("span", null, /*#__PURE__*/React.createElement("b", null, App.regionData.regions.length), " ", t("stat.regionsShort")), RegionModel.supportsRegions() && /*#__PURE__*/React.createElement("span", null, regionMode ? t("mode.region") : t("mode.province")), /*#__PURE__*/React.createElement("span", {
     ref: zoomTextRef
-  }, "100%")), !App.ui.rightOpen && ready && (App.ui.selection.length > 0 || App.ui.activeState) && function () {
+  }, "100%")), !App.ui.rightOpen && ready && regionsView && App.ui.activeMacroRegion && project.macroRegions && project.macroRegions[App.ui.activeMacroRegion] && function () {
+    var mr = project.macroRegions[App.ui.activeMacroRegion];
+    return /*#__PURE__*/React.createElement("button", {
+      className: "sel-pill",
+      "data-export-skip": "1",
+      onClick: function onClick() {
+        return Actions.ui({
+          card: {
+            kind: "macroRegion",
+            id: mr.id
+          }
+        });
+      }
+    }, /*#__PURE__*/React.createElement("span", {
+      className: "state-swatch",
+      style: {
+        background: mr.color
+      }
+    }), /*#__PURE__*/React.createElement("span", {
+      className: "sel-pill-name"
+    }, mr.name), /*#__PURE__*/React.createElement("span", {
+      className: "sel-pill-open"
+    }, t("mregion.open"), " \u203A"));
+  }(), !App.ui.rightOpen && ready && !regionsView && (App.ui.selection.length > 0 || App.ui.activeState) && function () {
     var rid = App.ui.selection[0];
     var f = rid && bm.byId[rid];
     var er = rid ? effRegion(project, rid) : null;

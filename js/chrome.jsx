@@ -165,9 +165,15 @@ function Legend() {
   const counts = stateStats();
   const pos = App.ui.legendPos || { x: 276, y: 56 };
   const rows = p.stateOrder.map((id) => p.states[id]).filter(Boolean);
-  const metadataField = ["culture", "religion", "language"].includes(p.displayMode) ? p.displayMode : null;
+  // the painter's regions: while the regions tab is open, or in the "regions" display mode
+  const regionMode = !!(window.World && World.active() && (App.ui.leftView === "regions" || p.displayMode === "macroRegion"));
+  const regionRows = regionMode ? (p.macroRegionOrder || []).map((id) => p.macroRegions && p.macroRegions[id]).filter(Boolean) : [];
+  const regionCounts = {};
+  if (regionMode) for (const pid in p.macroRegionOf || {}) if (App.basemap.byId[pid]) regionCounts[p.macroRegionOf[pid]] = (regionCounts[p.macroRegionOf[pid]] || 0) + 1;
+  const metadataField = !regionMode && ["culture", "religion", "language"].includes(p.displayMode) ? p.displayMode : null;
   const metadataRows = metadataField && window.Metadata ? Metadata.legend(p, metadataField) : [];
-  if (!metadataField && !rows.length) return null;
+  if (regionMode && !regionRows.length) return null;
+  if (!regionMode && !metadataField && !rows.length) return null;
   if (metadataField && !metadataRows.length) return null;
 
   const onDown = (e) => {
@@ -184,11 +190,18 @@ function Legend() {
   return (
     <div className="legend" ref={ref} style={{ left: pos.x, top: pos.y }}>
       <div className="legend-head" onPointerDown={onDown}>
-        <span>{metadataField ? t("legend." + metadataField) : t("legend.title")}</span>
+        <span>{regionMode ? t("mregion.title") : metadataField ? t("legend." + metadataField) : t("legend.title")}</span>
         <button className="btn icon" style={{ height: 18, width: 18, fontSize: 11 }} onClick={() => Actions.ui({ showLegend: false })}>✕</button>
       </div>
       <div className="legend-body">
-        {metadataField ? metadataRows.map((row) => (
+        {regionMode ? regionRows.map((r) => (
+          <div key={r.id} className="legend-row" style={{ cursor: "pointer" }}
+            onClick={() => Actions.ui({ activeMacroRegion: r.id, card: { kind: "macroRegion", id: r.id }, cardMin: false })}>
+            <span className="state-swatch" style={{ background: r.color }}></span>
+            <span>{r.name}</span>
+            <span className="legend-count">{regionCounts[r.id] || 0}</span>
+          </div>
+        )) : metadataField ? metadataRows.map((row) => (
           <div key={row.name} className="legend-row" style={{ cursor: "pointer" }} onClick={() => Actions.selectByMetadata(metadataField, row.name)}>
             <span className="state-swatch" style={{ background: row.color }}></span>
             <span>{row.name}</span>

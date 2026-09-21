@@ -470,9 +470,17 @@ function Legend() {
   var rows = p.stateOrder.map(function (id) {
     return p.states[id];
   }).filter(Boolean);
-  var metadataField = ["culture", "religion", "language"].includes(p.displayMode) ? p.displayMode : null;
+  // the painter's regions: while the regions tab is open, or in the "regions" display mode
+  var regionMode = !!(window.World && World.active() && (App.ui.leftView === "regions" || p.displayMode === "macroRegion"));
+  var regionRows = regionMode ? (p.macroRegionOrder || []).map(function (id) {
+    return p.macroRegions && p.macroRegions[id];
+  }).filter(Boolean) : [];
+  var regionCounts = {};
+  if (regionMode) for (var pid in p.macroRegionOf || {}) if (App.basemap.byId[pid]) regionCounts[p.macroRegionOf[pid]] = (regionCounts[p.macroRegionOf[pid]] || 0) + 1;
+  var metadataField = !regionMode && ["culture", "religion", "language"].includes(p.displayMode) ? p.displayMode : null;
   var metadataRows = metadataField && window.Metadata ? Metadata.legend(p, metadataField) : [];
-  if (!metadataField && !rows.length) return null;
+  if (regionMode && !regionRows.length) return null;
+  if (!regionMode && !metadataField && !rows.length) return null;
   if (metadataField && !metadataRows.length) return null;
   var onDown = function onDown(e) {
     drag.current = {
@@ -508,7 +516,7 @@ function Legend() {
   }, /*#__PURE__*/React.createElement("div", {
     className: "legend-head",
     onPointerDown: onDown
-  }, /*#__PURE__*/React.createElement("span", null, metadataField ? t("legend." + metadataField) : t("legend.title")), /*#__PURE__*/React.createElement("button", {
+  }, /*#__PURE__*/React.createElement("span", null, regionMode ? t("mregion.title") : metadataField ? t("legend." + metadataField) : t("legend.title")), /*#__PURE__*/React.createElement("button", {
     className: "btn icon",
     style: {
       height: 18,
@@ -522,7 +530,32 @@ function Legend() {
     }
   }, "\u2715")), /*#__PURE__*/React.createElement("div", {
     className: "legend-body"
-  }, metadataField ? metadataRows.map(function (row) {
+  }, regionMode ? regionRows.map(function (r) {
+    return /*#__PURE__*/React.createElement("div", {
+      key: r.id,
+      className: "legend-row",
+      style: {
+        cursor: "pointer"
+      },
+      onClick: function onClick() {
+        return Actions.ui({
+          activeMacroRegion: r.id,
+          card: {
+            kind: "macroRegion",
+            id: r.id
+          },
+          cardMin: false
+        });
+      }
+    }, /*#__PURE__*/React.createElement("span", {
+      className: "state-swatch",
+      style: {
+        background: r.color
+      }
+    }), /*#__PURE__*/React.createElement("span", null, r.name), /*#__PURE__*/React.createElement("span", {
+      className: "legend-count"
+    }, regionCounts[r.id] || 0));
+  }) : metadataField ? metadataRows.map(function (row) {
     return /*#__PURE__*/React.createElement("div", {
       key: row.name,
       className: "legend-row",

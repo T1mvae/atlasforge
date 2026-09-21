@@ -177,6 +177,16 @@ body {
 .state-row-count { color: var(--text-faint); font-size: 11px; font-family: var(--font-mono); }
 .state-flag-mini { width: 18px; height: 12px; object-fit: cover; border-radius: 2px; flex: none; }
 .empty-hint { padding: 12px; color: var(--text-faint); font-size: 12px; line-height: 1.5; }
+/* custom worlds: states | regions (the painter's groups of provinces) */
+.left-views { display: flex; gap: 4px; padding: 8px 8px 0; }
+.left-view {
+  flex: 1; height: 30px; border: 1px solid var(--border); border-radius: var(--radius); background: transparent;
+  color: var(--text-dim); font: inherit; font-size: 12px; font-weight: 600; cursor: pointer;
+}
+.left-view.on { background: var(--accent-soft); border-color: var(--accent); color: var(--text); }
+.mregion-foot { display: flex; flex-direction: column; gap: 6px; padding: 8px 10px 10px; border-top: 1px solid var(--border); }
+.mregion-foot .muted { font-size: 11px; line-height: 1.35; }
+.info-card .card-kind .state-swatch { display: inline-block; width: 12px; height: 12px; vertical-align: -1px; margin-right: 4px; }
 
 /* ---------- selection mode toggle + region layers ---------- */
 .modebar { display: flex; gap: 4px; padding: 8px 8px 6px; border-bottom: 1px solid var(--border); }

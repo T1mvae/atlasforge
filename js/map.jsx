@@ -140,6 +140,10 @@ const TERRAIN_COLORS = {
 // province base so the region overlay reads clearly; provinces always stay the base.
 function provinceFill(displayMode, r, states, settings, feat, project) {
   if (displayMode === "terrain") return TERRAIN_COLORS[feat && feat.terrain] || settings.land;
+  if (displayMode === "macroRegion") { // the painter's regions; a province outside any shows the land under it
+    const mid = feat ? window.macroRegionOf(project, feat.id) : null;
+    return mid ? project.macroRegions[mid].color : "rgba(0,0,0,0)";
+  }
   if (displayMode === "province") return feat ? ColorUtil.provinceTint(settings.land, feat.id) : settings.land;
   if (["culture", "religion", "language"].includes(displayMode)) {
     const value = window.Metadata && Metadata.value(project, displayMode, r, feat);
@@ -527,7 +531,9 @@ function MapView() {
   const regSelSet = useMemo(() => new Set(App.ui.regionSelection), [App.version]);
 
   // ---------- mid-level region layer ----------
-  const displayMode = project ? (project.displayMode || "country") : "country";
+  // the regions tab of the left panel shows the provinces by region while it is open
+  const regionsView = !!(project && App.ui.leftView === "regions" && window.World && World.active());
+  const displayMode = project ? (regionsView ? "macroRegion" : project.displayMode || "country") : "country";
   const regionMode = App.ui.selectMode === "region";
   const regionDisplay = !!RegionModel.modeType[displayMode];
   const activeLayer = ready && RegionModel.supportsRegions() ? RegionModel.activeLayer() : null;
@@ -672,6 +678,14 @@ function MapView() {
   // ---------- painting ----------
   const paintRegion = useCallback((rid, erase) => {
     if (!rid) return;
+    if (App.ui.leftView === "regions" && window.World && World.active()) {
+      const p = App.project, cur = window.macroRegionOf(p, rid);
+      if (erase) { if (cur) Actions.assignMacroRegion([rid], null, { undo: false }); return; }
+      const mid = App.ui.activeMacroRegion;
+      if (!mid || !p.macroRegions || !p.macroRegions[mid]) { Actions.toast(t("mregion.paintNone")); return; }
+      if (cur !== mid) Actions.assignMacroRegion([rid], mid, { undo: false });
+      return;
+    }
     if (erase) {
       const e = effOf(rid);
       if (e && e.owner) Actions.assign([rid], null, { undo: false });
@@ -684,6 +698,17 @@ function MapView() {
   }, [effOf]);
 
   const fillByOwner = useCallback((rid) => {
+    if (App.ui.leftView === "regions" && window.World && World.active()) {
+      const p = App.project, mid = App.ui.activeMacroRegion;
+      if (!mid || !p.macroRegions || !p.macroRegions[mid]) { Actions.toast(t("mregion.paintNone")); return; }
+      const e0 = effOf(rid), owner = e0 ? e0.owner || null : null;
+      const targets = bm.features.filter((f) => {
+        const e = effOf(f.id);
+        return (e ? e.owner || null : null) === owner && (f.id === rid || !window.macroRegionOf(p, f.id));
+      }).map((f) => f.id);
+      Actions.assignMacroRegion(targets, mid);
+      return;
+    }
     const sid = App.ui.activeState;
     if (!sid) { Actions.toast(t("hint.paintNoState")); return; }
     const p = App.project;
@@ -754,6 +779,14 @@ function MapView() {
       if (window.World && World.active() && App.ui.tool === "world") {
         const b = World.pickBrush(World.mapToGrid(clientToMap({ clientX: cx, clientY: cy })));
         if (b) { Actions.ui({ worldBrush: b }); Actions.toast(t("input.pickedBrush").replace("{b}", t("world.brush." + b))); }
+        return;
+      }
+      if (App.ui.leftView === "regions" && window.World && World.active()) {
+        const mid = rid ? window.macroRegionOf(App.project, rid) : null;
+        if (mid) {
+          Actions.ui({ activeMacroRegion: mid });
+          Actions.toast(t("mregion.picked").replace("{r}", App.project.macroRegions[mid].name));
+        }
         return;
       }
       const e0 = rid && App.project ? effRegion(App.project, rid) : null;
@@ -1721,7 +1754,7 @@ function MapView() {
           {ready && !worldOn && bm.landPath && <path d={bm.landPath} fill={settings.land} stroke={settings.land} strokeWidth="1.1" vectorEffect="non-scaling-stroke" pointerEvents="none"></path>}
           <g id="regions" clipPath={ready && bm.clipLand && bm.landPath ? "url(#land-clip)" : undefined}
              pointerEvents={regionInteractive ? "none" : "auto"}
-             opacity={worldOn ? (settings.worldFillOpacity != null ? settings.worldFillOpacity : 0.62) : undefined}>
+             opacity={worldOn ? Math.max(regionsView ? 0.55 : 0, settings.worldFillOpacity != null ? settings.worldFillOpacity : 0.62) : undefined}>
             {ready && bm.features.map((f) => {
               const effR = effOf(f.id);
               // painted worlds: unowned land stays see-through so the terrain shows
@@ -2103,7 +2136,17 @@ function MapView() {
         <span ref={zoomTextRef}>100%</span>
       </div>
 
-      {!App.ui.rightOpen && ready && (App.ui.selection.length > 0 || App.ui.activeState) && (() => {
+      {!App.ui.rightOpen && ready && regionsView && App.ui.activeMacroRegion && project.macroRegions && project.macroRegions[App.ui.activeMacroRegion] && (() => {
+        const mr = project.macroRegions[App.ui.activeMacroRegion];
+        return (
+          <button className="sel-pill" data-export-skip="1" onClick={() => Actions.ui({ card: { kind: "macroRegion", id: mr.id } })}>
+            <span className="state-swatch" style={{ background: mr.color }}></span>
+            <span className="sel-pill-name">{mr.name}</span>
+            <span className="sel-pill-open">{t("mregion.open")} ›</span>
+          </button>
+        );
+      })()}
+      {!App.ui.rightOpen && ready && !regionsView && (App.ui.selection.length > 0 || App.ui.activeState) && (() => {
         const rid = App.ui.selection[0];
         const f = rid && bm.byId[rid];
         const er = rid ? effRegion(project, rid) : null;

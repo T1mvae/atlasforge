@@ -268,7 +268,7 @@
     App.ui.selection = [];
     App.ui.geomDraw = null;
     App.ui.geomEdit = null;
-    if (toastKey) Actions.toast(t(toastKey));
+    if (toastKey) Actions.toast(window.tw(toastKey));
     window.Geo.load(App.project);
   }
 
@@ -285,6 +285,9 @@
     if (e0.autonomyId) r.autonomyId = e0.autonomyId;
     return r;
   }
+
+  // the painter's regions (project.macroRegionOf) follow the provinces through edits
+  function mrOf(pr) { return pr.macroRegionOf || (pr.macroRegionOf = {}); }
 
   Actions.mergeRegionsGeometry = function (ids, name) {
     if (!ids || ids.length < 2) { Actions.toast(t("edit.needTwo")); return; }
@@ -313,6 +316,12 @@
       };
       const pol = politicalClone(recs[0]);
       if (pol) { if (!sameStatus) { pol.status = "core"; delete pol.claimants; delete pol.occupiedFrom; delete pol.autonomyId; } pr.regions[newId] = pol; }
+      // the merged province is in the region at least half of its parts were in
+      const of = mrOf(pr), votes = new Map();
+      ids.forEach((id) => { const m = of[String(id)]; if (m) votes.set(m, (votes.get(m) || 0) + 1); delete of[String(id)]; });
+      let best = null, bv = 0;
+      votes.forEach((v, m) => { if (v > bv) { bv = v; best = m; } });
+      if (best && bv * 2 >= ids.length) of[newId] = best;
     }, "edit.mergedOk");
     return newId;
   };
@@ -420,6 +429,8 @@
       if (ed.features[id]) delete ed.features[id];
       ed.removed[id] = true;
       delete pr.regions[id];
+      const of = mrOf(pr), m0 = of[String(id)]; // both halves stay in the province's region
+      delete of[String(id)];
       const newIds = [];
       [[A, " I"], [B, " II"]].forEach(([part, suf]) => {
         const nid = "e" + uid();
@@ -427,6 +438,7 @@
         ed.features[nid] = { geometry: fromMP(part), name: baseName + suf, props: carryProps(srcProps) };
         const pol = politicalClone(e0);
         if (pol) pr.regions[nid] = pol;
+        if (m0) of[nid] = m0;
       });
       healInto(ed, newIds, { exactOnly: true }); // numeric crumbs along the new seam only — never touch the outer border here
     }, "edit.splitOk");
@@ -581,6 +593,7 @@
             if (ed.features[f.id]) delete ed.features[f.id];
             ed.removed[f.id] = true;
             delete pr.regions[f.id];
+            delete mrOf(pr)[String(f.id)];
           } else {
             const props0 = rawProps(f.id);
             ed.features[f.id] = {
@@ -591,7 +604,7 @@
           }
         });
       }
-      ed.features[newId] = { geometry: fromMP(newMP), name: name || t("edit.newRegionName"), props: {} };
+      ed.features[newId] = { geometry: fromMP(newMP), name: name || window.tw("edit.newRegionName"), props: {} };
     }, "edit.drawOk");
     return newId;
   };
@@ -634,6 +647,7 @@
       if (ed.features[id]) delete ed.features[id];
       ed.removed[id] = true;
       delete pr.regions[id];
+      delete mrOf(pr)[String(id)];
     }, "edit.deleteOk");
   };
 

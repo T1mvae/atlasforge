@@ -7,30 +7,30 @@
 //          template is opened (or via "download for offline"), then served cache-first.
 // A new version installs in the background and waits; the page asks the user to reload
 // (message "skipWaiting") so an edit in progress is never interrupted.
-const VERSION = "8381c60e74";
+const VERSION = "830d865750";
 const SHELL = "af-shell-" + VERSION;
 const DATA = "af-data-v1";
 const PRECACHE = [
   "./",
-  "build/app.js?v=21d09162c0",
-  "build/chrome.js?v=85ab75c779",
-  "build/map.js?v=01b9587dd9",
+  "build/app.js?v=13dc3052ab",
+  "build/chrome.js?v=2c6e8d56c8",
+  "build/map.js?v=5ff832ea59",
   "build/objects.js?v=85e5a3856b",
-  "build/panels.js?v=c14ee124b7",
-  "build/world.js?v=0850d4d18e",
-  "css/editor.css?v=eaf11c33d8",
+  "build/panels.js?v=fade625c36",
+  "build/world.js?v=c2ebde11a8",
+  "css/editor.css?v=0ba3fad5a9",
   "icons/apple-touch-icon.png",
   "icons/apple-touch-icon.png?v=953bc6d2b1",
   "icons/icon-192.png",
   "icons/icon-192.png?v=3be2bf771a",
   "icons/icon-512.png",
   "icons/icon-maskable-512.png",
-  "js/atlas.js?v=90d19887cf",
-  "js/core.js?v=9f755ac7dc",
-  "js/edit.js?v=bfb1feadc3",
+  "js/atlas.js?v=159da68749",
+  "js/core.js?v=fb59c1d544",
+  "js/edit.js?v=40f4f31ece",
   "js/export.js?v=cb2f6d64d9",
   "js/geo.js?v=a68a71e50b",
-  "js/i18n.js?v=339b22783e",
+  "js/i18n.js?v=d33473eabe",
   "js/names.js?v=bba4c0ceee",
   "js/objects.js?v=e11d5d7ba0",
   "js/pwa.js?v=9f35de276b",

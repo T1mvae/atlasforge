@@ -40,7 +40,7 @@ function AppRoot() {
         if (App.ui.geomEdit) { window.GeomEdit && GeomEdit.cancelEdit(); return; }
         if (App.ui.present) { Actions.ui({ present: false }); return; }
         if (App.ui.modal && App.project) { Actions.ui({ modal: null }); return; }
-        Actions.ui({ selLabel: null, selFeatLabel: null, selStateLabel: null });
+        Actions.ui({ selLabel: null, selFeatLabel: null, selStateLabel: null, activeMacroRegion: null });
         Actions.clearRegionSelection();
         Actions.select([], false);
         return;

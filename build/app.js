@@ -102,7 +102,8 @@ function AppRoot() {
         Actions.ui({
           selLabel: null,
           selFeatLabel: null,
-          selStateLabel: null
+          selStateLabel: null,
+          activeMacroRegion: null
         });
         Actions.clearRegionSelection();
         Actions.select([], false);

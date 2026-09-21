@@ -113,6 +113,14 @@
     return d[key] ?? window.I18N.en[key] ?? key;
   }
   window.t = t;
+  // custom worlds call their cells provinces ("regions" there are the painter's groups of
+  // them): the key's ".world" wording when there is one
+  function tw(key) {
+    const k = key + ".world";
+    if (window.World && window.World.active && window.World.active() && (window.I18N.en[k] != null || (window.I18N[App.ui.lang] || {})[k] != null)) return t(k);
+    return t(key);
+  }
+  window.tw = tw;
 
   // ---------- project factory ----------
   function newProjectData(basemapId, name) {
@@ -184,6 +192,12 @@
       regionEdits: {},                              // imported regionId -> { name?, type?, color?, notes?, metadata? }
       // ---- named autonomous entities inside a country (own border + label) ----
       autonomies: {},                               // id -> { id, name, owner, color }
+      // ---- regions: provinces the painter grouped (above the province, may span states,
+      // the same in every year — not in the year snapshots). "regions" above are the
+      // provinces' own records (an old name), hence "macroRegion" here.
+      macroRegions: {},                             // id -> { id, name, color, notes }
+      macroRegionOrder: [],                         // region ids in list order
+      macroRegionOf: {},                            // province (feature) id -> region id
       // ---- reusable custom values for country fields (persist project-wide) ----
       valueLists: { ideology: [], government: [], religion: [], economy: [], culture: [], language: [] },
       // ---- named metadata dictionaries; values in states/regions stay plain text
@@ -227,6 +241,7 @@
       regionLayers: p.regionLayers || [], customRegions: p.customRegions || {}, regionEdits: p.regionEdits || {},
       regionGeomEdits: p.regionGeomEdits || { removed: {}, features: {} }, backdrop: p.backdrop || null,
       autonomies: p.autonomies || {}, valueLists: p.valueLists || {}, catalogs: p.catalogs || {},
+      macroRegions: p.macroRegions || {}, macroRegionOrder: p.macroRegionOrder || [], macroRegionOf: p.macroRegionOf || {},
       // custom worlds: settings and rivers only — the rasters have their own diff entries
       world: window.World ? window.World.sliceWorld(p.world) : (p.world || null),
       objects: p.objects || {}, roads: p.roads || {}
@@ -361,7 +376,8 @@
   window.addEventListener("pagehide", () => { if (saveTimer) saveNow(); });
 
   const PREF_KEYS = ["lang", "theme", "propsWidth", "leftOpen", "rightOpen", "pencilOnly", "worldPressure", "tiltSize",
-    "worldStabilizer", "worldSize", "worldRough", "worldBrush", "placeType", "atlasDetail", "roadFollow", "exportSize", "exportLegend"];
+    "worldStabilizer", "worldSize", "worldRough", "worldBrush", "placeType", "atlasDetail", "roadFollow", "exportSize", "exportLegend",
+    "leftView"];
   function saveUiPrefs() {
     try {
       const out = {};
@@ -443,6 +459,76 @@
       }
     }, { terr: true });
     if (App.ui.activeState === sid) { App.ui.activeState = null; App.emit(); }
+  };
+
+  // ---------- regions: provinces grouped by the painter ----------
+  // A region is a named group of provinces between the province and the state; it may
+  // span several states and is the same in every year. project.macroRegions holds them,
+  // macroRegionOrder their order, macroRegionOf the region of each province.
+  function mrEnsure(p) {
+    if (!p.macroRegions) p.macroRegions = {};
+    if (!Array.isArray(p.macroRegionOrder)) p.macroRegionOrder = [];
+    if (!p.macroRegionOf) p.macroRegionOf = {};
+  }
+  function mrNew(p, name) {
+    mrEnsure(p);
+    const id = "m" + uid();
+    const i = p.macroRegionOrder.length;
+    p.macroRegions[id] = { id, name: name || (App.ui.lang === "ru" ? "Регион " : "Region ") + (i + 1), color: nextAutoColor(i * 3 + 11), notes: "" };
+    p.macroRegionOrder.push(id);
+    return id;
+  }
+  // a new region (with these provinces, if any), made the active one
+  Actions.addMacroRegion = function (name, pids) {
+    let id = null;
+    Actions.mut((p) => {
+      id = mrNew(p, name);
+      (pids || []).forEach((pid) => { p.macroRegionOf[String(pid)] = id; });
+    }, { terr: true });
+    App.ui.activeMacroRegion = id;
+    App.emit();
+    return id;
+  };
+  // several regions in one undo step: [{ name, pids }]
+  Actions.addMacroRegions = function (list) {
+    const ids = [];
+    Actions.mut((p) => {
+      (list || []).forEach((it) => {
+        const id = mrNew(p, it.name);
+        (it.pids || []).forEach((pid) => { p.macroRegionOf[String(pid)] = id; });
+        ids.push(id);
+      });
+    }, { terr: true });
+    return ids;
+  };
+  Actions.setMacroRegion = function (id, patch, opts) {
+    Actions.mut((p) => { mrEnsure(p); if (p.macroRegions[id]) Object.assign(p.macroRegions[id], patch); },
+      Object.assign({ terr: patch && patch.color != null }, opts));
+  };
+  // the region goes, its provinces stay (outside any region)
+  Actions.deleteMacroRegion = function (id) {
+    Actions.mut((p) => {
+      mrEnsure(p);
+      delete p.macroRegions[id];
+      p.macroRegionOrder = p.macroRegionOrder.filter((x) => x !== id);
+      for (const pid in p.macroRegionOf) if (p.macroRegionOf[pid] === id) delete p.macroRegionOf[pid];
+    }, { terr: true });
+    if (App.ui.activeMacroRegion === id) App.ui.activeMacroRegion = null;
+    if (App.ui.card && App.ui.card.kind === "macroRegion" && App.ui.card.id === id) App.ui.card = null;
+    App.emit();
+  };
+  // put provinces into a region (null: out of any region)
+  Actions.assignMacroRegion = function (pids, id, opts) {
+    Actions.mut((p) => {
+      mrEnsure(p);
+      if (id && !p.macroRegions[id]) return;
+      (pids || []).forEach((pid) => { if (id) p.macroRegionOf[String(pid)] = id; else delete p.macroRegionOf[String(pid)]; });
+    }, Object.assign({ terr: true }, opts));
+  };
+  // the region of a province (null when it has none, or the region is gone)
+  window.macroRegionOf = function (p, pid) {
+    const id = p && p.macroRegionOf ? p.macroRegionOf[String(pid)] : null;
+    return id && p.macroRegions && p.macroRegions[id] ? id : null;
   };
 
   // ---------- regions ----------

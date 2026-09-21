@@ -326,6 +326,88 @@ function RegionLayersPanel() {
     }, t("rlayer.delete")) : null;
   }()));
 }
+
+// the painter's regions (custom worlds): pick one, then paint provinces into it
+function MacroRegionList() {
+  var p = App.project;
+  var regions = p.macroRegions || {};
+  var order = (p.macroRegionOrder || []).filter(function (id) {
+    return regions[id];
+  });
+  var counts = {};
+  var inRegions = 0;
+  for (var pid in p.macroRegionOf || {}) {
+    var id = p.macroRegionOf[pid];
+    if (!regions[id] || !App.basemap.byId[pid]) continue;
+    counts[id] = (counts[id] || 0) + 1;
+    inRegions++;
+  }
+  var free = Math.max(0, (App.basemap.count || 0) - inRegions);
+  var add = function add() {
+    var sel = App.ui.selection;
+    var id = Actions.addMacroRegion(null, sel.length ? sel : null);
+    Actions.ui({
+      card: {
+        kind: "macroRegion",
+        id: id
+      },
+      cardMin: false
+    });
+  };
+  return /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", {
+    className: "panel-head"
+  }, /*#__PURE__*/React.createElement("span", null, t("mregion.title")), /*#__PURE__*/React.createElement("button", {
+    className: "btn icon",
+    title: t("mregion.add"),
+    onClick: add,
+    style: {
+      height: 22,
+      width: 22,
+      fontSize: 15
+    }
+  }, "+")), /*#__PURE__*/React.createElement("div", {
+    className: "states-list"
+  }, order.length === 0 && /*#__PURE__*/React.createElement("div", {
+    className: "empty-hint"
+  }, t("mregion.none")), order.map(function (id) {
+    var r = regions[id];
+    return /*#__PURE__*/React.createElement("div", {
+      key: id,
+      className: "state-row" + (App.ui.activeMacroRegion === id ? " active" : ""),
+      onClick: function onClick() {
+        return Actions.ui({
+          activeMacroRegion: id,
+          card: {
+            kind: "macroRegion",
+            id: id
+          },
+          cardMin: false
+        });
+      }
+    }, /*#__PURE__*/React.createElement("span", {
+      className: "state-swatch",
+      style: {
+        background: r.color
+      }
+    }), /*#__PURE__*/React.createElement("span", {
+      className: "state-row-name"
+    }, r.name || t("misc.unnamed")), /*#__PURE__*/React.createElement("span", {
+      className: "state-row-count"
+    }, counts[id] || 0));
+  })), /*#__PURE__*/React.createElement("div", {
+    className: "mregion-foot"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "muted"
+  }, t("mregion.hint")), /*#__PURE__*/React.createElement("div", {
+    className: "muted"
+  }, t("mregion.free").replace("{n}", free)), window.suggestMacroRegions && /*#__PURE__*/React.createElement("button", {
+    className: "btn outline",
+    disabled: !free || !App.basemap.count,
+    onClick: function onClick() {
+      return window.suggestMacroRegions();
+    }
+  }, t("mregion.suggest"))));
+}
 function StatesPanel() {
   useStore();
   var p = App.project;
@@ -333,10 +415,28 @@ function StatesPanel() {
     className: "states-panel"
   });
   var counts = stateStats();
+  var worldOn = !!(window.World && World.active());
+  var regionsView = worldOn && App.ui.leftView === "regions";
   return /*#__PURE__*/React.createElement("div", {
     className: "states-panel",
     "data-screen-label": "States panel"
-  }, /*#__PURE__*/React.createElement(ModeBar, null), App.ui.selectMode === "region" && /*#__PURE__*/React.createElement(RegionLayersPanel, null), /*#__PURE__*/React.createElement("div", {
+  }, /*#__PURE__*/React.createElement(ModeBar, null), App.ui.selectMode === "region" && /*#__PURE__*/React.createElement(RegionLayersPanel, null), worldOn && /*#__PURE__*/React.createElement("div", {
+    className: "left-views"
+  }, /*#__PURE__*/React.createElement("button", {
+    className: "left-view" + (!regionsView ? " on" : ""),
+    onClick: function onClick() {
+      return Actions.setPref({
+        leftView: "states"
+      });
+    }
+  }, t("states.title")), /*#__PURE__*/React.createElement("button", {
+    className: "left-view" + (regionsView ? " on" : ""),
+    onClick: function onClick() {
+      return Actions.setPref({
+        leftView: "regions"
+      });
+    }
+  }, t("mregion.title"))), regionsView ? /*#__PURE__*/React.createElement(MacroRegionList, null) : /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", {
     className: "panel-head"
   }, /*#__PURE__*/React.createElement("span", null, t("states.title")), /*#__PURE__*/React.createElement("button", {
     className: "btn icon",
@@ -380,7 +480,7 @@ function StatesPanel() {
     }, s.name || t("misc.unnamed")), /*#__PURE__*/React.createElement("span", {
       className: "state-row-count"
     }, counts[sid] || 0));
-  })));
+  }))));
 }
 
 // ---------- form primitives ----------
@@ -739,7 +839,7 @@ function MapTab() {
   };
   var mode = s.mapMode || "color";
   var supportsRegions = RegionModel.supportsRegions();
-  var displayModes = ["country", "province", "culture", "religion", "language", "terrain"].concat(supportsRegions ? ["stateRegion", "historicalRegion", "culturalRegion", "geographicalRegion", "politicalRegion"] : []);
+  var displayModes = ["country", "province", "culture", "religion", "language", "terrain"].concat(window.World && World.active() ? ["macroRegion"] : []).concat(supportsRegions ? ["stateRegion", "historicalRegion", "culturalRegion", "geographicalRegion", "politicalRegion"] : []);
   return /*#__PURE__*/React.createElement("div", {
     className: "props-body"
   }, /*#__PURE__*/React.createElement(SelectField, {
@@ -847,7 +947,7 @@ function MapTab() {
   }))), /*#__PURE__*/React.createElement("div", {
     className: "props-section-title"
   }, t("map.sectionBorders")), App.basemap.topo ? /*#__PURE__*/React.createElement(Check, {
-    label: t("map.showRegionBorders"),
+    label: tw("map.showRegionBorders"),
     checked: s.showRegionBorders !== undefined ? s.showRegionBorders !== false : s.innerBorders !== false,
     onChange: function onChange(v) {
       return set({
@@ -977,7 +1077,7 @@ function MapTab() {
       });
     }
   }), /*#__PURE__*/React.createElement(Check, {
-    label: t("map.provinceTint"),
+    label: tw("map.provinceTint"),
     checked: s.provinceTint,
     onChange: function onChange(v) {
       return set({
@@ -2490,6 +2590,68 @@ function RegionPropsPanel() {
     }
   }, t("region.delete"))));
 }
+
+// the region (custom worlds) the selected provinces belong to
+function MacroRegionField(_ref15) {
+  var sel = _ref15.sel;
+  var p = App.project;
+  var regions = p.macroRegions || {};
+  var order = (p.macroRegionOrder || []).filter(function (id) {
+    return regions[id];
+  });
+  var first = window.macroRegionOf(p, sel[0]) || "";
+  var common = sel.every(function (x) {
+    return (window.macroRegionOf(p, x) || "") === first;
+  }) ? first : "__mixed";
+  var change = function change(v) {
+    if (v === "__mixed") return;
+    if (v === "__new") {
+      var nm = prompt(t("mregion.newAsk"), "");
+      if (nm === null) return;
+      Actions.addMacroRegion(nm.trim() || null, sel);
+      return;
+    }
+    Actions.assignMacroRegion(sel, v || null);
+  };
+  return /*#__PURE__*/React.createElement(Field, {
+    label: t("mregion.field")
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "field-row"
+  }, /*#__PURE__*/React.createElement("select", {
+    className: "select",
+    value: common,
+    onChange: function onChange(e) {
+      return change(e.target.value);
+    }
+  }, common === "__mixed" && /*#__PURE__*/React.createElement("option", {
+    value: "__mixed"
+  }, "\xB7\xB7\xB7"), /*#__PURE__*/React.createElement("option", {
+    value: ""
+  }, t("mregion.noneOpt")), order.map(function (id) {
+    return /*#__PURE__*/React.createElement("option", {
+      key: id,
+      value: id
+    }, regions[id].name || t("misc.unnamed"));
+  }), /*#__PURE__*/React.createElement("option", {
+    value: "__new"
+  }, t("mregion.newOpt"))), common && common !== "__mixed" && /*#__PURE__*/React.createElement("button", {
+    className: "btn outline",
+    style: {
+      height: 30,
+      flex: "none"
+    },
+    title: t("mregion.open"),
+    onClick: function onClick() {
+      return Actions.ui({
+        card: {
+          kind: "macroRegion",
+          id: common
+        },
+        cardMin: false
+      });
+    }
+  }, "\u203A")));
+}
 function RegionTab() {
   var p = App.project;
   if (App.ui.selectMode === "region") return /*#__PURE__*/React.createElement(RegionPropsPanel, null);
@@ -2504,7 +2666,7 @@ function RegionTab() {
     className: "props-body"
   }, /*#__PURE__*/React.createElement("div", {
     className: "muted"
-  }, t("region.none")));
+  }, tw("region.none")));
   var rid = sel[0];
   var r0 = p.regions[rid] || {};
   var gid = r0.group && p.groups && p.groups[r0.group] ? r0.group : null;
@@ -2684,13 +2846,13 @@ function RegionTab() {
     style: {
       color: "var(--text)"
     }
-  }, sel.length), " ", t("region.multi")), window.GeomEdit && GeomEdit.enabled() ? /*#__PURE__*/React.createElement("button", {
+  }, sel.length), " ", tw("region.multi")), window.GeomEdit && GeomEdit.enabled() ? /*#__PURE__*/React.createElement("button", {
     className: "btn primary",
     onClick: function onClick() {
-      var nm = prompt(t("edit.mergeNameAsk"), p.regions[sel[0]] && p.regions[sel[0]].name || (App.basemap.byId[sel[0]] || {}).name || "");
+      var nm = prompt(tw("edit.mergeNameAsk"), p.regions[sel[0]] && p.regions[sel[0]].name || (App.basemap.byId[sel[0]] || {}).name || "");
       if (nm !== null) Actions.mergeRegionsGeometry(sel, nm || null);
     }
-  }, t("edit.merge")) : /*#__PURE__*/React.createElement("button", {
+  }, tw("edit.merge")) : /*#__PURE__*/React.createElement("button", {
     className: "btn primary",
     onClick: function onClick() {
       return Actions.groupRegions(sel);
@@ -2757,7 +2919,9 @@ function RegionTab() {
       key: o.id,
       value: o.id
     }, o.name);
-  }))), /*#__PURE__*/React.createElement(Field, {
+  }))), window.World && World.active() && /*#__PURE__*/React.createElement(MacroRegionField, {
+    sel: sel
+  }), /*#__PURE__*/React.createElement(Field, {
     label: t("f.status")
   }, /*#__PURE__*/React.createElement("select", {
     className: "select",
@@ -2810,7 +2974,7 @@ function RegionTab() {
     }
   }, "\u21BA"))), /*#__PURE__*/React.createElement("div", {
     className: "props-section-title"
-  }, t("props.region")), !multi && /*#__PURE__*/React.createElement(TextField, {
+  }, tw("props.region")), !multi && /*#__PURE__*/React.createElement(TextField, {
     label: t("f.population"),
     value: r.population,
     onChange: function onChange(v) {
@@ -2896,7 +3060,7 @@ function RegionTab() {
       Actions.ui({
         tool: "split"
       });
-      Actions.toast(t("edit.splitHint"));
+      Actions.toast(tw("edit.splitHint"));
     }
   }, t("edit.splitBtn")), /*#__PURE__*/React.createElement("button", {
     className: "btn outline",
@@ -2913,7 +3077,7 @@ function RegionTab() {
       fontSize: 11
     },
     onClick: function onClick() {
-      if (!confirm(t("edit.deleteAsk"))) return;
+      if (!confirm(tw("edit.deleteAsk"))) return;
       var merge = confirm(t("edit.deleteMergeAsk"));
       Actions.deleteRegionGeometry(rid, merge ? "merge" : "hole");
     }
@@ -2964,7 +3128,7 @@ function PropsPanel() {
           panel: k
         });
       }
-    }, t("props." + k));
+    }, k === "region" ? tw("props.region") : t("props." + k));
   })), /*#__PURE__*/React.createElement(Body, null));
 }
 

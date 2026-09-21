@@ -1489,29 +1489,228 @@ function CatalogEntryEditor(_ref9) {
     }
   }, t("catalog.merge"))));
 }
+
+// ---------- the painter's regions in the catalogs (custom worlds): names, colours, notes ----------
+function MacroRegionEntry(_ref0) {
+  var id = _ref0.id,
+    pids = _ref0.pids,
+    states = _ref0.states;
+  var p = App.project;
+  var r = p.macroRegions[id];
+  var set = function set(patch) {
+    return Actions.setMacroRegion(id, patch, {
+      undo: false
+    });
+  };
+  return /*#__PURE__*/React.createElement("div", {
+    className: "catalog-entry"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "catalog-entry-head"
+  }, /*#__PURE__*/React.createElement("input", {
+    className: "input",
+    value: r.name,
+    placeholder: t("mregion.namePh"),
+    onChange: function onChange(e) {
+      return set({
+        name: e.target.value
+      });
+    }
+  }), /*#__PURE__*/React.createElement("input", {
+    type: "color",
+    className: "color-input",
+    value: r.color || "#888888",
+    onChange: function onChange(e) {
+      return set({
+        color: e.target.value
+      });
+    }
+  }), /*#__PURE__*/React.createElement("button", {
+    className: "btn icon danger",
+    title: t("mregion.delete"),
+    onClick: function onClick() {
+      if (confirm(t("mregion.deleteAsk").replace("{r}", r.name))) Actions.deleteMacroRegion(id);
+    }
+  }, "\u2715")), /*#__PURE__*/React.createElement("textarea", {
+    className: "textarea catalog-description",
+    rows: "4",
+    placeholder: t("mregion.notesPh"),
+    value: r.notes || "",
+    onChange: function onChange(e) {
+      return set({
+        notes: e.target.value
+      });
+    }
+  }), /*#__PURE__*/React.createElement("div", {
+    className: "muted"
+  }, t("mregion.usage").replace("{n}", pids.length), states ? " · " + states : ""), /*#__PURE__*/React.createElement("div", {
+    className: "field-row"
+  }, /*#__PURE__*/React.createElement("button", {
+    className: "btn outline",
+    style: {
+      fontSize: 11
+    },
+    disabled: !pids.length,
+    onClick: function onClick() {
+      return Actions.select(pids, false);
+    }
+  }, t("mregion.select")), /*#__PURE__*/React.createElement("button", {
+    className: "btn outline",
+    style: {
+      fontSize: 11
+    },
+    onClick: function onClick() {
+      Actions.setPref({
+        leftView: "regions",
+        leftOpen: true
+      });
+      Actions.ui({
+        activeMacroRegion: id,
+        tool: "paint"
+      });
+    }
+  }, t("mregion.paint"))));
+}
+function MacroRegionCatalog() {
+  var p = App.project;
+  var _React$useState9 = React.useState(""),
+    _React$useState0 = _slicedToArray(_React$useState9, 2),
+    newName = _React$useState0[0],
+    setNewName = _React$useState0[1];
+  var _React$useState1 = React.useState(""),
+    _React$useState10 = _slicedToArray(_React$useState1, 2),
+    query = _React$useState10[0],
+    setQuery = _React$useState10[1];
+  var _React$useState11 = React.useState(""),
+    _React$useState12 = _slicedToArray(_React$useState11, 2),
+    applyId = _React$useState12[0],
+    setApplyId = _React$useState12[1];
+  var regions = p.macroRegions || {};
+  var order = (p.macroRegionOrder || []).filter(function (id) {
+    return regions[id];
+  });
+  React.useEffect(function () {
+    if (!regions[applyId]) setApplyId(order[0] || "");
+  }, [order.join("\x01")]);
+  // the provinces of each region, and the states they belong to
+  var pidsOf = {},
+    ownersOf = {};
+  for (var pid in p.macroRegionOf || {}) {
+    var id = p.macroRegionOf[pid];
+    if (!regions[id] || !App.basemap.byId[pid]) continue;
+    (pidsOf[id] = pidsOf[id] || []).push(pid);
+    var e = effRegion(p, pid);
+    var o = e && e.owner && p.states[e.owner] ? e.owner : "";
+    var m = ownersOf[id] = ownersOf[id] || new Map();
+    m.set(o, (m.get(o) || 0) + 1);
+  }
+  var statesOf = function statesOf(id) {
+    return ownersOf[id] ? _toConsumableArray(ownersOf[id].entries()).sort(function (a, b) {
+      return b[1] - a[1];
+    }).map(function (_ref1) {
+      var _ref10 = _slicedToArray(_ref1, 1),
+        o = _ref10[0];
+      return o ? p.states[o].name : t("legend.unowned");
+    }).join(", ") : "";
+  };
+  var q = query.trim().toLowerCase();
+  var visible = order.filter(function (id) {
+    return !q || (regions[id].name || "").toLowerCase().includes(q) || (regions[id].notes || "").toLowerCase().includes(q);
+  }).slice(0, 100);
+  var selected = App.ui.selection || [];
+  var add = function add() {
+    var nm = newName.trim();
+    if (!nm) return;
+    Actions.addMacroRegion(nm);
+    setNewName("");
+  };
+  return /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", {
+    className: "muted"
+  }, t("mregion.catalogHint")), /*#__PURE__*/React.createElement("div", {
+    className: "catalog-apply"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "props-section-title"
+  }, t("catalog.bulk")), /*#__PURE__*/React.createElement("select", {
+    className: "select",
+    value: applyId,
+    onChange: function onChange(e) {
+      return setApplyId(e.target.value);
+    },
+    disabled: !order.length
+  }, !order.length && /*#__PURE__*/React.createElement("option", {
+    value: ""
+  }, t("mregion.catalogEmpty")), order.map(function (id) {
+    return /*#__PURE__*/React.createElement("option", {
+      key: id,
+      value: id
+    }, regions[id].name || t("misc.unnamed"));
+  })), /*#__PURE__*/React.createElement("button", {
+    className: "btn primary",
+    disabled: !selected.length || !applyId,
+    onClick: function onClick() {
+      return Actions.assignMacroRegion(selected, applyId);
+    }
+  }, t("catalog.apply"), " (", selected.length, ")")), /*#__PURE__*/React.createElement("div", {
+    className: "catalog-add"
+  }, /*#__PURE__*/React.createElement("input", {
+    className: "input",
+    placeholder: t("mregion.newPh"),
+    value: newName,
+    onChange: function onChange(e) {
+      return setNewName(e.target.value);
+    },
+    onKeyDown: function onKeyDown(e) {
+      if (e.key === "Enter") add();
+    }
+  }), /*#__PURE__*/React.createElement("button", {
+    className: "btn outline",
+    onClick: add
+  }, t("catalog.add"))), order.length > 12 && /*#__PURE__*/React.createElement("input", {
+    className: "input",
+    placeholder: t("mregion.search"),
+    value: query,
+    onChange: function onChange(e) {
+      return setQuery(e.target.value);
+    }
+  }), visible.length < order.length && /*#__PURE__*/React.createElement("div", {
+    className: "muted"
+  }, t("catalog.showing").replace("{shown}", visible.length).replace("{total}", order.length)), /*#__PURE__*/React.createElement("div", {
+    className: "catalog-list"
+  }, visible.map(function (id) {
+    return /*#__PURE__*/React.createElement(MacroRegionEntry, {
+      key: id,
+      id: id,
+      pids: pidsOf[id] || [],
+      states: statesOf(id)
+    });
+  })));
+}
 function CatalogTab() {
   useStore();
   var p = App.project;
-  var _React$useState9 = React.useState("culture"),
-    _React$useState0 = _slicedToArray(_React$useState9, 2),
-    field = _React$useState0[0],
-    setField = _React$useState0[1];
-  var _React$useState1 = React.useState(""),
-    _React$useState10 = _slicedToArray(_React$useState1, 2),
-    newName = _React$useState10[0],
-    setNewName = _React$useState10[1];
-  var _React$useState11 = React.useState(""),
-    _React$useState12 = _slicedToArray(_React$useState11, 2),
-    query = _React$useState12[0],
-    setQuery = _React$useState12[1];
-  var values = (window.Metadata ? Metadata.values(p, field) : []).filter(Boolean);
+  var _React$useState13 = React.useState("culture"),
+    _React$useState14 = _slicedToArray(_React$useState13, 2),
+    picked = _React$useState14[0],
+    setField = _React$useState14[1];
+  var _React$useState15 = React.useState(""),
+    _React$useState16 = _slicedToArray(_React$useState15, 2),
+    newName = _React$useState16[0],
+    setNewName = _React$useState16[1];
+  var _React$useState17 = React.useState(""),
+    _React$useState18 = _slicedToArray(_React$useState17, 2),
+    query = _React$useState18[0],
+    setQuery = _React$useState18[1];
+  var worldOn = !!(window.World && World.active());
+  var field = picked === "macroRegion" && !worldOn ? "culture" : picked; // regions exist on custom worlds only
+  var regionsTab = field === "macroRegion";
+  var tabs = CATALOG_TABS.concat(worldOn ? ["macroRegion"] : []);
+  var values = (window.Metadata && !regionsTab ? Metadata.values(p, field) : []).filter(Boolean);
   var visibleValues = values.filter(function (name) {
     return !query.trim() || name.toLowerCase().includes(query.trim().toLowerCase());
   }).slice(0, 100);
-  var _React$useState13 = React.useState(""),
-    _React$useState14 = _slicedToArray(_React$useState13, 2),
-    applyValue = _React$useState14[0],
-    setApplyValue = _React$useState14[1];
+  var _React$useState19 = React.useState(""),
+    _React$useState20 = _slicedToArray(_React$useState19, 2),
+    applyValue = _React$useState20[0],
+    setApplyValue = _React$useState20[1];
   React.useEffect(function () {
     if (!values.includes(applyValue)) setApplyValue(values[0] || "");
   }, [field, values.join("\x01")]);
@@ -1527,11 +1726,9 @@ function CatalogTab() {
     setNewName("");
   };
   var selected = App.ui.selection || [];
-  return /*#__PURE__*/React.createElement("div", {
-    className: "props-body catalog-panel"
-  }, /*#__PURE__*/React.createElement("div", {
+  var chips = /*#__PURE__*/React.createElement("div", {
     className: "chip-row catalog-tabs"
-  }, CATALOG_TABS.map(function (k) {
+  }, tabs.map(function (k) {
     return /*#__PURE__*/React.createElement("button", {
       key: k,
       className: "chip" + (field === k ? " on" : ""),
@@ -1539,7 +1736,13 @@ function CatalogTab() {
         return setField(k);
       }
     }, t("catalog." + k));
-  })), /*#__PURE__*/React.createElement("div", {
+  }));
+  if (regionsTab) return /*#__PURE__*/React.createElement("div", {
+    className: "props-body catalog-panel"
+  }, chips, /*#__PURE__*/React.createElement(MacroRegionCatalog, null));
+  return /*#__PURE__*/React.createElement("div", {
+    className: "props-body catalog-panel"
+  }, chips, /*#__PURE__*/React.createElement("div", {
     className: "muted"
   }, t("catalog.hint")), field !== "government" && /*#__PURE__*/React.createElement("div", {
     className: "catalog-apply"
@@ -1876,11 +2079,11 @@ function StateTab() {
 // ---------- text look: size, turn, arc, letter spacing, bold, italic, capitals, halo, shadow ----------
 // v: the current values; set(patch, opts) writes them. kind "label" (a free label) or "state"
 // (a country name: size, turn and spacing may be "auto"). Dragging a slider is one undo step.
-function TextStyleFields(_ref0) {
-  var v = _ref0.v,
-    set = _ref0.set,
-    kind = _ref0.kind,
-    defaults = _ref0.defaults;
+function TextStyleFields(_ref11) {
+  var v = _ref11.v,
+    set = _ref11.set,
+    kind = _ref11.kind,
+    defaults = _ref11.defaults;
   var stroke = React.useRef(false);
   var live = function live(patch) {
     if (!stroke.current) {
@@ -2077,8 +2280,8 @@ function TextStyleFields(_ref0) {
 }
 
 // a free label: its text, colour and look
-function LabelFields(_ref1) {
-  var id = _ref1.id;
+function LabelFields(_ref12) {
+  var id = _ref12.id;
   var p = App.project;
   var l = p.labels.find(function (x) {
     return x.id === id;
@@ -2134,8 +2337,8 @@ function LabelFields(_ref1) {
 }
 
 // a country's name on the map: hidden, look, position
-function StateLabelFields(_ref10) {
-  var sid = _ref10.sid;
+function StateLabelFields(_ref13) {
+  var sid = _ref13.sid;
   var p = App.project;
   var s = p.states[sid];
   if (!s) return null;
@@ -2194,8 +2397,8 @@ function StateLabelFields(_ref10) {
 }
 
 // ---------- Region tab (also label editor) ----------
-function LabelEditor(_ref11) {
-  var id = _ref11.id;
+function LabelEditor(_ref14) {
+  var id = _ref14.id;
   return /*#__PURE__*/React.createElement("div", {
     className: "props-body"
   }, /*#__PURE__*/React.createElement(LabelFields, {
@@ -2204,8 +2407,8 @@ function LabelEditor(_ref11) {
 }
 
 // the text card over the map (shown on tablets even with the side panel closed)
-function LabelCard(_ref12) {
-  var card = _ref12.card;
+function LabelCard(_ref15) {
+  var card = _ref15.card;
   useStore();
   var p = App.project;
   var close = function close() {
@@ -2254,8 +2457,8 @@ function LabelCard(_ref12) {
 }
 
 // ---------- per-region name label editor (move / rotate / size / hide) ----------
-function FeatLabelEditor(_ref13) {
-  var id = _ref13.id;
+function FeatLabelEditor(_ref16) {
+  var id = _ref16.id;
   var p = App.project;
   var ov = (p.featLabels || {})[id] || {};
   var set = function set(patch) {
@@ -2327,17 +2530,17 @@ function FeatLabelEditor(_ref13) {
 
 // ---------- region selection editor (Region mode) ----------
 var META_FIELDS = ["culture", "language", "religion", "terrain", "climate", "historicalPeriod", "politicalStatus", "population", "development"];
-function NewRegionForm(_ref14) {
-  var onCreate = _ref14.onCreate,
-    defaultType = _ref14.defaultType;
-  var _React$useState15 = React.useState(""),
-    _React$useState16 = _slicedToArray(_React$useState15, 2),
-    name = _React$useState16[0],
-    setName = _React$useState16[1];
-  var _React$useState17 = React.useState(defaultType || "historical"),
-    _React$useState18 = _slicedToArray(_React$useState17, 2),
-    type = _React$useState18[0],
-    setType = _React$useState18[1];
+function NewRegionForm(_ref17) {
+  var onCreate = _ref17.onCreate,
+    defaultType = _ref17.defaultType;
+  var _React$useState21 = React.useState(""),
+    _React$useState22 = _slicedToArray(_React$useState21, 2),
+    name = _React$useState22[0],
+    setName = _React$useState22[1];
+  var _React$useState23 = React.useState(defaultType || "historical"),
+    _React$useState24 = _slicedToArray(_React$useState23, 2),
+    type = _React$useState24[0],
+    setType = _React$useState24[1];
   return /*#__PURE__*/React.createElement("div", {
     className: "newregion-form"
   }, /*#__PURE__*/React.createElement(TextField, {
@@ -2592,8 +2795,8 @@ function RegionPropsPanel() {
 }
 
 // the region (custom worlds) the selected provinces belong to
-function MacroRegionField(_ref15) {
-  var sel = _ref15.sel;
+function MacroRegionField(_ref18) {
+  var sel = _ref18.sel;
   var p = App.project;
   var regions = p.macroRegions || {};
   var order = (p.macroRegionOrder || []).filter(function (id) {

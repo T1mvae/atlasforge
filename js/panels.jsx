@@ -624,13 +624,100 @@ function CatalogEntryEditor({ field, name, parents }) {
   );
 }
 
+// ---------- the painter's regions in the catalogs (custom worlds): names, colours, notes ----------
+function MacroRegionEntry({ id, pids, states }) {
+  const p = App.project;
+  const r = p.macroRegions[id];
+  const set = (patch) => Actions.setMacroRegion(id, patch, { undo: false });
+  return (
+    <div className="catalog-entry">
+      <div className="catalog-entry-head">
+        <input className="input" value={r.name} placeholder={t("mregion.namePh")} onChange={(e) => set({ name: e.target.value })}></input>
+        <input type="color" className="color-input" value={r.color || "#888888"} onChange={(e) => set({ color: e.target.value })}></input>
+        <button className="btn icon danger" title={t("mregion.delete")} onClick={() => {
+          if (confirm(t("mregion.deleteAsk").replace("{r}", r.name))) Actions.deleteMacroRegion(id);
+        }}>✕</button>
+      </div>
+      <textarea className="textarea catalog-description" rows="4" placeholder={t("mregion.notesPh")} value={r.notes || ""}
+        onChange={(e) => set({ notes: e.target.value })}></textarea>
+      <div className="muted">{t("mregion.usage").replace("{n}", pids.length)}{states ? " · " + states : ""}</div>
+      <div className="field-row">
+        <button className="btn outline" style={{ fontSize: 11 }} disabled={!pids.length} onClick={() => Actions.select(pids, false)}>{t("mregion.select")}</button>
+        <button className="btn outline" style={{ fontSize: 11 }} onClick={() => {
+          Actions.setPref({ leftView: "regions", leftOpen: true });
+          Actions.ui({ activeMacroRegion: id, tool: "paint" });
+        }}>{t("mregion.paint")}</button>
+      </div>
+    </div>
+  );
+}
+function MacroRegionCatalog() {
+  const p = App.project;
+  const [newName, setNewName] = React.useState("");
+  const [query, setQuery] = React.useState("");
+  const [applyId, setApplyId] = React.useState("");
+  const regions = p.macroRegions || {};
+  const order = (p.macroRegionOrder || []).filter((id) => regions[id]);
+  React.useEffect(() => { if (!regions[applyId]) setApplyId(order[0] || ""); }, [order.join("\u0001")]);
+  // the provinces of each region, and the states they belong to
+  const pidsOf = {}, ownersOf = {};
+  for (const pid in p.macroRegionOf || {}) {
+    const id = p.macroRegionOf[pid];
+    if (!regions[id] || !App.basemap.byId[pid]) continue;
+    (pidsOf[id] = pidsOf[id] || []).push(pid);
+    const e = effRegion(p, pid);
+    const o = e && e.owner && p.states[e.owner] ? e.owner : "";
+    const m = ownersOf[id] = ownersOf[id] || new Map();
+    m.set(o, (m.get(o) || 0) + 1);
+  }
+  const statesOf = (id) => (ownersOf[id] ? [...ownersOf[id].entries()].sort((a, b) => b[1] - a[1])
+    .map(([o]) => (o ? p.states[o].name : t("legend.unowned"))).join(", ") : "");
+  const q = query.trim().toLowerCase();
+  const visible = order.filter((id) => !q || (regions[id].name || "").toLowerCase().includes(q) || (regions[id].notes || "").toLowerCase().includes(q)).slice(0, 100);
+  const selected = App.ui.selection || [];
+  const add = () => {
+    const nm = newName.trim();
+    if (!nm) return;
+    Actions.addMacroRegion(nm);
+    setNewName("");
+  };
+  return (
+    <React.Fragment>
+      <div className="muted">{t("mregion.catalogHint")}</div>
+      <div className="catalog-apply">
+        <div className="props-section-title">{t("catalog.bulk")}</div>
+        <select className="select" value={applyId} onChange={(e) => setApplyId(e.target.value)} disabled={!order.length}>
+          {!order.length && <option value="">{t("mregion.catalogEmpty")}</option>}
+          {order.map((id) => <option key={id} value={id}>{regions[id].name || t("misc.unnamed")}</option>)}
+        </select>
+        <button className="btn primary" disabled={!selected.length || !applyId} onClick={() => Actions.assignMacroRegion(selected, applyId)}>
+          {t("catalog.apply")} ({selected.length})
+        </button>
+      </div>
+      <div className="catalog-add">
+        <input className="input" placeholder={t("mregion.newPh")} value={newName} onChange={(e) => setNewName(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") add(); }}></input>
+        <button className="btn outline" onClick={add}>{t("catalog.add")}</button>
+      </div>
+      {order.length > 12 && <input className="input" placeholder={t("mregion.search")} value={query} onChange={(e) => setQuery(e.target.value)}></input>}
+      {visible.length < order.length && <div className="muted">{t("catalog.showing").replace("{shown}", visible.length).replace("{total}", order.length)}</div>}
+      <div className="catalog-list">
+        {visible.map((id) => <MacroRegionEntry key={id} id={id} pids={pidsOf[id] || []} states={statesOf(id)}></MacroRegionEntry>)}
+      </div>
+    </React.Fragment>
+  );
+}
+
 function CatalogTab() {
   useStore();
   const p = App.project;
-  const [field, setField] = React.useState("culture");
+  const [picked, setField] = React.useState("culture");
   const [newName, setNewName] = React.useState("");
   const [query, setQuery] = React.useState("");
-  const values = (window.Metadata ? Metadata.values(p, field) : []).filter(Boolean);
+  const worldOn = !!(window.World && World.active());
+  const field = picked === "macroRegion" && !worldOn ? "culture" : picked; // regions exist on custom worlds only
+  const regionsTab = field === "macroRegion";
+  const tabs = CATALOG_TABS.concat(worldOn ? ["macroRegion"] : []);
+  const values = (window.Metadata && !regionsTab ? Metadata.values(p, field) : []).filter(Boolean);
   const visibleValues = values.filter((name) => !query.trim() || name.toLowerCase().includes(query.trim().toLowerCase())).slice(0, 100);
   const [applyValue, setApplyValue] = React.useState("");
   React.useEffect(() => { if (!values.includes(applyValue)) setApplyValue(values[0] || ""); }, [field, values.join("\u0001")]);
@@ -641,11 +728,15 @@ function CatalogTab() {
     setNewName("");
   };
   const selected = App.ui.selection || [];
+  const chips = (
+    <div className="chip-row catalog-tabs">
+      {tabs.map((k) => <button key={k} className={"chip" + (field === k ? " on" : "")} onClick={() => setField(k)}>{t("catalog." + k)}</button>)}
+    </div>
+  );
+  if (regionsTab) return <div className="props-body catalog-panel">{chips}<MacroRegionCatalog></MacroRegionCatalog></div>;
   return (
     <div className="props-body catalog-panel">
-      <div className="chip-row catalog-tabs">
-        {CATALOG_TABS.map((k) => <button key={k} className={"chip" + (field === k ? " on" : "")} onClick={() => setField(k)}>{t("catalog." + k)}</button>)}
-      </div>
+      {chips}
       <div className="muted">{t("catalog.hint")}</div>
       {field !== "government" && <div className="catalog-apply">
         <div className="props-section-title">{t("catalog.bulk")}</div>

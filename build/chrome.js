@@ -471,7 +471,7 @@ function Legend() {
     return p.states[id];
   }).filter(Boolean);
   // the painter's regions: while the regions tab is open, or in the "regions" display mode
-  var regionMode = !!(window.World && World.active() && (App.ui.leftView === "regions" || p.displayMode === "macroRegion"));
+  var regionMode = !!(window.macroRegionsOn() && (App.ui.leftView === "regions" || p.displayMode === "macroRegion"));
   var regionRows = regionMode ? (p.macroRegionOrder || []).map(function (id) {
     return p.macroRegions && p.macroRegions[id];
   }).filter(Boolean) : [];
@@ -606,7 +606,9 @@ function Timeline() {
   var playRef = React.useRef(null);
   if (!p) return null;
   var addYear = function addYear() {
-    var v = prompt(t("timeline.prompt"), p.currentYear != null ? String(p.currentYear + 10) : "1900");
+    var next = p.currentYear != null ? p.currentYear + 10 : 1900;
+    while (p.years.includes(next)) next += 10;
+    var v = prompt(t("timeline.prompt"), String(next));
     if (v == null) return;
     var y = parseInt(v, 10);
     if (Number.isFinite(y)) Actions.addYear(y);
@@ -621,20 +623,24 @@ function Timeline() {
     }
     if (p.years.length < 2) return;
     var i = 0;
+    var pid = App.projectId;
     Actions.gotoYear(p.years[0]);
     Actions.ui({
       playing: true
     });
     playRef.current = setInterval(function () {
       i++;
-      if (i >= App.project.years.length) {
+      // the project was closed or another one opened: stop, do not step through it
+      if (!App.project || App.projectId !== pid || i >= App.project.years.length) {
         clearInterval(playRef.current);
         Actions.ui({
           playing: false
         });
         return;
       }
-      Actions.gotoYear(App.project.years[i]);
+      Actions.gotoYear(App.project.years[i], {
+        undo: false
+      }); // one undo step for the whole playback
     }, 1400);
   };
   return /*#__PURE__*/React.createElement("div", {

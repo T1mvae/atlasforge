@@ -166,7 +166,7 @@ function Legend() {
   const pos = App.ui.legendPos || { x: 276, y: 56 };
   const rows = p.stateOrder.map((id) => p.states[id]).filter(Boolean);
   // the painter's regions: while the regions tab is open, or in the "regions" display mode
-  const regionMode = !!(window.World && World.active() && (App.ui.leftView === "regions" || p.displayMode === "macroRegion"));
+  const regionMode = !!(window.macroRegionsOn() && (App.ui.leftView === "regions" || p.displayMode === "macroRegion"));
   const regionRows = regionMode ? (p.macroRegionOrder || []).map((id) => p.macroRegions && p.macroRegions[id]).filter(Boolean) : [];
   const regionCounts = {};
   if (regionMode) for (const pid in p.macroRegionOf || {}) if (App.basemap.byId[pid]) regionCounts[p.macroRegionOf[pid]] = (regionCounts[p.macroRegionOf[pid]] || 0) + 1;
@@ -226,7 +226,9 @@ function Timeline() {
   const playRef = React.useRef(null);
   if (!p) return null;
   const addYear = () => {
-    const v = prompt(t("timeline.prompt"), p.currentYear != null ? String(p.currentYear + 10) : "1900");
+    let next = p.currentYear != null ? p.currentYear + 10 : 1900;
+    while (p.years.includes(next)) next += 10;
+    const v = prompt(t("timeline.prompt"), String(next));
     if (v == null) return;
     const y = parseInt(v, 10);
     if (Number.isFinite(y)) Actions.addYear(y);
@@ -239,12 +241,14 @@ function Timeline() {
     }
     if (p.years.length < 2) return;
     let i = 0;
+    const pid = App.projectId;
     Actions.gotoYear(p.years[0]);
     Actions.ui({ playing: true });
     playRef.current = setInterval(() => {
       i++;
-      if (i >= App.project.years.length) { clearInterval(playRef.current); Actions.ui({ playing: false }); return; }
-      Actions.gotoYear(App.project.years[i]);
+      // the project was closed or another one opened: stop, do not step through it
+      if (!App.project || App.projectId !== pid || i >= App.project.years.length) { clearInterval(playRef.current); Actions.ui({ playing: false }); return; }
+      Actions.gotoYear(App.project.years[i], { undo: false }); // one undo step for the whole playback
     }, 1400);
   };
   return (

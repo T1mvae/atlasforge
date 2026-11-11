@@ -400,7 +400,7 @@ function MacroRegionList() {
     className: "muted"
   }, t("mregion.hint")), /*#__PURE__*/React.createElement("div", {
     className: "muted"
-  }, t("mregion.free").replace("{n}", free)), window.suggestMacroRegions && /*#__PURE__*/React.createElement("button", {
+  }, t("mregion.free").replace("{n}", free)), window.suggestMacroRegions && window.World && World.active() && /*#__PURE__*/React.createElement("button", {
     className: "btn outline",
     disabled: !free || !App.basemap.count,
     onClick: function onClick() {
@@ -415,7 +415,7 @@ function StatesPanel() {
     className: "states-panel"
   });
   var counts = stateStats();
-  var worldOn = !!(window.World && World.active());
+  var worldOn = window.macroRegionsOn(); // the painter's regions: custom worlds and ordinary maps alike
   var regionsView = worldOn && App.ui.leftView === "regions";
   return /*#__PURE__*/React.createElement("div", {
     className: "states-panel",
@@ -656,7 +656,7 @@ function ComboField(_ref6) {
     onChange: function onChange(e) {
       if (e.target.value === "__custom") {
         setCustomMode(true);
-        setCustomValue("");
+        setCustomValue(value || "");
         return;
       }
       setCustomMode(false);
@@ -680,14 +680,14 @@ function ComboField(_ref6) {
       return setCustomValue(e.target.value);
     },
     onBlur: function onBlur(e) {
-      commit(e.target.value);
+      if (e.target.value.trim() && e.target.value !== (value || "")) commit(e.target.value);
       setCustomMode(false);
     },
     onKeyDown: function onKeyDown(e) {
-      if (e.key === "Enter") {
-        commit(e.target.value);
+      if (e.key === "Escape") {
+        e.stopPropagation();
         setCustomMode(false);
-      }
+      } else if (e.key === "Enter") e.target.blur(); // leaving the field commits; an empty or unchanged one changes nothing
     }
   }));
 }
@@ -839,7 +839,7 @@ function MapTab() {
   };
   var mode = s.mapMode || "color";
   var supportsRegions = RegionModel.supportsRegions();
-  var displayModes = ["country", "province", "culture", "religion", "language", "terrain"].concat(window.World && World.active() ? ["macroRegion"] : []).concat(supportsRegions ? ["stateRegion", "historicalRegion", "culturalRegion", "geographicalRegion", "politicalRegion"] : []);
+  var displayModes = ["country", "province", "culture", "religion", "language", "terrain"].concat(window.macroRegionsOn() ? ["macroRegion"] : []).concat(supportsRegions ? ["stateRegion", "historicalRegion", "culturalRegion", "geographicalRegion", "politicalRegion"] : []);
   return /*#__PURE__*/React.createElement("div", {
     className: "props-body"
   }, /*#__PURE__*/React.createElement(SelectField, {
@@ -1699,8 +1699,8 @@ function CatalogTab() {
     _React$useState18 = _slicedToArray(_React$useState17, 2),
     query = _React$useState18[0],
     setQuery = _React$useState18[1];
-  var worldOn = !!(window.World && World.active());
-  var field = picked === "macroRegion" && !worldOn ? "culture" : picked; // regions exist on custom worlds only
+  var worldOn = window.macroRegionsOn();
+  var field = picked === "macroRegion" && !worldOn ? "culture" : picked; // not on maps with built-in region layers
   var regionsTab = field === "macroRegion";
   var tabs = CATALOG_TABS.concat(worldOn ? ["macroRegion"] : []);
   var values = (window.Metadata && !regionsTab ? Metadata.values(p, field) : []).filter(Boolean);
@@ -1717,6 +1717,11 @@ function CatalogTab() {
   var add = function add() {
     var name = newName.trim();
     if (!name) return;
+    if (Metadata.entry(p, field, name)) {
+      setNewName("");
+      setQuery(name);
+      return;
+    } // already there: show it, do not blank its parent and description
     Actions.saveCatalogEntry(field, "", {
       name: name,
       color: Metadata.color(p, field, name),
@@ -3122,7 +3127,7 @@ function RegionTab() {
       key: o.id,
       value: o.id
     }, o.name);
-  }))), window.World && World.active() && /*#__PURE__*/React.createElement(MacroRegionField, {
+  }))), window.macroRegionsOn() && /*#__PURE__*/React.createElement(MacroRegionField, {
     sel: sel
   }), /*#__PURE__*/React.createElement(Field, {
     label: t("f.status")

@@ -257,7 +257,8 @@
       features.forEach((f, n) => {
         let win = null, winOwner = "";
         votes[n].forEach((c, owner) => { if (!win || c.area > win.area) { win = c; winOwner = owner; } });
-        if (!win || !winOwner) return;
+        // an unowned province keeps its record too (its name, culture, notes…)
+        if (!win || !effOf(win.oid)) return;
         const rec = JSON.parse(JSON.stringify(effOf(win.oid)));
         delete rec.group; delete rec.members; delete rec.id;
         const src = regions[win.oid];

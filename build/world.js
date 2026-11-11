@@ -1903,20 +1903,24 @@ function MacroRegionCard(_ref0) {
     lands = 0,
     terrain = "";
   try {
-    var wa = worldAnalysis(),
-      idxOf = analysisIndex(wa);
+    // area, landmasses and terrain come from the painted terrain — custom worlds only
+    var world = World.active();
+    var wa = world ? worldAnalysis() : null,
+      idxOf = world ? analysisIndex(wa) : null;
     var own = new Map(),
       landSet = new Set(),
       idx = [];
     pids.forEach(function (pid) {
-      var i = idxOf.get(pid);
-      if (i == null) return;
-      idx.push(i);
-      var c = wa.an.cells[i];
-      area += c.land;
-      c.lands.forEach(function (v, k) {
-        return landSet.add(k);
-      });
+      if (world) {
+        var i = idxOf.get(pid);
+        if (i == null) return;
+        idx.push(i);
+        var c = wa.an.cells[i];
+        area += c.land;
+        c.lands.forEach(function (v, k) {
+          return landSet.add(k);
+        });
+      }
       var e = effRegion(p, pid);
       var sid = e && e.owner && p.states[e.owner] ? e.owner : "";
       own.set(sid, (own.get(sid) || 0) + 1);
@@ -1930,7 +1934,7 @@ function MacroRegionCard(_ref0) {
       return (sid ? p.states[sid].name : t("card.noOwner")) + (own.size > 1 ? " (" + n + ")" : "");
     });
     lands = landSet.size;
-    terrain = Atlas.terrainPct(wa.an, idx, App.ui.lang === "ru" ? "ru" : "en");
+    if (world) terrain = Atlas.terrainPct(wa.an, idx, App.ui.lang === "ru" ? "ru" : "en");
   } catch (e) {
     console.warn(e);
   }
@@ -2074,7 +2078,7 @@ function WorldCard() {
   if (card.kind === "water" && World.active()) return /*#__PURE__*/React.createElement(WaterCard, {
     pt: card.pt
   });
-  if (card.kind === "macroRegion" && World.active()) return /*#__PURE__*/React.createElement(MacroRegionCard, {
+  if (card.kind === "macroRegion") return /*#__PURE__*/React.createElement(MacroRegionCard, {
     id: card.id
   });
   if (card.kind === "object" && window.ObjectCard) return /*#__PURE__*/React.createElement(ObjectCard, {

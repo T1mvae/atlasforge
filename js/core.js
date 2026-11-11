@@ -113,11 +113,12 @@
     return d[key] ?? window.I18N.en[key] ?? key;
   }
   window.t = t;
-  // custom worlds call their cells provinces ("regions" there are the painter's groups of
-  // them): the key's ".world" wording when there is one
+  // maps with the painter's regions (groups of cells — custom worlds and every map without
+  // built-in region layers) call their cells provinces: the key's ".world" wording when
+  // there is one
   function tw(key) {
     const k = key + ".world";
-    if (window.World && window.World.active && window.World.active() && (window.I18N.en[k] != null || (window.I18N[App.ui.lang] || {})[k] != null)) return t(k);
+    if (window.macroRegionsOn && window.macroRegionsOn() && (window.I18N.en[k] != null || (window.I18N[App.ui.lang] || {})[k] != null)) return t(k);
     return t(key);
   }
   window.tw = tw;
@@ -212,9 +213,15 @@
   const REMOVED_STATUS = { protectorate: 1, puppet: 1, integration: 1, neutral: 1 };
   function normalizeStatuses(p) {
     if (!p) return;
+    if (!p.backdrop) p.backdropHref = null; // a removed backdrop keeps its picture for undo only until the project is reopened
     const fix = (o) => { if (o && REMOVED_STATUS[o.status]) o.status = "core"; };
     for (const rid in (p.regions || {})) fix(p.regions[rid]);
     for (const gid in (p.groups || {})) fix(p.groups[gid]);
+    for (const y in (p.snapshots || {})) {
+      const s = p.snapshots[y] || {};
+      for (const rid in (s.regions || {})) fix(s.regions[rid]);
+      for (const gid in (s.groups || {})) fix(s.groups[gid]);
+    }
     // Older saved maps predate the shared language catalogue and the state-level
     // official-language field. Keep their data intact while bringing the schema
     // forward on load.
@@ -526,6 +533,16 @@
     }, Object.assign({ terr: true }, opts));
   };
   // the region of a province (null when it has none, or the region is gone)
+  // Where the painter's regions are offered: custom worlds and every ordinary map, except
+  // the few basemaps that ship their own region layers (RegionModel) — two different
+  // things called "region" on one map would only confuse.
+  window.macroRegionsOn = function () {
+    const p = App.project;
+    if (!p) return false;
+    if (window.World && window.World.active && window.World.active()) return true;
+    const def = window.BASEMAPS && window.BASEMAPS[p.basemapId];
+    return !(def && def.supportsRegionLayers);
+  };
   window.macroRegionOf = function (p, pid) {
     const id = p && p.macroRegionOf ? p.macroRegionOf[String(pid)] : null;
     return id && p.macroRegions && p.macroRegions[id] ? id : null;
@@ -771,6 +788,12 @@
     const used = new Set();
     for (const rid in p.regions) { const a = p.regions[rid].autonomyId; if (a) used.add(a); }
     for (const gid in (p.groups || {})) { const a = p.groups[gid].autonomyId; if (a) used.add(a); }
+    // other years keep their own regions: an autonomy still used there must stay
+    for (const y in (p.snapshots || {})) {
+      const s = p.snapshots[y] || {};
+      for (const rid in (s.regions || {})) { const a = s.regions[rid] && s.regions[rid].autonomyId; if (a) used.add(a); }
+      for (const gid in (s.groups || {})) { const a = s.groups[gid] && s.groups[gid].autonomyId; if (a) used.add(a); }
+    }
     for (const id in p.autonomies) if (!used.has(id)) delete p.autonomies[id];
   }
   window.pruneAutonomies = pruneAutonomies;
@@ -1043,7 +1066,9 @@
     Actions.mut((p) => { if (p.backdrop) Object.assign(p.backdrop, patch); }, Object.assign({ undo: false }, opts));
   };
   Actions.removeBackdrop = function () {
-    Actions.mut((p) => { p.backdrop = null; p.backdropHref = null; });
+    // the picture itself is too heavy for the undo slice, so it stays in the project
+    // (an undo brings the frame back and finds it); only a new picture replaces it
+    Actions.mut((p) => { p.backdrop = null; });
   };
   Actions.loadBackdropImage = function (file) {
     if (!file) return;
@@ -1068,7 +1093,7 @@
         Actions.mut((p) => {
           p.backdropHref = href;
           p.backdrop = { x: (W - w) / 2, y: (H - h) / 2, w, h, opacity: 0.55, visible: true };
-        });
+        }, { undo: false }); // the picture is not in the undo slice: an undo would put the old frame on the new picture
         Actions.toast(t("backdrop.loaded"));
       };
       img.onerror = () => Actions.toast(t("toast.importError"));
@@ -1081,38 +1106,54 @@
   function snapOf(p) {
     return JSON.parse(JSON.stringify({ states: p.states, stateOrder: p.stateOrder, regions: p.regions, groups: p.groups || {}, labels: p.labels }));
   }
+  // the map on screen belongs to the current year: keep it there before leaving
+  function keepCurrentYear(p) {
+    if (p.currentYear != null && p.snapshots[p.currentYear]) p.snapshots[p.currentYear] = snapOf(p);
+  }
+  function loadYear(p, year) {
+    const s = p.snapshots[year];
+    if (s) {
+      p.states = JSON.parse(JSON.stringify(s.states));
+      p.stateOrder = s.stateOrder.slice();
+      p.regions = JSON.parse(JSON.stringify(s.regions));
+      p.groups = s.groups ? JSON.parse(JSON.stringify(s.groups)) : {};
+      p.labels = JSON.parse(JSON.stringify(s.labels));
+    }
+    p.currentYear = year;
+  }
   Actions.addYear = function (year) {
+    const p0 = App.project;
+    // an existing year is opened, never overwritten with the map on screen
+    if (p0 && p0.years.includes(year)) { if (p0.currentYear !== year) Actions.gotoYear(year); return; }
     Actions.mut((p) => {
-      if (!p.years.includes(year)) {
-        p.years.push(year);
-        p.years.sort((a, b) => a - b);
-      }
+      keepCurrentYear(p);
+      p.years.push(year);
+      p.years.sort((a, b) => a - b);
       p.snapshots[year] = snapOf(p);
       p.currentYear = year;
     });
   };
-  Actions.gotoYear = function (year) {
+  Actions.gotoYear = function (year, opts) {
     Actions.mut((p) => {
-      if (p.currentYear != null && p.snapshots[p.currentYear]) p.snapshots[p.currentYear] = snapOf(p);
-      const s = p.snapshots[year];
-      if (s) {
-        p.states = JSON.parse(JSON.stringify(s.states));
-        p.stateOrder = s.stateOrder.slice();
-        p.regions = JSON.parse(JSON.stringify(s.regions));
-        p.groups = s.groups ? JSON.parse(JSON.stringify(s.groups)) : {};
-        p.labels = JSON.parse(JSON.stringify(s.labels));
-      }
-      p.currentYear = year;
-    }, { terr: true });
+      keepCurrentYear(p);
+      loadYear(p, year);
+    }, Object.assign({ terr: true }, opts));
     App.ui.selection = [];
     App.emit();
   };
   Actions.deleteYear = function (year) {
+    const wasCurrent = App.project && App.project.currentYear === year;
     Actions.mut((p) => {
+      const at = p.years.indexOf(year);
       p.years = p.years.filter((y) => y !== year);
       delete p.snapshots[year];
-      if (p.currentYear === year) p.currentYear = p.years[0] ?? null;
-    });
+      if (p.currentYear !== year) return;
+      // the deleted year was on screen: show the neighbouring year instead, so its
+      // snapshot is not overwritten with the deleted year's map on the next step
+      if (!p.years.length) { p.currentYear = null; return; }
+      loadYear(p, p.years[Math.max(0, at - 1)]);
+    }, { terr: wasCurrent });
+    if (wasCurrent) { App.ui.selection = []; App.emit(); }
   };
 
   // ---------- selection helpers ----------

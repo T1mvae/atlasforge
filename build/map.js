@@ -207,7 +207,8 @@ function provinceFill(displayMode, r, states, settings, feat, project) {
   if (displayMode === "macroRegion") {
     // the painter's regions; a province outside any shows the land under it
     var mid = feat ? window.macroRegionOf(project, feat.id) : null;
-    return mid ? project.macroRegions[mid].color : "rgba(0,0,0,0)";
+    if (mid) return project.macroRegions[mid].color;
+    return window.World && World.active() ? "rgba(0,0,0,0)" : settings.land; // ordinary maps have no terrain under the provinces
   }
   if (displayMode === "province") return feat ? ColorUtil.provinceTint(settings.land, feat.id) : settings.land;
   if (["culture", "religion", "language"].includes(displayMode)) {
@@ -858,7 +859,7 @@ function MapView() {
 
   // ---------- mid-level region layer ----------
   // the regions tab of the left panel shows the provinces by region while it is open
-  var regionsView = !!(project && App.ui.leftView === "regions" && window.World && World.active());
+  var regionsView = !!(project && App.ui.leftView === "regions" && window.macroRegionsOn());
   var displayMode = project ? regionsView ? "macroRegion" : project.displayMode || "country" : "country";
   var regionMode = App.ui.selectMode === "region";
   var regionDisplay = !!RegionModel.modeType[displayMode];
@@ -1070,7 +1071,7 @@ function MapView() {
   // ---------- painting ----------
   var paintRegion = useCallback(function (rid, erase) {
     if (!rid) return;
-    if (App.ui.leftView === "regions" && window.World && World.active()) {
+    if (App.ui.leftView === "regions" && window.macroRegionsOn()) {
       var p = App.project,
         cur = window.macroRegionOf(p, rid);
       if (erase) {
@@ -1107,7 +1108,7 @@ function MapView() {
     });
   }, [effOf]);
   var fillByOwner = useCallback(function (rid) {
-    if (App.ui.leftView === "regions" && window.World && World.active()) {
+    if (App.ui.leftView === "regions" && window.macroRegionsOn()) {
       var _p = App.project,
         mid = App.ui.activeMacroRegion;
       if (!mid || !_p.macroRegions || !_p.macroRegions[mid]) {
@@ -1195,14 +1196,26 @@ function MapView() {
         return;
       }
       if (smooth && pts.length >= 4) pts = GeomEdit.smoothLine(pts, k, true);
-      var cut = confirm(t("edit.drawCutAsk"));
+      var overlap = App.project.settings && App.project.settings.drawOverlap || (window.World && World.active() ? "cut" : "land");
       var nm = prompt(t("edit.drawNameAsk"), "");
       if (nm === null) {
         App.ui.geomDraw = null;
         App.emit();
         return;
       }
-      Actions.drawNewRegion(pts, cut ? "cut" : "draft", nm || null);
+      // a land much bigger than this map's provinces: offer to divide it into provinces
+      var parts = 1;
+      var worth = GeomEdit.suggestParts(pts);
+      if (worth >= 3) {
+        var ans = prompt(t("edit.drawPartsAsk").replace("{n}", worth), String(worth));
+        if (ans === null) {
+          App.ui.geomDraw = null;
+          App.emit();
+          return;
+        }
+        parts = Math.max(1, parseInt(ans, 10) || 1);
+      }
+      Actions.drawNewRegion(pts, overlap, nm || null, parts);
     }
     App.ui.geomDraw = null;
     App.emit();
@@ -1230,7 +1243,7 @@ function MapView() {
         }
         return;
       }
-      if (App.ui.leftView === "regions" && window.World && World.active()) {
+      if (App.ui.leftView === "regions" && window.macroRegionsOn()) {
         var mid = rid ? window.macroRegionOf(App.project, rid) : null;
         if (mid) {
           Actions.ui({
@@ -3535,7 +3548,28 @@ function MapView() {
         undo: false
       });
     }
-  }), t("edit.smoothLine")), /*#__PURE__*/React.createElement("button", {
+  }), t("edit.smoothLine")), App.ui.geomDraw.tool === "draw" && /*#__PURE__*/React.createElement("select", {
+    className: "select",
+    style: {
+      width: "auto",
+      fontSize: 12
+    },
+    title: t("edit.drawOverlap"),
+    value: settings.drawOverlap || (worldOn ? "cut" : "land"),
+    onChange: function onChange(e) {
+      return Actions.setSettings({
+        drawOverlap: e.target.value
+      }, {
+        undo: false
+      });
+    }
+  }, /*#__PURE__*/React.createElement("option", {
+    value: "land"
+  }, t("edit.drawOverlap.land")), /*#__PURE__*/React.createElement("option", {
+    value: "cut"
+  }, t("edit.drawOverlap.cut")), /*#__PURE__*/React.createElement("option", {
+    value: "draft"
+  }, t("edit.drawOverlap.draft"))), /*#__PURE__*/React.createElement("button", {
     className: "btn primary",
     disabled: App.ui.geomDraw.pts.length < (App.ui.geomDraw.tool === "split" ? 2 : 3),
     onClick: finishGeomDraw

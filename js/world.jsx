@@ -941,15 +941,19 @@ function MacroRegionCard({ id }) {
   const km = +(p.world && p.world.scaleKm) || 5;
   let area = 0, states = [], lands = 0, terrain = "";
   try {
-    const wa = worldAnalysis(), idxOf = analysisIndex(wa);
+    // area, landmasses and terrain come from the painted terrain — custom worlds only
+    const world = World.active();
+    const wa = world ? worldAnalysis() : null, idxOf = world ? analysisIndex(wa) : null;
     const own = new Map(), landSet = new Set(), idx = [];
     pids.forEach((pid) => {
-      const i = idxOf.get(pid);
-      if (i == null) return;
-      idx.push(i);
-      const c = wa.an.cells[i];
-      area += c.land;
-      c.lands.forEach((v, k) => landSet.add(k));
+      if (world) {
+        const i = idxOf.get(pid);
+        if (i == null) return;
+        idx.push(i);
+        const c = wa.an.cells[i];
+        area += c.land;
+        c.lands.forEach((v, k) => landSet.add(k));
+      }
       const e = effRegion(p, pid);
       const sid = e && e.owner && p.states[e.owner] ? e.owner : "";
       own.set(sid, (own.get(sid) || 0) + 1);
@@ -957,7 +961,7 @@ function MacroRegionCard({ id }) {
     states = [...own.entries()].sort((a, b) => b[1] - a[1])
       .map(([sid, n]) => (sid ? p.states[sid].name : t("card.noOwner")) + (own.size > 1 ? " (" + n + ")" : ""));
     lands = landSet.size;
-    terrain = Atlas.terrainPct(wa.an, idx, App.ui.lang === "ru" ? "ru" : "en");
+    if (world) terrain = Atlas.terrainPct(wa.an, idx, App.ui.lang === "ru" ? "ru" : "en");
   } catch (e) { console.warn(e); }
   const set = (patch) => Actions.setMacroRegion(id, patch, { undo: false });
   return (
@@ -1009,7 +1013,7 @@ function WorldCard() {
   if (!card) return null;
   if (card.kind === "river" && World.active()) return <RiverCard index={card.index}></RiverCard>;
   if (card.kind === "water" && World.active()) return <WaterCard pt={card.pt}></WaterCard>;
-  if (card.kind === "macroRegion" && World.active()) return <MacroRegionCard id={card.id}></MacroRegionCard>;
+  if (card.kind === "macroRegion") return <MacroRegionCard id={card.id}></MacroRegionCard>;
   if (card.kind === "object" && window.ObjectCard) return <ObjectCard id={card.id}></ObjectCard>;
   if ((card.kind === "label" || card.kind === "stateLabel") && window.LabelCard) return <LabelCard card={card}></LabelCard>;
   return null;

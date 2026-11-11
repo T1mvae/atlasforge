@@ -142,7 +142,8 @@ function provinceFill(displayMode, r, states, settings, feat, project) {
   if (displayMode === "terrain") return TERRAIN_COLORS[feat && feat.terrain] || settings.land;
   if (displayMode === "macroRegion") { // the painter's regions; a province outside any shows the land under it
     const mid = feat ? window.macroRegionOf(project, feat.id) : null;
-    return mid ? project.macroRegions[mid].color : "rgba(0,0,0,0)";
+    if (mid) return project.macroRegions[mid].color;
+    return window.World && World.active() ? "rgba(0,0,0,0)" : settings.land; // ordinary maps have no terrain under the provinces
   }
   if (displayMode === "province") return feat ? ColorUtil.provinceTint(settings.land, feat.id) : settings.land;
   if (["culture", "religion", "language"].includes(displayMode)) {
@@ -532,7 +533,7 @@ function MapView() {
 
   // ---------- mid-level region layer ----------
   // the regions tab of the left panel shows the provinces by region while it is open
-  const regionsView = !!(project && App.ui.leftView === "regions" && window.World && World.active());
+  const regionsView = !!(project && App.ui.leftView === "regions" && window.macroRegionsOn());
   const displayMode = project ? (regionsView ? "macroRegion" : project.displayMode || "country") : "country";
   const regionMode = App.ui.selectMode === "region";
   const regionDisplay = !!RegionModel.modeType[displayMode];
@@ -678,7 +679,7 @@ function MapView() {
   // ---------- painting ----------
   const paintRegion = useCallback((rid, erase) => {
     if (!rid) return;
-    if (App.ui.leftView === "regions" && window.World && World.active()) {
+    if (App.ui.leftView === "regions" && window.macroRegionsOn()) {
       const p = App.project, cur = window.macroRegionOf(p, rid);
       if (erase) { if (cur) Actions.assignMacroRegion([rid], null, { undo: false }); return; }
       const mid = App.ui.activeMacroRegion;
@@ -698,7 +699,7 @@ function MapView() {
   }, [effOf]);
 
   const fillByOwner = useCallback((rid) => {
-    if (App.ui.leftView === "regions" && window.World && World.active()) {
+    if (App.ui.leftView === "regions" && window.macroRegionsOn()) {
       const p = App.project, mid = App.ui.activeMacroRegion;
       if (!mid || !p.macroRegions || !p.macroRegions[mid]) { Actions.toast(t("mregion.paintNone")); return; }
       const e0 = effOf(rid), owner = e0 ? e0.owner || null : null;
@@ -759,10 +760,18 @@ function MapView() {
     } else {
       if (pts.length < 3) { Actions.toast(t("edit.tooFewPoints")); return; }
       if (smooth && pts.length >= 4) pts = GeomEdit.smoothLine(pts, k, true);
-      const cut = confirm(t("edit.drawCutAsk"));
+      const overlap = (App.project.settings && App.project.settings.drawOverlap) || (window.World && World.active() ? "cut" : "land");
       const nm = prompt(t("edit.drawNameAsk"), "");
       if (nm === null) { App.ui.geomDraw = null; App.emit(); return; }
-      Actions.drawNewRegion(pts, cut ? "cut" : "draft", nm || null);
+      // a land much bigger than this map's provinces: offer to divide it into provinces
+      let parts = 1;
+      const worth = GeomEdit.suggestParts(pts);
+      if (worth >= 3) {
+        const ans = prompt(t("edit.drawPartsAsk").replace("{n}", worth), String(worth));
+        if (ans === null) { App.ui.geomDraw = null; App.emit(); return; }
+        parts = Math.max(1, parseInt(ans, 10) || 1);
+      }
+      Actions.drawNewRegion(pts, overlap, nm || null, parts);
     }
     App.ui.geomDraw = null;
     App.emit();
@@ -781,7 +790,7 @@ function MapView() {
         if (b) { Actions.ui({ worldBrush: b }); Actions.toast(t("input.pickedBrush").replace("{b}", t("world.brush." + b))); }
         return;
       }
-      if (App.ui.leftView === "regions" && window.World && World.active()) {
+      if (App.ui.leftView === "regions" && window.macroRegionsOn()) {
         const mid = rid ? window.macroRegionOf(App.project, rid) : null;
         if (mid) {
           Actions.ui({ activeMacroRegion: mid });
@@ -2186,6 +2195,14 @@ function MapView() {
             <input type="checkbox" checked={settings.cutSmooth !== false} onChange={(e) => Actions.setSettings({ cutSmooth: e.target.checked }, { undo: false })}></input>
             {t("edit.smoothLine")}
           </label>
+          {App.ui.geomDraw.tool === "draw" && (
+            <select className="select" style={{ width: "auto", fontSize: 12 }} title={t("edit.drawOverlap")} value={settings.drawOverlap || (worldOn ? "cut" : "land")}
+              onChange={(e) => Actions.setSettings({ drawOverlap: e.target.value }, { undo: false })}>
+              <option value="land">{t("edit.drawOverlap.land")}</option>
+              <option value="cut">{t("edit.drawOverlap.cut")}</option>
+              <option value="draft">{t("edit.drawOverlap.draft")}</option>
+            </select>
+          )}
           <button className="btn primary" disabled={App.ui.geomDraw.pts.length < (App.ui.geomDraw.tool === "split" ? 2 : 3)}
             onClick={finishGeomDraw}>{t("edit.finish")}</button>
           <button className="btn outline" onClick={() => { App.ui.geomDraw = null; Actions.ui({ tool: "select" }); }}>{t("edit.cancel")}</button>

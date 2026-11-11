@@ -172,7 +172,7 @@ function MacroRegionList() {
       <div className="mregion-foot">
         <div className="muted">{t("mregion.hint")}</div>
         <div className="muted">{t("mregion.free").replace("{n}", free)}</div>
-        {window.suggestMacroRegions && (
+        {window.suggestMacroRegions && window.World && World.active() && (
           <button className="btn outline" disabled={!free || !App.basemap.count} onClick={() => window.suggestMacroRegions()}>{t("mregion.suggest")}</button>
         )}
       </div>
@@ -185,7 +185,7 @@ function StatesPanel() {
   const p = App.project;
   if (!p) return <div className="states-panel"></div>;
   const counts = stateStats();
-  const worldOn = !!(window.World && World.active());
+  const worldOn = window.macroRegionsOn(); // the painter's regions: custom worlds and ordinary maps alike
   const regionsView = worldOn && App.ui.leftView === "regions";
   return (
     <div className="states-panel" data-screen-label="States panel">
@@ -338,7 +338,7 @@ function ComboField({ label, listKey, stateField, value, onChange }) {
   return (
     <Field label={label}>
       <select className="select" value={selectValue} onChange={(e) => {
-        if (e.target.value === "__custom") { setCustomMode(true); setCustomValue(""); return; }
+        if (e.target.value === "__custom") { setCustomMode(true); setCustomValue(value || ""); return; }
         setCustomMode(false); commit(e.target.value);
       }}>
         <option value="">{t("misc.none")}</option>
@@ -347,8 +347,11 @@ function ComboField({ label, listKey, stateField, value, onChange }) {
       </select>
       {customMode && <input className="input" autoFocus placeholder={t("misc.customValueHint")} value={customValue}
         onChange={(e) => setCustomValue(e.target.value)}
-        onBlur={(e) => { commit(e.target.value); setCustomMode(false); }}
-        onKeyDown={(e) => { if (e.key === "Enter") { commit(e.target.value); setCustomMode(false); } }}></input>}
+        onBlur={(e) => { if (e.target.value.trim() && e.target.value !== (value || "")) commit(e.target.value); setCustomMode(false); }}
+        onKeyDown={(e) => {
+          if (e.key === "Escape") { e.stopPropagation(); setCustomMode(false); }
+          else if (e.key === "Enter") e.target.blur(); // leaving the field commits; an empty or unchanged one changes nothing
+        }}></input>}
     </Field>
   );
 }
@@ -426,7 +429,7 @@ function MapTab() {
   const mode = s.mapMode || "color";
   const supportsRegions = RegionModel.supportsRegions();
   const displayModes = ["country", "province", "culture", "religion", "language", "terrain"]
-    .concat(window.World && World.active() ? ["macroRegion"] : []).concat(
+    .concat(window.macroRegionsOn() ? ["macroRegion"] : []).concat(
     supportsRegions ? ["stateRegion", "historicalRegion", "culturalRegion", "geographicalRegion", "politicalRegion"] : []);
   return (
     <div className="props-body">
@@ -713,8 +716,8 @@ function CatalogTab() {
   const [picked, setField] = React.useState("culture");
   const [newName, setNewName] = React.useState("");
   const [query, setQuery] = React.useState("");
-  const worldOn = !!(window.World && World.active());
-  const field = picked === "macroRegion" && !worldOn ? "culture" : picked; // regions exist on custom worlds only
+  const worldOn = window.macroRegionsOn();
+  const field = picked === "macroRegion" && !worldOn ? "culture" : picked; // not on maps with built-in region layers
   const regionsTab = field === "macroRegion";
   const tabs = CATALOG_TABS.concat(worldOn ? ["macroRegion"] : []);
   const values = (window.Metadata && !regionsTab ? Metadata.values(p, field) : []).filter(Boolean);
@@ -724,6 +727,7 @@ function CatalogTab() {
   const add = () => {
     const name = newName.trim();
     if (!name) return;
+    if (Metadata.entry(p, field, name)) { setNewName(""); setQuery(name); return; } // already there: show it, do not blank its parent and description
     Actions.saveCatalogEntry(field, "", { name, color: Metadata.color(p, field, name), parent: "", description: "" });
     setNewName("");
   };
@@ -1259,7 +1263,7 @@ function RegionTab() {
           {ownerOptions.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}
         </select>
       </Field>
-      {window.World && World.active() && <MacroRegionField sel={sel}></MacroRegionField>}
+      {window.macroRegionsOn() && <MacroRegionField sel={sel}></MacroRegionField>}
       <Field label={t("f.status")}>
         <select className="select" value={r.status || "core"} onChange={(e) => setAll({ status: e.target.value })}>
           {STATUSES.map((st) => <option key={st} value={st}>{t("status." + st)}</option>)}

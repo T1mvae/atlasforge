@@ -239,8 +239,16 @@
   GeomEdit.editsKey = function (p) {
     const e = p && p.regionGeomEdits;
     if (!e) return "0";
-    return Object.keys(e.removed || {}).length + ":" + Object.keys(e.features || {}).length + ":" +
-      JSON.stringify(Object.keys(e.features || {}).sort());
+    // a fingerprint of the content: the same ids with another shape (a second edit of
+    // one province, undo + a different edit) must not find the old topology
+    const s = JSON.stringify(e);
+    let h1 = 0x811c9dc5, h2 = 5381;
+    for (let i = 0; i < s.length; i++) {
+      const c = s.charCodeAt(i);
+      h1 = Math.imul(h1 ^ c, 16777619);
+      h2 = (Math.imul(h2, 33) + c) | 0;
+    }
+    return s.length + ":" + (h1 >>> 0).toString(36) + (h2 >>> 0).toString(36);
   };
 
   // raw lon/lat geometry of a region as currently effective
@@ -276,14 +284,67 @@
   // Carry the political identity (owner/status/disputes/etc.) across geometry
   // edits so mechanics survive split/merge — they live on the region, not the map.
   function politicalClone(e0) {
-    if (!e0 || !e0.owner) return null;
-    const r = { owner: e0.owner, status: e0.status || "core", color: e0.color || null,
+    if (!e0) return null;
+    // an unowned province still has things worth keeping (colour, culture, notes…)
+    if (!e0.owner && !e0.color && !e0.population && !e0.culture && !e0.religion && !e0.language && !e0.notes) return null;
+    const r = { owner: e0.owner || null, status: e0.owner ? (e0.status || "core") : "core", color: e0.color || null,
       name: null, population: e0.population || "", culture: e0.culture || "",
-      religion: e0.religion || "", language: e0.language || "", notes: "" };
+      religion: e0.religion || "", language: e0.language || "", notes: e0.notes || "" };
+    if (!e0.owner) return r;
     if (e0.claimants && e0.claimants.length) r.claimants = e0.claimants.slice();
     if (e0.occupiedFrom) r.occupiedFrom = e0.occupiedFrom;
     if (e0.autonomyId) r.autonomyId = e0.autonomyId;
     return r;
+  }
+
+  // Provinces get new ids in an edit. Everything else that names a province by id —
+  // the other years' snapshots, the states' capitals, the legacy groups — follows:
+  // `olds` became `news` (none = deleted). The current year's own records
+  // (pr.regions, macroRegionOf) are written by the operation itself.
+  function carryIds(pr, olds, news) {
+    olds = olds.map(String);
+    const gone = new Set(olds);
+    const capital = (states) => {
+      for (const sid in (states || {})) {
+        const s = states[sid];
+        if (s && s.capitalRegion != null && gone.has(String(s.capitalRegion))) s.capitalRegion = news.length ? news[0] : null;
+      }
+    };
+    const members = (groups) => {
+      for (const gid in (groups || {})) {
+        const g = groups[gid];
+        if (!g || !Array.isArray(g.members) || !g.members.some((m) => gone.has(String(m)))) continue;
+        const out = [];
+        let put = false;
+        g.members.forEach((m) => {
+          if (!gone.has(String(m))) { out.push(m); return; }
+          if (!put) { put = true; news.forEach((n) => out.push(n)); }
+        });
+        g.members = out;
+      }
+    };
+    capital(pr.states); members(pr.groups);
+    for (const y in (pr.snapshots || {})) {
+      const s = pr.snapshots[y];
+      if (!s) continue;
+      capital(s.states); members(s.groups);
+      const regs = s.regions || (s.regions = {});
+      // the new provinces take that year's record of the old ones (of most of them)
+      const votes = new Map();
+      let best = null, bv = 0;
+      olds.forEach((id) => {
+        const r = regs[id];
+        if (!r) return;
+        const k = r.owner || "";
+        const v = (votes.get(k) || 0) + 1;
+        votes.set(k, v);
+        if (v > bv) { bv = v; best = r; }
+      });
+      olds.forEach((id) => { delete regs[id]; });
+      const pol = best && (olds.length === 1 || bv * 2 >= olds.length) ? politicalClone(best) : null;
+      if (pol) news.forEach((n) => { if (!regs[n]) regs[n] = JSON.parse(JSON.stringify(pol)); });
+    }
+    if (window.pruneAutonomies) window.pruneAutonomies(pr);
   }
 
   // the painter's regions (project.macroRegionOf) follow the provinces through edits
@@ -322,6 +383,7 @@
       let best = null, bv = 0;
       votes.forEach((v, m) => { if (v > bv) { bv = v; best = m; } });
       if (best && bv * 2 >= ids.length) of[newId] = best;
+      carryIds(pr, ids, [newId]);
     }, "edit.mergedOk");
     return newId;
   };
@@ -441,6 +503,7 @@
         if (m0) of[nid] = m0;
       });
       healInto(ed, newIds, { exactOnly: true }); // numeric crumbs along the new seam only — never touch the outer border here
+      carryIds(pr, [id], newIds);
     }, "edit.splitOk");
   };
 
@@ -566,8 +629,59 @@
     Actions.toast(t("edit.healOk").replace("{n}", stats.filled));
   };
 
-  // draw a brand-new region; mode: "cut" (carve out of overlaps) | "draft" (overlay)
-  Actions.drawNewRegion = function (screenPts, mode, name) {
+  // How many provinces of this map's usual size a drawn outline is worth (0 = the map
+  // has no provinces to compare with) — a new land is offered to be divided into that many.
+  GeomEdit.suggestParts = function (screenPts) {
+    const feats = (App.basemap && App.basemap.features) || [];
+    const areas = feats.map((f) => f.area).filter((a) => a > 0).sort((a, b) => a - b);
+    if (!areas.length || !screenPts || screenPts.length < 3) return 0;
+    const median = areas[areas.length >> 1];
+    return Math.max(1, Math.min(MAX_PARTS, Math.round(Math.abs(d3.polygonArea(screenPts)) / median)));
+  };
+  const MAX_PARTS = 300;
+  // Divide a drawn land into `parts` provinces: even seeds inside the outline (seeded, so
+  // an undo + redo gives the same cells), relaxed twice, Voronoi cells clipped to the land.
+  // Returns lon/lat MultiPolygons, or null when it cannot be divided.
+  function divideLand(screenPts, landMP, parts) {
+    if (!d3.Delaunay || parts < 2) return null;
+    const proj = App.basemap.proj;
+    let minx = Infinity, miny = Infinity, maxx = -Infinity, maxy = -Infinity;
+    screenPts.forEach(([x, y]) => { if (x < minx) minx = x; if (x > maxx) maxx = x; if (y < miny) miny = y; if (y > maxy) maxy = y; });
+    if (!(maxx - minx > 1) || !(maxy - miny > 1)) return null;
+    let r = (Math.round(minx * 31 + miny * 17 + parts * 7919) >>> 0) || 1;
+    const rand = () => ((r = (Math.imul(r, 1103515245) + 12345) & 0x7fffffff) / 0x7fffffff);
+    let seeds = [];
+    for (let tries = 0; seeds.length < parts && tries < parts * 400; tries++) {
+      const x = minx + rand() * (maxx - minx), y = miny + rand() * (maxy - miny);
+      if (d3.polygonContains(screenPts, [x, y])) seeds.push([x, y]);
+    }
+    if (seeds.length < 2) return null;
+    const ext = [minx - 10, miny - 10, maxx + 10, maxy + 10];
+    for (let it = 0; it < 3; it++) {
+      const vor = d3.Delaunay.from(seeds).voronoi(ext);
+      seeds = seeds.map((sd, k) => {
+        const cell = vor.cellPolygon(k);
+        if (!cell) return sd;
+        const ct = d3.polygonCentroid(cell);
+        return d3.polygonContains(screenPts, ct) ? ct : sd;
+      });
+    }
+    const vor = d3.Delaunay.from(seeds).voronoi(ext);
+    const out = [];
+    seeds.forEach((sd, k) => {
+      const cell = vor.cellPolygon(k);
+      if (!cell || cell.length < 4) return;
+      const ring = cell.map((pt) => proj.invert(pt));
+      if (ring.some((c) => !c || !isFinite(c[0]) || !isFinite(c[1]))) return;
+      const piece = pcIntersect([[ring]], landMP);
+      if (piece && piece.length && mpArea(piece) > 1e-9) out.push(piece);
+    });
+    return out.length >= 2 ? out : null;
+  }
+
+  // draw a brand-new region; mode: "cut" (carve out of overlaps) | "draft" (overlay);
+  // parts > 1 divides the new land into that many provinces
+  Actions.drawNewRegion = function (screenPts, mode, name, parts) {
     if (!screenPts || screenPts.length < 3) { Actions.toast(t("edit.tooFewPoints")); return; }
     const proj = App.basemap.proj;
     const ring = screenPts.map((pt) => proj.invert(pt)).filter((c) => c && isFinite(c[0]));
@@ -577,6 +691,30 @@
     try { const norm = polygonClipping.union(newMP); if (norm && norm.length) newMP = norm; } catch (e) {} // resolve self-touching strokes
     const p = App.project;
     const newId = "e" + uid();
+    if (mode === "land") {
+      // new land only: what is already on the map stays as it is, the outline keeps
+      // just the part that lies in the sea (so a coast can be drawn roughly over the old one)
+      const [[x0, y0], [x1, y1]] = [[Math.min(...screenPts.map((q) => q[0])), Math.min(...screenPts.map((q) => q[1]))],
+        [Math.max(...screenPts.map((q) => q[0])), Math.max(...screenPts.map((q) => q[1]))]];
+      const under = [];
+      App.basemap.features.forEach((f) => {
+        if (f.b[1][0] < x0 || f.b[0][0] > x1 || f.b[1][1] < y0 || f.b[0][1] > y1) return;
+        const g = rawGeom(f.id);
+        if (g) under.push(toMP(g));
+      });
+      if (under.length) {
+        let rest = null;
+        try { rest = polygonClipping.difference(newMP, ...under); } catch (e) { rest = null; }
+        if (!rest) { Actions.toast(t("edit.opFailed")); return; }
+        // crumbs left where the stroke wobbled along the old coast are not new land
+        const total = mpArea(rest);
+        rest = rest.filter((poly) => mpArea([poly]) > total * 0.002);
+        if (!rest.length || mpArea(rest) < 1e-9) { Actions.toast(t("edit.drawNoSea")); return; }
+        newMP = rest;
+      }
+    }
+    let pieces = null;
+    if (parts > 1) { try { pieces = divideLand(screenPts, newMP, Math.min(MAX_PARTS, Math.round(parts))); } catch (e) { console.warn("divide land failed", e); } }
     commit((pr) => {
       const ed = ensure(pr);
       if (mode === "cut") {
@@ -594,6 +732,7 @@
             ed.removed[f.id] = true;
             delete pr.regions[f.id];
             delete mrOf(pr)[String(f.id)];
+            carryIds(pr, [f.id], []);
           } else {
             const props0 = rawProps(f.id);
             ed.features[f.id] = {
@@ -604,8 +743,11 @@
           }
         });
       }
-      ed.features[newId] = { geometry: fromMP(newMP), name: name || window.tw("edit.newRegionName"), props: {} };
-    }, "edit.drawOk");
+      const nm = name || window.tw("edit.newRegionName");
+      if (pieces) pieces.forEach((mp, i) => { ed.features["e" + uid()] = { geometry: fromMP(mp), name: nm + " " + (i + 1), props: {} }; });
+      else ed.features[newId] = { geometry: fromMP(newMP), name: nm, props: {} };
+    }, pieces ? null : "edit.drawOk");
+    if (pieces) Actions.toast(t("edit.drawLandOk").replace("{n}", pieces.length));
     return newId;
   };
 
@@ -627,10 +769,12 @@
           const a = App.basemap.byId[id], b2 = f;
           if (!a || a.b[1][0] < b2.b[0][0] - 2 || b2.b[1][0] < a.b[0][0] - 2 ||
               a.b[1][1] < b2.b[0][1] - 2 || b2.b[1][1] < a.b[0][1] - 2) return;
-          if (f.area > bestArea) {
-            // verify adjacency via union connectivity (cheap: bbox overlap accepted)
-            bestArea = f.area; best = f;
-          }
+          if (f.area <= bestArea) return;
+          // a real neighbour: the union has fewer pieces than the two apart (a bbox
+          // overlap alone would attach the land to a province that does not touch it)
+          const nmp = toMP(ng), u = pcUnion([nmp, mp]);
+          if (!u || u.length >= nmp.length + mp.length) return;
+          bestArea = f.area; best = f;
         });
         if (best) {
           const u = pcUnion([toMP(rawGeom(best.id)), mp]);
@@ -648,6 +792,7 @@
       ed.removed[id] = true;
       delete pr.regions[id];
       delete mrOf(pr)[String(id)];
+      carryIds(pr, [id], []);
     }, "edit.deleteOk");
   };
 

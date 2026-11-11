@@ -604,6 +604,11 @@
       const build = () => topojson.topology({ regions: eff }, q);
       const tk = cacheKey ? ("topo:" + cacheKey + ":" + (window.GeomEdit ? window.GeomEdit.editsKey(project) : "0")) : null;
       try {
+        if (tk && !Geo.cache[tk]) {
+          // one topology per dataset: the edits before this one are never asked for again
+          const pre = "topo:" + cacheKey + ":";
+          Object.keys(Geo.cache).forEach((k) => { if (k.startsWith(pre)) delete Geo.cache[k]; });
+        }
         topo = tk ? (Geo.cache[tk] || (Geo.cache[tk] = build())) : build();
         topoObj = topo.objects.regions;
       } catch (e) { console.warn("editable topology failed", e); topo = null; topoObj = null; }
@@ -684,9 +689,12 @@
       const seeds = [];
       let tries = 0;
       const bw = p.b[1][0] - p.b[0][0], bh = p.b[1][1] - p.b[0][1];
+      // seeded per province: the cells (and their ids, which the project's ownership
+      // is keyed by) must come out the same on every load
+      const rand = seededRand(idx + 1);
       while (seeds.length < parts && tries < parts * 240) {
         tries++;
-        const x = p.b[0][0] + Math.random() * bw, y = p.b[0][1] + Math.random() * bh;
+        const x = p.b[0][0] + rand() * bw, y = p.b[0][1] + rand() * bh;
         if (provAt(x, y) === idx) seeds.push([x, y]);
       }
       if (seeds.length < 2) { whole(p); return; }
@@ -890,6 +898,10 @@
     }
     return inside;
   }
+  function seededRand(seed) {
+    let r = (seed * 2654435761) >>> 0 || 1;
+    return () => ((r = (Math.imul(r, 1103515245) + 12345) & 0x7fffffff) / 0x7fffffff);
+  }
   // split an oversized region's screen MultiPolygon into ~k natural cells (Voronoi + clip)
   function subdivideRegion(screenMP, areaKm) {
     if (typeof polygonClipping === "undefined" || !d3.Delaunay) return null;
@@ -899,10 +911,11 @@
     if (!isFinite(minx) || maxx - minx < 4 || maxy - miny < 4) return null;
     let seeds = [];
     let attempts = 0;
+    const rand = seededRand(Math.round(areaKm) + k * 7919); // the same cells on every load
     while (seeds.length < k && attempts < 6000) {
       attempts++;
-      const x = minx + Math.random() * (maxx - minx);
-      const y = miny + Math.random() * (maxy - miny);
+      const x = minx + rand() * (maxx - minx);
+      const y = miny + rand() * (maxy - miny);
       if (pointInMP(x, y, screenMP)) seeds.push([x, y]);
     }
     if (seeds.length < 2) return null;
@@ -997,9 +1010,14 @@
     return raw;
   }
 
+  const STALE_LOAD = { stale: true };
   Geo.load = async function (project) {
     const App = window.App;
     const id = project.basemapId;
+    // a newer load (another project opened meanwhile) wins: this one stops at its
+    // next step instead of writing an old map over the new project
+    const seq = (Geo._seq = (Geo._seq || 0) + 1);
+    const live = () => { if (seq !== Geo._seq) throw STALE_LOAD; };
     App.basemap = { status: "loading", features: [], byId: {}, sphere: "", graticule: "", count: 0, error: null, topo: null, topoObj: null, proj: null };
     App.emit();
     try {
@@ -1160,6 +1178,7 @@
         } catch (e) { coastPath = null; }
       }
 
+      live();
       App.basemap = {
         status: "ready",
         features: result.features,
@@ -1200,11 +1219,13 @@
         try {
           const pck = "phys:" + result.physicalDatasets[0];
           const pgj = Geo.cache[pck] || (Geo.cache[pck] = await fetchFirst(result.physicalDatasets.filter(Boolean)));
+          live();
           const ph = processPhysical(pgj, result.proj);
           App.physical = { status: "ready", rivers: ph.rivers, lakes: ph.lakes, relief: ph.relief, seas: ph.seas };
           if (ph.landPath && !App.basemap.landPath) App.basemap.landPath = ph.landPath;
           App.emit();
         } catch (e) {
+          if (e === STALE_LOAD) throw e;
           console.warn("physical layer load failed", e);
           App.physical = { status: "error", rivers: [], lakes: [], relief: [], seas: [] };
         }
@@ -1221,6 +1242,7 @@
             const ck = "phys:" + pdefs[k];
             return Geo.cache[ck] || (Geo.cache[ck] = await fetchFirst(localCandidates(pdefs[k])));
           }));
+          live();
           const phys = {}, physRaw = {};
           keys.forEach((k, i) => {
             const gj = loaded[i];
@@ -1237,7 +1259,7 @@
           App.basemap.physicalRaw = physRaw;
           if (window.GeomEdit) GeomEdit.invalidateSnap();
           App.emit();
-        } catch (e) { console.warn("physical layers failed", e); }
+        } catch (e) { if (e === STALE_LOAD) throw e; console.warn("physical layers failed", e); }
       }
 
       // ----- regular state-region layer (loaded above provinces) -----
@@ -1248,6 +1270,7 @@
         try {
           const rck = "regions:" + result.regionDatasets[0];
           const rgj = Geo.cache[rck] || (Geo.cache[rck] = await fetchFirst(result.regionDatasets.filter(Boolean)));
+          live();
           const rd = processRegions(rgj, result.regionProj || result.proj, App.basemap.byId);
           // each province learns its default state region id
           for (const fid in rd.provinceToRegion) {
@@ -1259,12 +1282,14 @@
           App.regionVersion = (App.regionVersion || 0) + 1;
           App.emit();
         } catch (e) {
+          if (e === STALE_LOAD) throw e;
           console.warn("region layer load failed", e);
           App.regionData = { status: "error", regions: [], byId: {}, provinceToRegion: {}, error: String(e) };
           App.emit();
         }
       }
     } catch (e) {
+      if (e === STALE_LOAD || seq !== Geo._seq) return;
       console.error("basemap load failed", e);
       App.basemap.status = "error";
       App.basemap.error = String(e);

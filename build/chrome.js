@@ -679,6 +679,7 @@ var TEMPLATE_KEYS = {
   admin1: "tmpl.admin1",
   world_hoi4: "tmpl.worldhoi4",
   tfr: "tmpl.tfr",
+  tfr_merged: "tmpl.tfrm",
   owb: "tmpl.owb",
   agot: "tmpl.agot",
   blank: "tmpl.blank",
@@ -1189,6 +1190,12 @@ function TemplatesModal() {
     name: t("tmpl.tfr.name"),
     desc: t("tmpl.tfr.desc"),
     count: "~1500",
+    feats: ["region-grid", "physical", "countries"]
+  }, {
+    id: "tfr_merged",
+    name: t("tmpl.tfrm.name"),
+    desc: t("tmpl.tfrm.desc"),
+    count: "~2220",
     feats: ["region-grid", "physical", "countries"]
   }, {
     id: "owb",

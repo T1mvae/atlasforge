@@ -94,6 +94,17 @@
       type: "region-grid", startCountries: true,
       supportsCountries: true, supportsProvinceGroups: true, supportsCustomOwnership: true
     },
+    // The Fire Rises divided as finely as any of the state mods divides the place
+    // (tools/build_tfr_merged.py: KSRER, KSRE, Nemo's States compared with TFR on their
+    // own bitmaps). TFR's coast, country borders and owners; the rest is TFR as above.
+    "tfr_merged": {
+      kind: "localgeo", approx: "~2220",
+      name: "The Fire Rises — most detailed (with KSRER, KSRE, Nemo's States)",
+      dataset: "/data/tfr_merged.geojson?v=2",   // bump when the file is rebuilt: data is cached by URL
+      physicalDataset: "/data/tfr_physical.geojson",
+      type: "region-grid", startCountries: true,
+      supportsCountries: true, supportsProvinceGroups: true, supportsCustomOwnership: true
+    },
     // A Game of Thrones (CK3 mod) — Westeros & Essos, built from the mod's own
     // map_data by tools/build_agot_from_mod.py: provinces.png + definition.csv give
     // the cells, the province-history banner comments give the CK3 title hierarchy

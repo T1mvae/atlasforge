@@ -4,7 +4,7 @@
 # vanilla-HOI4 palette and a WORLD georef for rivers.
 # Output coords match data/world_hoi4_states.geojson (terrain.bmp 5120x2560 /2 =
 # 2560x1280, the same frame world_hoi4_states uses).
-import json, os, time
+import json, os, sys, time
 import numpy as np
 from PIL import Image
 from scipy import ndimage
@@ -13,9 +13,11 @@ from shapely.ops import unary_union
 from shapely.geometry.polygon import orient
 from shapely.affinity import scale as shp_scale
 
-SRC = "World_helping_files/terrain.bmp"
-RIVERS_BMP = "World_helping_files/rivers.bmp"  # REAL game rivers (same frame as provinces -> perfect alignment)
-OUT = "data/world_hoi4_physical.geojson"
+# usage: build_world_terrain.py [SRC_FOLDER] [OUT_GEOJSON]   (defaults = the HOI4 world)
+SRC_DIR = sys.argv[1] if len(sys.argv) > 1 else "World_helping_files"
+SRC = os.path.join(SRC_DIR, "terrain.bmp")
+RIVERS_BMP = os.path.join(SRC_DIR, "rivers.bmp")  # REAL game rivers (same frame as provinces -> perfect alignment)
+OUT = sys.argv[2] if len(sys.argv) > 2 else "data/world_hoi4_physical.geojson"
 DOWN = 2          # terrain 5120x2560 -> 2560x1280 (matches world_hoi4_states frame)
 COORD_SCALE = 0.5 # rivers.bmp is read at FULL res (so 1px rivers survive) then scaled to the /2 frame
 

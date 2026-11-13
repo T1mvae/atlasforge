@@ -678,6 +678,7 @@ function Timeline() {
 var TEMPLATE_KEYS = {
   admin1: "tmpl.admin1",
   world_hoi4: "tmpl.worldhoi4",
+  tfr: "tmpl.tfr",
   owb: "tmpl.owb",
   agot: "tmpl.agot",
   blank: "tmpl.blank",
@@ -1184,6 +1185,12 @@ function TemplatesModal() {
     count: "~1770",
     feats: ["region-grid", "physical", "countries"]
   }, {
+    id: "tfr",
+    name: t("tmpl.tfr.name"),
+    desc: t("tmpl.tfr.desc"),
+    count: "~1500",
+    feats: ["region-grid", "physical", "countries"]
+  }, {
     id: "owb",
     name: t("tmpl.owb.name"),
     desc: t("tmpl.owb.desc"),
@@ -1272,7 +1279,7 @@ function TemplatesModal() {
       return;
     }
     Actions.newProject(choice, {
-      groupByCountry: false
+      groupByCountry: !!(BASEMAPS[choice] && BASEMAPS[choice].startCountries)
     });
     if (choice === "world") Actions.ui({
       tool: "world",

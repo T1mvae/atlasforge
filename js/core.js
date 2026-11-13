@@ -1228,18 +1228,22 @@
 
   Actions.groupByCountry = function () {
     const feats = App.basemap.features;
-    const byCountry = {};
+    const byCountry = {}, info = {};
+    const owned = feats.some((f) => f.country);
     feats.forEach((f) => {
-      const c = f.country || f.name;
+      // a map that knows its owners leaves ownerless land unpainted
+      const c = f.country || (owned ? null : f.name);
       if (!c) return;
       (byCountry[c] = byCountry[c] || []).push(f.id);
+      if (!info[c]) info[c] = { ru: f.countryRu, color: f.countryColor };
     });
+    const ru = App.ui.lang === "ru";
     const names = Object.keys(byCountry).sort();
     Actions.mut((p) => {
       names.forEach((n, i) => {
         const id = uid();
         p.states[id] = {
-          id, name: n, color: nextAutoColor(i), flag: null,
+          id, name: (ru && info[n].ru) || n, color: info[n].color || nextAutoColor(i), flag: null,
           capital: "", capitalRegion: null, gov: "", ideology: "", religion: "", culture: "", language: "",
           population: "", economy: "", army: "", notes: "", vassalOf: null, labelOffset: null
         };

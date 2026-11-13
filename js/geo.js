@@ -82,6 +82,18 @@
       type: "region-grid",
       supportsCountries: true, supportsProvinceGroups: true, supportsCustomOwnership: true
     },
+    // The Fire Rises (HOI4 mod, start 2020) — tools/build_tfr.py: the mod's own
+    // provinces.bmp + history/states through the OWB pipeline; every state carries
+    // its owner as a real country (owner / owner_ru / owner_color, the mod's colours),
+    // so a new project starts with the mod's political map (`startCountries`).
+    "tfr": {
+      kind: "localgeo", approx: "~1500",
+      name: "The Fire Rises (HOI4 mod)",
+      dataset: "/data/tfr_states.geojson",
+      physicalDataset: "/data/tfr_physical.geojson",
+      type: "region-grid", startCountries: true,
+      supportsCountries: true, supportsProvinceGroups: true, supportsCustomOwnership: true
+    },
     // A Game of Thrones (CK3 mod) — Westeros & Essos, built from the mod's own
     // map_data by tools/build_agot_from_mod.py: provinces.png + definition.csv give
     // the cells, the province-history banner comments give the CK3 title hierarchy
@@ -554,6 +566,7 @@
       try { c = path.centroid(f); b = path.bounds(f); } catch (e) { c = [0, 0]; b = [[0, 0], [0, 0]]; }
       const area = Math.abs((b[1][0] - b[0][0]) * (b[1][1] - b[0][1]));
       const feat = { id, name, country, d, c, b, area,
+        countryRu: props.owner_ru || null, countryColor: props.owner_color || null,
         nameRu: props.name_ru || null, terrain: props.terrain || null,
         histArea: props.historicalArea || null, cultArea: props.culturalArea || null,
         baseColor: (typeof props.color === "string" && props.color[0] === "#") ? props.color : null };

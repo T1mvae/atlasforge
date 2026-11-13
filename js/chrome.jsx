@@ -272,7 +272,7 @@ function Timeline() {
 
 // template id -> i18n key prefix of its name (library cards show which map a project uses)
 const TEMPLATE_KEYS = {
-  admin1: "tmpl.admin1", world_hoi4: "tmpl.worldhoi4", tfr: "tmpl.tfr", tfr_merged: "tmpl.tfrm", owb: "tmpl.owb", agot: "tmpl.agot", blank: "tmpl.blank",
+  admin1: "tmpl.admin1", world_hoi4: "tmpl.worldhoi4", tfr: "tmpl.tfr", tfr_merged: "tmpl.tfrm", ksrer_merged: "tmpl.ksrerm", owb: "tmpl.owb", agot: "tmpl.agot", blank: "tmpl.blank",
   world: "tmpl.world", agot_duchies: "tmpl.agotd", agot_kingdoms: "tmpl.agotk", agot_baronies: "tmpl.agotb",
   best_regions_world: "tmpl.best", atlas_world: "tmpl.atlas", world_states: "tmpl.worldstates",
   detailed_province_world: "tmpl.dpw", provinces: "tmpl.provinces", strategic: "tmpl.strategic",
@@ -443,6 +443,7 @@ function TemplatesModal() {
     { id: "world_hoi4", name: t("tmpl.worldhoi4.name"), desc: t("tmpl.worldhoi4.desc"), count: "~1770", feats: ["region-grid", "physical", "countries"] },
     { id: "tfr", name: t("tmpl.tfr.name"), desc: t("tmpl.tfr.desc"), count: "~1500", feats: ["region-grid", "physical", "countries"] },
     { id: "tfr_merged", name: t("tmpl.tfrm.name"), desc: t("tmpl.tfrm.desc"), count: "~2220", feats: ["region-grid", "physical", "countries"] },
+    { id: "ksrer_merged", name: t("tmpl.ksrerm.name"), desc: t("tmpl.ksrerm.desc"), count: "~2240", feats: ["region-grid", "physical", "countries"] },
     { id: "owb", name: t("tmpl.owb.name"), desc: t("tmpl.owb.desc"), count: "~1984", feats: ["region-grid", "physical", "countries"] },
     { id: "agot", name: t("tmpl.agot.name"), desc: t("tmpl.agot.desc"), count: "~4130", feats: ["region-grid", "physical", "countries"] },
     { id: "world", name: t("tmpl.world.name"), desc: t("tmpl.world.desc"), count: "0", feats: ["paintTerrain", "aiAtlas"] },

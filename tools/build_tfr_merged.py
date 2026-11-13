@@ -14,6 +14,9 @@
 # Everything is compared and chosen on the mods' own bitmaps (provinces.bmp at full
 # resolution); polygons are made once, from the finished raster.
 #
+#   python3 tools/build_tfr_merged.py ksrer   -> data/ksrer_merged_raw.geojson: the same with
+#   KSRER as the base and TFR + Nemo's States refining it (see BUILDS).
+#
 # The base is The Fire Rises: its frame, its coast, its countries. The other mods
 # (SOURCES, in order) only ever change how a TFR country is divided inside:
 #   1. every mod becomes a raster of state numbers (provinces.bmp + definition.csv +
@@ -46,15 +49,26 @@ Image.MAX_IMAGE_PIXELS = None
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 REF = os.path.join(ROOT, "maps_references")
 STEAM = os.path.expanduser("~/Library/Application Support/Steam/steamapps/workshop/content/394360")
-BASE = os.path.join(REF, "map_fire_rises")
-A_PROPS = os.path.join(ROOT, "data", "tfr_states_raw.geojson")     # names, owners, colours by state id
-OUT = os.path.join(ROOT, "data", "tfr_merged_raw.geojson")
-# (key, id letter, folder with provinces.bmp + definition.csv + states/, workshop id for the names)
-SOURCES = [
-    ("ksrer", "r", os.path.join(REF, "map_ksrer"), "3817978431"),
-    ("ksre", "k", os.path.join(REF, "map_ksre"), "2887517564"),
-    ("nemos", "n", os.path.join(REF, "map_nemos_states"), "2843687331"),
-]
+data = lambda f: os.path.join(ROOT, "data", f)
+# a source: (key, id letter, folder with provinces.bmp + definition.csv + states/,
+#            workshop id for the names — or the built GeoJSON of that mod: names + Russian names)
+KSRER = ("ksrer", "r", os.path.join(REF, "map_ksrer"), "3817978431")
+KSRE = ("ksre", "k", os.path.join(REF, "map_ksre"), "2887517564")
+NEMOS = ("nemos", "n", os.path.join(REF, "map_nemos_states"), "2843687331")
+TFR = ("tfr", "t", os.path.join(REF, "map_fire_rises"), data("tfr_states_raw.geojson"))
+# which map is the base (frame, coast, countries) and which mods may refine it, in order.
+# `ratio`: how much larger a state may be drawn on the base than on a mod with another map
+# and still be the same state (TFR draws Europe ~1.5x larger than KSRE / KSRER).
+BUILDS = {
+    "tfr": {"base": TFR[2], "props": data("tfr_states_raw.geojson"), "out": data("tfr_merged_raw.geojson"),
+            "sources": [KSRER, KSRE, NEMOS], "ratio": (0.8, 2.6)},
+    # KSRER (vanilla HOI4, 1936) as the base, without KSRE:  python3 tools/build_tfr_merged.py ksrer
+    # after tools/build_ksrer.py and tools/build_tfr.py; then the same three commands with ksrer_merged.
+    "ksrer": {"base": KSRER[2], "props": data("ksrer_states_raw.geojson"), "out": data("ksrer_merged_raw.geojson"),
+              "sources": [TFR, NEMOS], "ratio": (0.38, 1.25)},
+}
+BUILD = BUILDS[sys.argv[1] if len(sys.argv) > 1 else "tfr"]
+BASE, A_PROPS, OUT, SOURCES, RATIO = BUILD["base"], BUILD["props"], BUILD["out"], BUILD["sources"], BUILD["ratio"]
 LINK = 0.2        # a state overlapping another by this share of the smaller one joins its block
 KEEP = 0.5        # a mod's state counts in a block that holds this share of it …
 KEEP_A = 0.5      # … or a piece this large against the block's average state
@@ -109,6 +123,7 @@ def load(folder, names=None):
 
 def state_names(workshop):
     out = {}
+    if workshop.endswith(".geojson"): return out           # named from the built file, see name_from
     files = sorted(glob.glob(os.path.join(STEAM, workshop, "localisation", "english", "**", "*.yml"), recursive=True),
                    key=lambda p: (os.sep + "replace" + os.sep in p, p))
     for fp in files:
@@ -116,6 +131,15 @@ def state_names(workshop):
             m = re.match(r'\s*(STATE_\d+)\s*:\s*\d*\s*"([^"]+)"', line)
             if m and m.group(1) not in out: out[m.group(1)] = m.group(2).strip()
     return out
+
+
+def name_from(states, path):
+    """Names (and Russian names) of a mod that has its own built map."""
+    props = {f["properties"]["id"]: f["properties"] for f in json.load(open(path, encoding="utf-8"))["features"]}
+    for s in states:
+        p = props.get("s%d" % s["sid"]) or {}
+        s["name"] = p.get("name") or s["name"]
+        if p.get("name_ru"): s["name_ru"] = p["name_ru"]
 
 
 # ---------------------------------------------------------------- 2. another map onto the frame
@@ -132,14 +156,14 @@ def centroids(lab, states):
     return out
 
 def register(labA, statesA, labS, statesS):
-    """Coordinates in S (full-res x, y) for every full-res pixel of A."""
+    """warp(lab): a raster on the map of S resampled onto the frame of A (full resolution)."""
     a2, s2 = half(labA), half(labS)
     H, W = a2.shape; Hs, Ws = s2.shape
     ca, cs = centroids(a2, statesA), centroids(s2, statesS)
     common = [n for n in ca if n in cs and len(ca[n]) == 1 and len(cs[n]) == 1]
     pa = np.array([ca[n][0][:2] for n in common]); ps = np.array([cs[n][0][:2] for n in common])
     ratio = np.array([ca[n][0][2] / cs[n][0][2] for n in common])
-    ok = (ratio > 0.8) & (ratio < 2.6)                     # the same state, not just the same name
+    ok = (ratio > RATIO[0]) & (ratio < RATIO[1])                     # the same state, not just the same name
     # from nearly a plane to a spline: a wrong pair (one name, two places) must fall out
     # while the fit is still too stiff to bend to it
     for sm, lim in [(1e9, 60), (1e8, 40), (1e7, 25), (1e6, 15), (1e5, 10), (2e4, 6), (2e4, 5)]:
@@ -192,9 +216,8 @@ def register(labA, statesA, labS, statesS):
         c = [(gy - d[:, :, 1]) / ST, (gx - d[:, :, 0]) / ST]   # moving the picture by d = reading it at p - d
         G = np.dstack([ndimage.map_coordinates(G[:, :, k], c, order=1, mode="nearest") for k in (0, 1)])
     sx, sy = dense(2)
-    out = sample(labS, sx * 2 + 0.5, sy * 2 + 0.5)
-    la, lb = labA != 0, out != 0
-    return out, 100.0 * (la & lb).sum() / (la | lb).sum(), len(pa)
+    sx = sx * 2 + 0.5; sy = sy * 2 + 0.5
+    return (lambda lab: sample(lab, sx, sy)), len(pa)
 
 def sample_at(G, p, ST, k):
     return ndimage.map_coordinates(G[:, :, k], [p[:, 1] / ST, p[:, 0] / ST], order=1, mode="nearest")
@@ -279,6 +302,7 @@ def refine(cur, meta, own, S, statesS, key, letter):
             st = statesS[b - 1]; used[st["sid"]] += 1
             fid = "%s%d" % (letter, st["sid"]) + ("" if used[st["sid"]] == 1 else "_%d" % used[st["sid"]])
             props = {"id": fid, "name": st["name"], "state_category": st["cat"], "source": key}
+            if st.get("name_ru"): props["name_ru"] = st["name_ru"]
             new_meta.append(props); new_own.append(own[mem[0]])
         out[sl] = np.where(inblk, new + base, out[sl])
     # renumber: drop the replaced states and the pieces that got no pixel
@@ -292,7 +316,7 @@ def refine(cur, meta, own, S, statesS, key, letter):
 # ---------------------------------------------------------------- run
 labA, statesA = load(BASE)
 propsA = {f["properties"]["id"]: f["properties"] for f in json.load(open(A_PROPS, encoding="utf-8"))["features"]}
-# TFR leaves no land outside a state; anything else would be a hole in the map
+# the base leaves no land outside a state; anything else would be a hole in the map
 labA = np.where(labA < 0, 0, labA)
 meta, own = [], [""]
 for s in statesA:
@@ -302,18 +326,27 @@ for s in statesA:
 terrA = {p["id"]: p.get("terrain") for p in meta}
 cur = labA.copy()
 # labels must be exactly 1..len(meta): states with no pixel keep their slot (find_objects gives None)
-log("base: The Fire Rises, %d states" % len(np.unique(cur[cur > 0])))
+log("base: %s, %d states" % (os.path.basename(BASE), len(np.unique(cur[cur > 0]))))
+warps = {}                                                 # mods on one map share one registration
 tfr_owner = dict((p.get("owner_tag"), p) for p in meta if p.get("owner_tag"))
 before = Counter(o for o in own[1:] if o)
 for key, letter, folder, workshop in SOURCES:
     labS, statesS = load(folder, state_names(workshop))
+    if workshop.endswith(".geojson"): name_from(statesS, workshop)
     cover = 100.0 * (labS > 0).sum() / max(1, (labS != 0).sum())
+    note = "same frame"; there = None
     if labS.shape != labA.shape:
-        labS, iou, ncp = register(labA, statesA, labS, statesS)
-        note = "laid over the frame by %d states + coasts, land in common %.1f %%" % (ncp, iou)
-    else:
-        la, lb = labA != 0, labS != 0
-        note = "same frame, land in common %.1f %%" % (100.0 * (la & lb).sum() / (la | lb).sum())
+        if labS.shape not in warps: warps[labS.shape] = register(labA, statesA, labS, statesS)
+        warp, ncp = warps[labS.shape]
+        there = warp(np.ones(labS.shape, bool))            # the mod's map may not reach the poles
+        labS = warp(labS)
+        note = "laid over the frame by %d states + coasts" % ncp
+    la, lb = labA != 0, labS != 0
+    if there is not None: la = la & there
+    if os.environ.get("TFR_DEBUG"):
+        Image.fromarray(np.dstack([la * 255, lb * 255, lb * 255]).astype(np.uint8)[::2, ::2]).save(
+            os.path.join(ROOT, "tools", "cache", "reg_%s.png" % key))
+    note += ", land in common %.1f %%" % (100.0 * (la & lb).sum() / (la | lb).sum())
     n0 = len(meta)
     cur, meta, own, nblk, taken = refine(cur, meta, own, labS, statesS, key, letter)
     log("%s: %d states over %.0f %% of its land; %s; taken in %d of %d blocks: %d -> %d states" % (
@@ -356,7 +389,7 @@ for lab, props in enumerate(meta, 1):
         tv = np.bincount(terr_img[sl][mask], minlength=len(terr_ids) + 1); tv[0] = 0
         p["terrain"] = terr_ids[int(tv.argmax()) - 1] if tv.any() else None
         p.setdefault("ownerCountryId", None); p.setdefault("notes", ""); p["color"] = "#e8e6e2"
-    by_src[p.get("source") or "tfr"] += 1; after[own[lab]] += 1
+    by_src[p.get("source") or "base"] += 1; after[own[lab]] += 1
     gm = mapping(orient_d3(mask_to_poly(mask, sl[1].start, sl[0].start)))
     gm["coordinates"] = rnd(gm["coordinates"])
     feats.append({"type": "Feature", "id": p["id"], "geometry": gm, "properties": p})

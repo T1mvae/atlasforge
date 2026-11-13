@@ -105,6 +105,18 @@
       type: "region-grid", startCountries: true,
       supportsCountries: true, supportsProvinceGroups: true, supportsCustomOwnership: true
     },
+    // KSRER (Kovas State Rework Expanded Refined: vanilla HOI4, 1936) as the base —
+    // its frame, coast and countries (tools/build_ksrer.py) — with the finer division
+    // of The Fire Rises and Nemo's States where they have one
+    // (tools/build_tfr_merged.py ksrer; KSRE is not used).
+    "ksrer_merged": {
+      kind: "localgeo", approx: "~2240",
+      name: "KSRER — most detailed (with The Fire Rises, Nemo's States)",
+      dataset: "/data/ksrer_merged.geojson?v=1",   // bump when the file is rebuilt: data is cached by URL
+      physicalDataset: "/data/ksrer_physical.geojson",
+      type: "region-grid", startCountries: true,
+      supportsCountries: true, supportsProvinceGroups: true, supportsCustomOwnership: true
+    },
     // A Game of Thrones (CK3 mod) — Westeros & Essos, built from the mod's own
     // map_data by tools/build_agot_from_mod.py: provinces.png + definition.csv give
     // the cells, the province-history banner comments give the CK3 title hierarchy

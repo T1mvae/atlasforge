@@ -24,6 +24,8 @@ data/owb_states_raw.geojson
 data/world_hoi4_raw.geojson
 data/tfr_states_raw.geojson
 data/tfr_merged_raw.geojson
+data/ksrer_states_raw.geojson
+data/ksrer_merged_raw.geojson
 World_helping_files/
 map_data_agot/
 maps_references/

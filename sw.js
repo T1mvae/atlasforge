@@ -7,13 +7,13 @@
 //          template is opened (or via "download for offline"), then served cache-first.
 // A new version installs in the background and waits; the page asks the user to reload
 // (message "skipWaiting") so an edit in progress is never interrupted.
-const VERSION = "28eadb0577";
+const VERSION = "c36f40d334";
 const SHELL = "af-shell-" + VERSION;
 const DATA = "af-data-v1";
 const PRECACHE = [
   "./",
   "build/app.js?v=13dc3052ab",
-  "build/chrome.js?v=ac6074ad9c",
+  "build/chrome.js?v=e4a1c48731",
   "build/map.js?v=0dcecedbc3",
   "build/objects.js?v=85e5a3856b",
   "build/panels.js?v=8b720f0365",
@@ -29,8 +29,8 @@ const PRECACHE = [
   "js/core.js?v=872296d61d",
   "js/edit.js?v=397105b440",
   "js/export.js?v=cb2f6d64d9",
-  "js/geo.js?v=e498ff58d1",
-  "js/i18n.js?v=e5c636ddf9",
+  "js/geo.js?v=af231c0851",
+  "js/i18n.js?v=7c1199d90f",
   "js/names.js?v=bba4c0ceee",
   "js/objects.js?v=e11d5d7ba0",
   "js/pwa.js?v=9f35de276b",

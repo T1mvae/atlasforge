@@ -1286,14 +1286,19 @@ function TemplatesModal() {
     desc: t("tmpl.custom.desc"),
     count: "GeoJSON"
   }];
-  var grouped = false;
+  // maps that know their countries (startCountries) may open painted or as bare borders
+  var _React$useState15 = React.useState(true),
+    _React$useState16 = _slicedToArray(_React$useState15, 2),
+    withCountries = _React$useState16[0],
+    setWithCountries = _React$useState16[1];
+  var hasCountries = !!(BASEMAPS[choice] && BASEMAPS[choice].startCountries);
   var create = function create() {
     if (choice === "custom") {
       Exports.importGeoJSON();
       return;
     }
     Actions.newProject(choice, {
-      groupByCountry: !!(BASEMAPS[choice] && BASEMAPS[choice].startCountries)
+      groupByCountry: hasCountries && withCountries
     });
     if (choice === "world") Actions.ui({
       tool: "world",
@@ -1388,11 +1393,17 @@ function TemplatesModal() {
     className: "tmpl-grid"
   }, classic.map(function (c) {
     return Card(c, false);
-  })), grouped && /*#__PURE__*/React.createElement("label", {
-    className: "check-row"
-  }, /*#__PURE__*/React.createElement("span", null, t("tmpl.groupByCountry"), " \u2713"))), /*#__PURE__*/React.createElement("div", {
+  }))), /*#__PURE__*/React.createElement("div", {
     className: "modal-foot"
-  }, !firstRun && /*#__PURE__*/React.createElement("button", {
+  }, hasCountries && /*#__PURE__*/React.createElement("label", {
+    className: "tmpl-countries"
+  }, /*#__PURE__*/React.createElement("input", {
+    type: "checkbox",
+    checked: withCountries,
+    onChange: function onChange(e) {
+      return setWithCountries(e.target.checked);
+    }
+  }), /*#__PURE__*/React.createElement("span", null, t("tmpl.withCountries"))), !firstRun && /*#__PURE__*/React.createElement("button", {
     className: "btn outline",
     onClick: function onClick() {
       return Actions.ui({

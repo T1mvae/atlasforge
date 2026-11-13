@@ -408,6 +408,7 @@ body.resizing .map-stage { pointer-events: none; }
 .modal-body { padding: 16px 18px; overflow-y: auto; display: flex; flex-direction: column; gap: 12px; }
 .modal-foot { padding: 12px 18px; border-top: 1px solid var(--border-soft); display: flex; justify-content: flex-end; gap: 8px; }
 
+.tmpl-countries { margin-right: auto; display: flex; align-items: center; gap: 8px; font-size: 13px; cursor: pointer; }
 .tmpl-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
 .tmpl-card {
   border: 1px solid var(--border); border-radius: 10px; padding: 14px;

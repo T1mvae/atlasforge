@@ -463,10 +463,12 @@ function TemplatesModal() {
     { id: "world-50", name: t("tmpl.world50.name"), desc: t("tmpl.world50.desc"), count: "~241" },
     { id: "custom", name: t("tmpl.custom.name"), desc: t("tmpl.custom.desc"), count: "GeoJSON" }
   ];
-  const grouped = false;
+  // maps that know their countries (startCountries) may open painted or as bare borders
+  const [withCountries, setWithCountries] = React.useState(true);
+  const hasCountries = !!(BASEMAPS[choice] && BASEMAPS[choice].startCountries);
   const create = () => {
     if (choice === "custom") { Exports.importGeoJSON(); return; }
-    Actions.newProject(choice, { groupByCountry: !!(BASEMAPS[choice] && BASEMAPS[choice].startCountries) });
+    Actions.newProject(choice, { groupByCountry: hasCountries && withCountries });
     if (choice === "world") Actions.ui({ tool: "world", worldBrush: "land" });
   };
   const Card = (c, big) => (
@@ -500,13 +502,14 @@ function TemplatesModal() {
             {showClassic ? "▾ " : "▸ "}{t("tmpl.classic")}
           </button>
           {showClassic && <div className="tmpl-grid">{classic.map((c) => Card(c, false))}</div>}
-          {grouped && (
-            <label className="check-row">
-              <span>{t("tmpl.groupByCountry")} ✓</span>
-            </label>
-          )}
         </div>
         <div className="modal-foot">
+          {hasCountries && (
+            <label className="tmpl-countries">
+              <input type="checkbox" checked={withCountries} onChange={(e) => setWithCountries(e.target.checked)} />
+              <span>{t("tmpl.withCountries")}</span>
+            </label>
+          )}
           {!firstRun && <button className="btn outline" onClick={() => Actions.ui({ modal: null })}>{t("modal.cancel")}</button>}
           <button className="btn primary" onClick={create}>{t("modal.create")}</button>
         </div>

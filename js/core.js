@@ -259,11 +259,22 @@
     Object.assign(p, s);
   }
   let strokeOpen = false;
+  // the stack is capped by count and by size: a slice of a big map with many years is
+  // megabytes, and sixty of them would take the tab down on an iPad
+  const UNDO_BYTES = 160 * 1024 * 1024;
+  function trimUndo() {
+    let bytes = 0;
+    for (const e of App.undoStack) bytes += typeof e === "string" ? e.length * 2 : (e.bytes || 0);
+    while ((App.undoStack.length > 60 || bytes > UNDO_BYTES) && App.undoStack.length > 1) {
+      const old = App.undoStack.shift();
+      bytes -= typeof old === "string" ? old.length * 2 : (old.bytes || 0);
+    }
+  }
   function pushUndo() {
     if (!App.project) return;
     if (strokeOpen) return; // grouped stroke: snapshot already taken
     App.undoStack.push(politicalSlice(App.project));
-    if (App.undoStack.length > 60) App.undoStack.shift();
+    trimUndo();
     App.redoStack.length = 0;
   }
 
@@ -271,23 +282,17 @@
 
   // Non-slice undo entries ({ undo(), redo(), bytes }) — e.g. terrain raster diffs in
   // custom worlds. They share the stack with the JSON slices so the order is kept.
-  const UNDO_BYTES = 160 * 1024 * 1024;
   Actions.pushUndoEntry = function (entry) {
     if (!App.project) return;
     App.undoStack.push(entry);
     App.redoStack.length = 0;
-    let bytes = 0;
-    for (const e of App.undoStack) bytes += typeof e === "string" ? e.length * 2 : (e.bytes || 0);
-    while ((App.undoStack.length > 60 || bytes > UNDO_BYTES) && App.undoStack.length > 1) {
-      const old = App.undoStack.shift();
-      bytes -= typeof old === "string" ? old.length * 2 : (old.bytes || 0);
-    }
+    trimUndo();
   };
 
   Actions.beginStroke = function () {
     if (!App.project || strokeOpen) return;
     App.undoStack.push(politicalSlice(App.project));
-    if (App.undoStack.length > 60) App.undoStack.shift();
+    trimUndo();
     App.redoStack.length = 0;
     strokeOpen = true;
   };
@@ -439,6 +444,9 @@
         vassalOf: null,
         labelOffset: null
       };
+      // made while a year of the timeline is on screen: the state belongs to that year,
+      // and its lands there go on into the later years (see carryNewStatesForward)
+      if (p.currentYear != null) p.states[id].addedIn = p.currentYear;
       p.stateOrder.push(id);
     });
     App.ui.activeState = id;
@@ -1106,9 +1114,60 @@
   function snapOf(p) {
     return JSON.parse(JSON.stringify({ states: p.states, stateOrder: p.stateOrder, regions: p.regions, groups: p.groups || {}, labels: p.labels }));
   }
+  // A state added to a year when later years already exist appears in those years too:
+  // the lands it was given in its own year (state.addedIn) since that year was opened
+  // become its lands in every later year where they belong to nobody. A year where the
+  // land is someone else's stops it for the years after. Never the other way round — a
+  // later year changes nothing in an earlier one — and only for states made in that year,
+  // not for lands added to older states.
+  let carried = null; // { names, years, lands } of the last run, for the toast
+  function carryNewStatesForward(p) {
+    const cur = p.currentYear, before = p.snapshots[cur];
+    const later = p.years.filter((y) => y > cur && p.snapshots[y]).sort((a, b) => a - b);
+    if (!before || !later.length) return;
+    const effIn = (regions, groups, rid) => {
+      const r = regions && regions[rid];
+      return r && r.group && groups && groups[r.group] ? groups[r.group] : r;
+    };
+    const names = new Set(), years = new Set();
+    let lands = 0;
+    for (const rid in p.regions) {
+      const e = effIn(p.regions, p.groups, rid);
+      const sid = e && e.owner;
+      const st = sid && p.states[sid];
+      if (!st || st.addedIn !== cur) continue;
+      const was = effIn(before.regions, before.groups, rid);
+      if (was && was.owner === sid) continue; // its land already when the year was opened
+      for (const y of later) {
+        const s = p.snapshots[y];
+        const regs = s.regions || (s.regions = {});
+        const rec = regs[rid];
+        if (rec && rec.group && s.groups && s.groups[rec.group]) break; // a merged group there: left alone
+        if (rec && rec.owner) { if (rec.owner === sid) continue; break; }
+        const next = JSON.parse(JSON.stringify(p.regions[rid] && !p.regions[rid].group ? p.regions[rid] : {}));
+        delete next.group;
+        regs[rid] = Object.assign(next, rec || {}, { owner: sid, status: "core", autonomyId: null, inherited: cur });
+        delete regs[rid].claimants; delete regs[rid].occupiedFrom;
+        if (!s.states) s.states = {};
+        if (!s.states[sid]) {
+          s.states[sid] = JSON.parse(JSON.stringify(st));
+          s.stateOrder = (s.stateOrder || []).concat([sid]);
+        }
+        names.add(st.name); years.add(y); lands++;
+      }
+    }
+    if (lands) carried = { names: [...names], years: years.size, lands };
+  }
+  function carriedToast() {
+    const c = carried;
+    carried = null;
+    if (c) Actions.toast(t("timeline.carried").replace("{s}", c.names.join(", ")).replace("{y}", c.years).replace("{n}", c.lands));
+  }
   // the map on screen belongs to the current year: keep it there before leaving
   function keepCurrentYear(p) {
-    if (p.currentYear != null && p.snapshots[p.currentYear]) p.snapshots[p.currentYear] = snapOf(p);
+    if (p.currentYear == null || !p.snapshots[p.currentYear]) return;
+    carryNewStatesForward(p); // reads the snapshot as it was when the year was opened
+    p.snapshots[p.currentYear] = snapOf(p);
   }
   function loadYear(p, year) {
     const s = p.snapshots[year];
@@ -1132,6 +1191,7 @@
       p.snapshots[year] = snapOf(p);
       p.currentYear = year;
     });
+    carriedToast();
   };
   Actions.gotoYear = function (year, opts) {
     Actions.mut((p) => {
@@ -1140,6 +1200,7 @@
     }, Object.assign({ terr: true }, opts));
     App.ui.selection = [];
     App.emit();
+    carriedToast();
   };
   Actions.deleteYear = function (year) {
     const wasCurrent = App.project && App.project.currentYear === year;

@@ -447,6 +447,7 @@ function worldAnalysis() {
   // owners and names do not enter the analysis: political edits keep the cache (a geometry
   // edit reloads the basemap, which does)
   const key = App.basemap.count + ":" + (World.hydro ? World.hydro.rev : 0) + ":" + World.rasterRev + ":" + App.ui.lang +
+    ":" + World.sea() + ":" + (App.project.world.scaleKm || 0) +
     ":" + (World.watersFresh() ? World.waters.key : ""); // the seas and gulfs, once worked out
   const c = worldAnalysisCache;
   if (!c || c.key !== key || c.bm !== App.basemap || c.riversRef !== riversRef) {
@@ -1011,7 +1012,7 @@ function WorldCard() {
   useStore();
   const card = App.ui.card;
   if (!card) return null;
-  if (card.kind === "river" && World.active()) return <RiverCard index={card.index}></RiverCard>;
+  if (card.kind === "river" && World.active()) return <RiverCard index={World.riverIndexOf(card)}></RiverCard>;
   if (card.kind === "water" && World.active()) return <WaterCard pt={card.pt}></WaterCard>;
   if (card.kind === "macroRegion") return <MacroRegionCard id={card.id}></MacroRegionCard>;
   if (card.kind === "object" && window.ObjectCard) return <ObjectCard id={card.id}></ObjectCard>;

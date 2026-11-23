@@ -100,7 +100,7 @@ function SearchBox() {
         var f = _step2.value;
         var r = p.regions[f.id];
         var nm = r && r.name || f.name;
-        if (nm.toLowerCase().includes(needle)) out.push({
+        if (String(nm || "").toLowerCase().includes(needle)) out.push({
           kind: "region",
           id: f.id,
           name: nm,
@@ -502,9 +502,11 @@ function Legend() {
       drag.current = null;
       document.removeEventListener("pointermove", onMove);
       document.removeEventListener("pointerup", _onUp);
+      document.removeEventListener("pointercancel", _onUp);
     };
     document.addEventListener("pointermove", onMove);
     document.addEventListener("pointerup", _onUp);
+    document.addEventListener("pointercancel", _onUp); // a touch the browser took over never sends pointerup
   };
   return /*#__PURE__*/React.createElement("div", {
     className: "legend",

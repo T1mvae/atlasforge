@@ -18,8 +18,9 @@ import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
 import { createRequire } from "node:module";
+import { fileURLToPath } from "node:url";
 
-const ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), "..");
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), ".."); // a path with spaces or Cyrillic stays readable
 const require = createRequire(import.meta.url);
 const rel = (...p) => path.join(ROOT, ...p);
 const hash = (buf) => crypto.createHash("md5").update(buf).digest("hex").slice(0, 10);
@@ -77,11 +78,12 @@ for (const page of PAGES) fs.writeFileSync(rel(page), html);
 
 // ---------- 4. service worker ----------
 // also precache what the page loads indirectly (icons referenced by the manifest)
+let unstamped = html; // the page and the icons are precached without ?v=: their content makes the version
 for (const f of fs.readdirSync(rel("icons"))) {
-  if (/\.(png|svg)$/.test(f)) shell.add("icons/" + f); // the manifest references them without ?v=
+  if (/\.(png|svg)$/.test(f)) { shell.add("icons/" + f); unstamped += hash(fs.readFileSync(rel("icons", f))); } // the manifest references them without ?v=
 }
 const precache = ["./", ...[...shell].sort()];
-const version = hash(precache.join("\n") + fs.readFileSync(rel("tools", "sw.template.js")));
+const version = hash(precache.join("\n") + fs.readFileSync(rel("tools", "sw.template.js")) + hash(unstamped));
 const sw = fs.readFileSync(rel("tools", "sw.template.js"), "utf8")
   .replace("__VERSION__", version)
   .replace("__PRECACHE__", JSON.stringify(precache, null, 2));

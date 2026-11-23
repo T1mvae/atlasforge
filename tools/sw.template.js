@@ -13,7 +13,8 @@ const DATA = "af-data-v1";
 const PRECACHE = __PRECACHE__;
 
 self.addEventListener("install", (event) => {
-  event.waitUntil(caches.open(SHELL).then((c) => c.addAll(PRECACHE)));
+  // past the HTTP cache: a worker installed minutes after a deploy must not precache the old page
+  event.waitUntil(caches.open(SHELL).then((c) => c.addAll(PRECACHE.map((u) => new Request(u, { cache: "reload" })))));
 });
 
 self.addEventListener("activate", (event) => {
@@ -59,10 +60,14 @@ self.addEventListener("fetch", (event) => {
     event.respondWith((async () => {
       const cache = await caches.open(DATA);
       const hit = await cache.match(req);
-      if (hit) return hit;
-      const res = await fetch(req);
-      if (res.ok) cache.put(req, res.clone());
-      return res;
+      // the cached map opens at once; the server is asked in the background whether the
+      // file changed (a regenerated dataset), and the next opening gets the new one
+      const refresh = fetch(req, { cache: "no-cache" }).then((res) => {
+        if (res.ok) return cache.put(req, res.clone()).then(() => res);
+        return res;
+      });
+      if (hit) { event.waitUntil(refresh.catch(() => {})); return hit; }
+      return refresh;
     })());
     return;
   }

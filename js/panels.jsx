@@ -230,6 +230,16 @@ function StatesPanel() {
   );
 }
 
+// A colour picker fires on every move inside it: all of them are one undo step, closed
+// shortly after the last one.
+let liveColorTimer = null;
+function liveColor(write) {
+  Actions.beginStroke();
+  write();
+  clearTimeout(liveColorTimer);
+  liveColorTimer = setTimeout(() => Actions.endStroke(), 700);
+}
+
 // ---------- form primitives ----------
 function Field({ label, children }) {
   return (
@@ -413,7 +423,7 @@ function AutonomyPicker({ sel, owner, autonomyId }) {
       {cur && (
         <div className="field-row" style={{ marginTop: 4 }}>
           <input className="input" value={cur.name} onChange={(e) => Actions.setAutonomy(cur.id, { name: e.target.value }, { undo: false })}></input>
-          <input type="color" className="color-input" value={cur.color || "#c8c8c8"} onChange={(e) => Actions.setAutonomy(cur.id, { color: e.target.value })}></input>
+          <input type="color" className="color-input" value={cur.color || "#c8c8c8"} onChange={(e) => liveColor(() => Actions.setAutonomy(cur.id, { color: e.target.value }, { undo: false }))}></input>
           <button className="btn icon danger" style={{ height: 26, width: 26 }} title={t("autonomy.remove")} onClick={() => Actions.setRegionAutonomy(sel, null)}>✕</button>
         </div>
       )}
@@ -734,7 +744,7 @@ function CatalogTab() {
   const selected = App.ui.selection || [];
   const chips = (
     <div className="chip-row catalog-tabs">
-      {tabs.map((k) => <button key={k} className={"chip" + (field === k ? " on" : "")} onClick={() => setField(k)}>{t("catalog." + k)}</button>)}
+      {tabs.map((k) => <button key={k} className={"chip" + (field === k ? " on" : "")} onClick={() => { setField(k); setQuery(""); }}>{t("catalog." + k)}</button>)}
     </div>
   );
   if (regionsTab) return <div className="props-body catalog-panel">{chips}<MacroRegionCatalog></MacroRegionCatalog></div>;
@@ -777,10 +787,8 @@ function StateTab() {
   const p = App.project;
   const sid = App.ui.activeState;
   const s = sid ? p.states[sid] : null;
-  if (!s) return <div className="props-body"><div className="muted">{t("state.none")}</div></div>;
-  const set = (patch) => Actions.setState(sid, patch, { undo: false });
-  const counts = stateStats();
-  const capOptions = React.useMemo(() => {
+  const capOptions = React.useMemo(() => { // before the early return: hooks run on every render
+    if (!s) return [];
     const out = [], bm = App.basemap;
     for (const rid in p.regions) {
       const e = effRegion(p, rid);
@@ -791,6 +799,9 @@ function StateTab() {
     out.sort((a, b) => String(a.name).localeCompare(String(b.name)));
     return out;
   }, [App.version, sid]);
+  if (!s) return <div className="props-body"><div className="muted">{t("state.none")}</div></div>;
+  const set = (patch) => Actions.setState(sid, patch, { undo: false });
+  const counts = stateStats();
   return (
     <div className="props-body">
       <TextField label={t("f.name")} value={s.name} onChange={(v) => set({ name: v })}></TextField>
@@ -910,7 +921,7 @@ function TextStyleFields({ v, set, kind, defaults }) {
       {!st && (
         <Field label={t("label.haloColor")}>
           <div className="field-row">
-            <input type="color" className="color-input" value={v.haloColor || d.haloColor || "#ffffff"} onChange={(e) => set({ haloColor: e.target.value })}></input>
+            <input type="color" className="color-input" value={v.haloColor || d.haloColor || "#ffffff"} onChange={(e) => liveColor(() => set({ haloColor: e.target.value }, { undo: false }))}></input>
             {v.haloColor && <button className="btn outline" style={{ height: 22, fontSize: 10 }} onClick={() => set({ haloColor: null })}>{t("label.auto")}</button>}
           </div>
         </Field>
@@ -929,7 +940,7 @@ function LabelFields({ id }) {
     <React.Fragment>
       <TextField label={t("f.text")} value={l.text} onChange={(v) => set({ text: v }, { undo: false })}></TextField>
       <Field label={t("f.color")}>
-        <input type="color" className="color-input" value={l.color || "#222222"} onChange={(e) => set({ color: e.target.value })}></input>
+        <input type="color" className="color-input" value={l.color || "#222222"} onChange={(e) => liveColor(() => set({ color: e.target.value }, { undo: false }))}></input>
       </Field>
       <TextStyleFields v={l} set={set} kind="label" defaults={{ halo: 0.05, haloColor: p.settings.sea }}></TextStyleFields>
       <div className="muted" style={{ fontSize: 11 }}>{t("label.handlesHint")}</div>

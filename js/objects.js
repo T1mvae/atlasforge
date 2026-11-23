@@ -291,6 +291,31 @@
     return id;
   };
 
+  // A place was moved: the roads that start or end at it are laid again (inside the
+  // caller's undo step). A road that finds no way any more keeps its line with the end
+  // moved to the place.
+  Objects.rerouteRoads = function (objId) {
+    const p = App.project;
+    if (!p || !p.roads || !p.objects || !p.objects[objId]) return;
+    const next = {};
+    const world = window.World && World.active();
+    for (const rid in p.roads) {
+      const r = p.roads[rid];
+      if (!r || (r.from !== objId && r.to !== objId)) continue;
+      const a = p.objects[r.from], b = p.objects[r.to];
+      if (!a || !b) continue;
+      let pts = null;
+      if (world) { try { pts = routeOnWorld(a, b, r.kind || "road", App.ui.roadFollow !== false); } catch (e) { pts = null; } }
+      if (!pts) {
+        pts = world && r.pts && r.pts.length >= 2 ? r.pts.map((q) => q.slice()) : [[a.x, a.y], [b.x, b.y]];
+        pts[0] = [a.x, a.y]; pts[pts.length - 1] = [b.x, b.y];
+      }
+      next[rid] = pts;
+    }
+    if (!Object.keys(next).length) return;
+    Actions.mut((pp) => { for (const rid in next) if (pp.roads[rid]) pp.roads[rid].pts = next[rid]; }, { undo: false });
+  };
+
   // ---------- atlas ----------
   Objects.atlasLines = function (p, lang, ctx) {
     const ru = lang === "ru";

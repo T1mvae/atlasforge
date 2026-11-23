@@ -22,11 +22,20 @@ function AppRoot() {
   React.useEffect(() => {
     const onKey = (e) => {
       const tag = (e.target.tagName || "").toLowerCase();
-      if (tag === "input" || tag === "textarea" || tag === "select") return;
-      const k = e.key.toLowerCase();
+      // typing into a text field: the keys are text. A checkbox, slider, colour or list
+      // keeps the focus after a click but must not swallow Ctrl+Z.
+      const typing = tag === "textarea" || e.target.isContentEditable ||
+        (tag === "input" && !/^(checkbox|radio|range|color|button|file)$/.test(e.target.type || "text"));
+      if (typing) return;
+      // the physical key on a non-Latin layout (on a Russian one e.key is "я", not "z")
+      let k = (e.key || "").toLowerCase();
+      if (!/^[a-z]$/.test(k) && /^Key[A-Z]$/.test(e.code || "")) k = e.code[3].toLowerCase();
+      // a window is open: the keys must not act on the map behind it
+      if (App.ui.modal) { if (k === "escape" && App.project) Actions.ui({ modal: null }); return; }
       if ((e.ctrlKey || e.metaKey) && k === "z" && !e.shiftKey) { e.preventDefault(); Actions.undo(); return; }
       if ((e.ctrlKey || e.metaKey) && (k === "y" || (k === "z" && e.shiftKey))) { e.preventDefault(); Actions.redo(); return; }
       if (e.ctrlKey || e.metaKey) return;
+      if (tag === "select") return; // letters pick an option in a list
       if (k === "enter") {
         if (App.ui.geomDraw && window.MapAPI && MapAPI.finishGeomDraw) { e.preventDefault(); MapAPI.finishGeomDraw(); return; }
         return;
@@ -62,7 +71,12 @@ function AppRoot() {
         if (App.ui.selFeatLabel) { Actions.setFeatLabel(App.ui.selFeatLabel, { hidden: true }); Actions.ui({ selFeatLabel: null }); return; }
         if (App.ui.selLabel) { Actions.deleteLabel(App.ui.selLabel); Actions.ui({ selLabel: null, card: null }); return; }
         if (App.ui.selectMode === "region" && App.ui.regionSelection.length) { Actions.assignRegions(App.ui.regionSelection, null); return; }
-        if (App.ui.selection.length) { Actions.assign(App.ui.selection, null); return; }
+        if (App.ui.selection.length) {
+          // on the regions tab the tools work on regions, and so does Delete
+          if (App.ui.leftView === "regions" && window.macroRegionsOn()) Actions.assignMacroRegion(App.ui.selection, null);
+          else Actions.assign(App.ui.selection, null);
+          return;
+        }
       }
       if (k === "r" && RegionModel.supportsRegions()) { Actions.setSelectMode(App.ui.selectMode === "region" ? "province" : "region"); return; }
     };

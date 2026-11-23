@@ -212,6 +212,9 @@
     if (!World.active()) return false;
     const p = App.project, w = p.world;
     ensureBuffers();
+    // every river has an id (the rivers of the geography pass come without one): an open
+    // river card names its river by id, so an undo cannot switch it to another river
+    (w.rivers || []).forEach((r) => { if (r && !r.id) r.id = window.uid(); });
     if (force || loadedFor !== p) {
       loadedFor = p;
       World.preview = null;
@@ -687,10 +690,18 @@
   const strengthOf = (brush) => (brush === "raise" || brush === "lower" || brush === "smooth" ? clamp(+App.ui.worldStrength || 0.6, 0.05, 1) : 1);
 
   World.strokeActive = () => !!stroke;
+  // the river an open card is about: by id, so it stays the same river when the list
+  // changes under the card (-1 = that river is gone)
+  World.riverIndexOf = function (card) {
+    const list = (App.project && App.project.world && App.project.world.rivers) || [];
+    if (!card) return -1;
+    if (card.rid) return list.findIndex((r) => r && r.id === card.rid);
+    return card.index != null && list[card.index] ? card.index : -1;
+  };
   World.strokeStart = function (g, pressure, pointerType, altitude) {
     if (!World.active()) return;
     if (World.preview || World.geoBusy) { Actions.toast(t("world.geo.busyPaint")); return; }
-    if (World.cutPreview) { Actions.toast(t("world.cut.busyPaint")); return; }
+    if (World.cutPreview || World.generating) { Actions.toast(t("world.cut.busyPaint")); return; } // the cut is counted from this terrain
     ensureBuffers();
     notePressure(pressure, pointerType);
     const brush = App.ui.worldBrush || "land";
@@ -745,6 +756,10 @@
         World.cover.set(baseC.subarray(y * RW + x0, y * RW + x1 + 1), y * RW + x0);
       }
       markDirty(x0, y0, x1, y1);
+      // a save that ran in the middle of the stroke packed the half-painted raster:
+      // make the next one pack again
+      World.rasterRev++;
+      if (window.scheduleSave) window.scheduleSave();
     }
     const rb = JSON.parse(s.riversBefore);
     App.project.world.rivers = rb.rivers;
@@ -931,7 +946,11 @@
   };
 
   World.setWorld = function (patch, opts) {
-    Actions.mut((p) => Object.assign(p.world, patch), Object.assign({ undo: false }, opts));
+    Actions.mut((p) => {
+      // a new sea level moves the coast: the provinces are out of date like after painting
+      if (patch && patch.seaLevel != null && patch.seaLevel !== p.world.seaLevel) p.world.rev = (p.world.rev || 0) + 1;
+      Object.assign(p.world, patch);
+    }, Object.assign({ undo: false }, opts));
     World.sync();
   };
 
@@ -989,6 +1008,15 @@
   // ---------------- terrain worker ----------------
   let worker = null, workerReady = null, hydroRev = 0, geoRev = 0;
   const pending = new Map(); // job rev -> resolve
+  // the worker died or never started: every waiting job fails (so no spinner stays for
+  // ever) and the next job starts a fresh worker
+  function failWorker(err) {
+    const waiting = [...pending.values()];
+    pending.clear();
+    try { if (worker) worker.terminate(); } catch (e) {}
+    worker = null; workerReady = null;
+    waiting.forEach((p) => { try { p.reject(err instanceof Error ? err : new Error("terrain worker failed")); } catch (e) {} });
+  }
   function scriptUrl(part) {
     const el = [...document.scripts].find((s) => s.src && s.src.indexOf(part) >= 0) ||
       [...document.querySelectorAll("link[href]")].find((l) => l.href.indexOf(part) >= 0);
@@ -1003,11 +1031,12 @@
       worker.onmessage = (ev) => {
         const m = ev.data;
         if (m.type === "ready") { resolve(worker); return; }
+        if (m.type === "error" && m.job === "init") { console.warn("terrain worker:", m.message); failWorker(new Error(m.message)); reject(new Error(m.message)); return; }
         if (m.type === "error") { console.warn("terrain worker:", m.message); const p = pending.get(m.job + ":" + m.rev); if (p) { pending.delete(m.job + ":" + m.rev); p.reject(new Error(m.message)); } return; }
         const p = pending.get(m.type + ":" + m.rev);
         if (p) { pending.delete(m.type + ":" + m.rev); p.resolve(m); }
       };
-      worker.onerror = (e) => { console.warn("terrain worker failed", e); reject(e); };
+      worker.onerror = (e) => { console.warn("terrain worker failed", e); failWorker(e); reject(e); };
       worker.postMessage({ type: "init", scripts: [scriptUrl("terrain-algos.js"), scriptUrl("topojson-server"), scriptUrl("topojson-client")] });
     });
     return workerReady;
@@ -1575,8 +1604,11 @@
     App.emit();
     try {
       const project = App.project, w = project.world;
+      const raster0 = World.rasterRev;
       const hy = await World.ensureAnalysis();
       if (!hy || App.project !== project) return;
+      // painted while the basins were being counted: they are of the old terrain
+      if (World.rasterRev !== raster0) { Actions.toast(t("world.geo.stale")); return; }
       const dg = World.dataGrid();
       let landCells = 0;
       for (let i = 0; i < dg.landId.length; i++) if (dg.landId[i] >= 0) landCells++;
@@ -1702,7 +1734,7 @@
     features.forEach((f, i) => {
       const c = an.cells[i];
       f.properties.terrain = window.Atlas.cellTerrain(c);
-      f.properties.coastal = [...c.waters.keys()].some((wc) => an.waters[wc].kind === "ocean");
+      f.properties.coastal = [...c.waters.keys()].some((wc) => an.waters[wc].kind !== "lake"); // seas, gulfs, bays and straits are coast too
     });
     window.Atlas.remapPolitics(project, features, an.cellOf);
     project.customGeo = { type: "FeatureCollection", features };

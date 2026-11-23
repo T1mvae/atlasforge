@@ -31,7 +31,7 @@
   };
   NG.list = (text) => String(text || "").split(/[,;\n]+/).map((s) => s.trim().replace(/^-+/, "")).filter(Boolean);
   NG.langOf = (text) => (/[а-яё]/i.test(text) ? "ru" : /[a-z]/i.test(text) ? "en" : null);
-  const VOWELS = "аеёиоуыэюяaeiouy";
+  const VOWELS = "аеёиоуыэюяіїєaeiouyäöüéèêëàâáãåæîïíìôóòõøûùúýœαεηιουωάέήίόύώ";
   const isVowel = (ch) => !!ch && VOWELS.indexOf(ch) >= 0;
   const cap = (w) => (w ? w[0].toUpperCase() + w.slice(1) : w);
   NG.LENGTHS = { short: [3, 5], medium: [5, 8], long: [8, 11] };
@@ -42,7 +42,7 @@
     const counts = [];
     for (let o = 0; o <= k; o++) counts.push(new Map());
     samples.forEach((w) => {
-      const s = "^".repeat(k) + w.toLowerCase().replace(/[^a-zа-яё'-]/g, "") + "$";
+      const s = "^".repeat(k) + w.toLowerCase().replace(/[^\p{L}'-]/gu, "") + "$";
       for (let i = k; i < s.length; i++) {
         const ch = s[i];
         for (let o = 0; o <= k; o++) {
@@ -88,7 +88,7 @@
   // next syllable, of two the first closes the previous one, of more all but the last
   // ("caldwyn" → cald·wyn)
   function syllables(word) {
-    const w = word.toLowerCase().replace(/[^a-zа-яё]/g, "");
+    const w = word.toLowerCase().replace(/[^\p{L}]/gu, "");
     const out = [];
     let cur = "", i = 0;
     while (i < w.length) {
@@ -125,8 +125,8 @@
     if (!text.startsWith(start)) text = start;
     const tail = inv.last.length ? inv.last : inv.first;
     const middle = inv.mid.length ? inv.mid : inv.first.concat(inv.last);
-    for (let guard = 0; guard < 4 && text.length < min - 2; guard++) text += middle[Math.floor(r() * middle.length)];
-    if (text.length < max) text += tail[Math.floor(r() * tail.length)];
+    for (let guard = 0; guard < 4 && text.length < min - 2; guard++) text += middle.length ? middle[Math.floor(r() * middle.length)] : "";
+    if (text.length < max && tail.length) text += tail[Math.floor(r() * tail.length)];
     return text;
   }
 

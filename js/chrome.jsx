@@ -38,7 +38,7 @@ function SearchBox() {
     for (const f of App.basemap.features) {
       const r = p.regions[f.id];
       const nm = (r && r.name) || f.name;
-      if (nm.toLowerCase().includes(needle)) out.push({ kind: "region", id: f.id, name: nm, sub: f.country });
+      if (String(nm || "").toLowerCase().includes(needle)) out.push({ kind: "region", id: f.id, name: nm, sub: f.country });
       if (out.length >= 12) break;
     }
     return out;
@@ -182,9 +182,15 @@ function Legend() {
       if (!drag.current) return;
       Actions.ui({ legendPos: { x: drag.current.ox + ev.clientX - drag.current.sx, y: drag.current.oy + ev.clientY - drag.current.sy } });
     };
-    const onUp = () => { drag.current = null; document.removeEventListener("pointermove", onMove); document.removeEventListener("pointerup", onUp); };
+    const onUp = () => {
+      drag.current = null;
+      document.removeEventListener("pointermove", onMove);
+      document.removeEventListener("pointerup", onUp);
+      document.removeEventListener("pointercancel", onUp);
+    };
     document.addEventListener("pointermove", onMove);
     document.addEventListener("pointerup", onUp);
+    document.addEventListener("pointercancel", onUp); // a touch the browser took over never sends pointerup
   };
 
   return (

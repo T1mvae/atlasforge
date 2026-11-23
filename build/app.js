@@ -29,8 +29,20 @@ function AppRoot() {
   React.useEffect(function () {
     var onKey = function onKey(e) {
       var tag = (e.target.tagName || "").toLowerCase();
-      if (tag === "input" || tag === "textarea" || tag === "select") return;
-      var k = e.key.toLowerCase();
+      // typing into a text field: the keys are text. A checkbox, slider, colour or list
+      // keeps the focus after a click but must not swallow Ctrl+Z.
+      var typing = tag === "textarea" || e.target.isContentEditable || tag === "input" && !/^(checkbox|radio|range|color|button|file)$/.test(e.target.type || "text");
+      if (typing) return;
+      // the physical key on a non-Latin layout (on a Russian one e.key is "я", not "z")
+      var k = (e.key || "").toLowerCase();
+      if (!/^[a-z]$/.test(k) && /^Key[A-Z]$/.test(e.code || "")) k = e.code[3].toLowerCase();
+      // a window is open: the keys must not act on the map behind it
+      if (App.ui.modal) {
+        if (k === "escape" && App.project) Actions.ui({
+          modal: null
+        });
+        return;
+      }
       if ((e.ctrlKey || e.metaKey) && k === "z" && !e.shiftKey) {
         e.preventDefault();
         Actions.undo();
@@ -42,6 +54,7 @@ function AppRoot() {
         return;
       }
       if (e.ctrlKey || e.metaKey) return;
+      if (tag === "select") return; // letters pick an option in a list
       if (k === "enter") {
         if (App.ui.geomDraw && window.MapAPI && MapAPI.finishGeomDraw) {
           e.preventDefault();
@@ -191,7 +204,8 @@ function AppRoot() {
           return;
         }
         if (App.ui.selection.length) {
-          Actions.assign(App.ui.selection, null);
+          // on the regions tab the tools work on regions, and so does Delete
+          if (App.ui.leftView === "regions" && window.macroRegionsOn()) Actions.assignMacroRegion(App.ui.selection, null);else Actions.assign(App.ui.selection, null);
           return;
         }
       }

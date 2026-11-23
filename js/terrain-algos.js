@@ -272,6 +272,7 @@
     const filled = new Float64Array(N);
     const closed = new Uint8Array(N);
     const order = new Int32Array(N);
+    const inOrder = new Uint8Array(N);
     let nOrder = 0;
     const heap = new Heap(N);
     for (let i = 0; i < N; i++) filled[i] = h[i];
@@ -290,7 +291,7 @@
         } else if (x === 0 || y === 0 || x === W - 1 || y === H - 1) {
           closed[i] = 1;
           heap.push(i, h[i]);
-          order[nOrder++] = i;
+          inOrder[i] = 1;
         }
       }
     }
@@ -298,6 +299,9 @@
       const c = heap.pop();
       const cx = c % W, cy = (c / W) | 0;
       const fc = filled[c];
+      // the order is the order of leaving the heap (downstream first). Noting a cell when
+      // it is pushed put some cells before the lower neighbour they drain to.
+      if (inOrder[c]) order[nOrder++] = c;
       for (let k = 0; k < 8; k++) {
         const xx = cx + NX[k], yy = cy + NY[k];
         if (xx < 0 || yy < 0 || xx >= W || yy >= H) continue;
@@ -306,7 +310,7 @@
         closed[n] = 1;
         if (filled[n] <= fc) filled[n] = fc + 1e-4 * ND[k];
         heap.push(n, filled[n]);
-        order[nOrder++] = n;
+        inOrder[n] = 1;
       }
     }
     return { filled, order: order.subarray(0, nOrder) };

@@ -837,7 +837,7 @@ function worldAnalysis() {
   var riversRef = World.preview && !World.compare ? World.preview.rivers : App.project.world.rivers || [];
   // owners and names do not enter the analysis: political edits keep the cache (a geometry
   // edit reloads the basemap, which does)
-  var key = App.basemap.count + ":" + (World.hydro ? World.hydro.rev : 0) + ":" + World.rasterRev + ":" + App.ui.lang + ":" + (World.watersFresh() ? World.waters.key : ""); // the seas and gulfs, once worked out
+  var key = App.basemap.count + ":" + (World.hydro ? World.hydro.rev : 0) + ":" + World.rasterRev + ":" + App.ui.lang + ":" + World.sea() + ":" + (App.project.world.scaleKm || 0) + ":" + (World.watersFresh() ? World.waters.key : ""); // the seas and gulfs, once worked out
   var c = worldAnalysisCache;
   if (!c || c.key !== key || c.bm !== App.basemap || c.riversRef !== riversRef) {
     var feats = App.basemap.raw && App.basemap.raw.features || [];
@@ -2073,7 +2073,7 @@ function WorldCard() {
   var card = App.ui.card;
   if (!card) return null;
   if (card.kind === "river" && World.active()) return /*#__PURE__*/React.createElement(RiverCard, {
-    index: card.index
+    index: World.riverIndexOf(card)
   });
   if (card.kind === "water" && World.active()) return /*#__PURE__*/React.createElement(WaterCard, {
     pt: card.pt

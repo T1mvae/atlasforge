@@ -7,17 +7,17 @@
 //          template is opened (or via "download for offline"), then served cache-first.
 // A new version installs in the background and waits; the page asks the user to reload
 // (message "skipWaiting") so an edit in progress is never interrupted.
-const VERSION = "d1e4692ef4";
+const VERSION = "6e4c1945ac";
 const SHELL = "af-shell-" + VERSION;
 const DATA = "af-data-v1";
 const PRECACHE = [
   "./",
-  "build/app.js?v=13dc3052ab",
-  "build/chrome.js?v=9f2769ee16",
-  "build/map.js?v=0dcecedbc3",
-  "build/objects.js?v=85e5a3856b",
-  "build/panels.js?v=8b720f0365",
-  "build/world.js?v=20b616e1b6",
+  "build/app.js?v=44f03c1342",
+  "build/chrome.js?v=8fd22eaf96",
+  "build/map.js?v=a5e02f7990",
+  "build/objects.js?v=c6596e90e8",
+  "build/panels.js?v=6e0289baec",
+  "build/world.js?v=95d36ee0c6",
   "css/editor.css?v=d84f019612",
   "icons/apple-touch-icon.png",
   "icons/apple-touch-icon.png?v=953bc6d2b1",
@@ -25,20 +25,20 @@ const PRECACHE = [
   "icons/icon-192.png?v=3be2bf771a",
   "icons/icon-512.png",
   "icons/icon-maskable-512.png",
-  "js/atlas.js?v=c6f0a3c4dd",
-  "js/core.js?v=872296d61d",
+  "js/atlas.js?v=97db6a166f",
+  "js/core.js?v=5922975a00",
   "js/edit.js?v=397105b440",
   "js/export.js?v=cb2f6d64d9",
   "js/geo.js?v=af231c0851",
-  "js/i18n.js?v=7837188bb4",
-  "js/names.js?v=bba4c0ceee",
-  "js/objects.js?v=e11d5d7ba0",
+  "js/i18n.js?v=090feaea08",
+  "js/names.js?v=3b58d7d444",
+  "js/objects.js?v=872c6edf51",
   "js/pwa.js?v=9f35de276b",
   "js/regions.js?v=e79649b7ce",
   "js/storage.js?v=3b0efdbec5",
-  "js/terrain-algos.js?v=2cecb07cb8",
+  "js/terrain-algos.js?v=598e12891c",
   "js/terrain.worker.js?v=b39b135f66",
-  "js/world.js?v=c62d65b89a",
+  "js/world.js?v=dce3088c39",
   "manifest.webmanifest?v=10553cf767",
   "vendor/d3.min.js?v=69faba9d2f",
   "vendor/polygon-clipping.umd.min.js?v=6aa5a82c1d",
@@ -50,7 +50,8 @@ const PRECACHE = [
 ];
 
 self.addEventListener("install", (event) => {
-  event.waitUntil(caches.open(SHELL).then((c) => c.addAll(PRECACHE)));
+  // past the HTTP cache: a worker installed minutes after a deploy must not precache the old page
+  event.waitUntil(caches.open(SHELL).then((c) => c.addAll(PRECACHE.map((u) => new Request(u, { cache: "reload" })))));
 });
 
 self.addEventListener("activate", (event) => {
@@ -96,10 +97,14 @@ self.addEventListener("fetch", (event) => {
     event.respondWith((async () => {
       const cache = await caches.open(DATA);
       const hit = await cache.match(req);
-      if (hit) return hit;
-      const res = await fetch(req);
-      if (res.ok) cache.put(req, res.clone());
-      return res;
+      // the cached map opens at once; the server is asked in the background whether the
+      // file changed (a regenerated dataset), and the next opening gets the new one
+      const refresh = fetch(req, { cache: "no-cache" }).then((res) => {
+        if (res.ok) return cache.put(req, res.clone()).then(() => res);
+        return res;
+      });
+      if (hit) { event.waitUntil(refresh.catch(() => {})); return hit; }
+      return refresh;
     })());
     return;
   }

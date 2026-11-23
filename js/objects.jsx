@@ -190,6 +190,22 @@ function RoadModeBar() {
   );
 }
 
+// A year field: the text is kept as typed ("-", "-3" on the way to "-300"), the record
+// gets a number only when it is one — never NaN.
+function YearInput({ value, onChange }) {
+  const [text, setText] = React.useState(value == null ? "" : String(value));
+  React.useEffect(() => {
+    const cur = /^-?\d+$/.test(text.trim()) ? +text : null;
+    if (cur !== (value == null ? null : +value)) setText(value == null ? "" : String(value));
+  }, [value]);
+  return <input className="input" inputMode="text" value={text} onChange={(e) => {
+    const s = e.target.value;
+    setText(s);
+    if (s.trim() === "") onChange(null);
+    else if (/^-?\d+$/.test(s.trim())) onChange(+s);
+  }}></input>;
+}
+
 function ObjectCard({ id }) {
   useStore();
   const p = App.project;
@@ -199,7 +215,7 @@ function ObjectCard({ id }) {
   const autoOwner = (() => { const rid = Objects.provinceOf(o); const e = rid ? effRegion(p, rid) : null; return e && e.owner && p.states[e.owner] ? e.owner : null; })();
   const provId = Objects.provinceOf(o);
   const provF = provId && App.basemap.byId[provId];
-  const provR = provId && p.regions[provId];
+  const provR = provId && (p.regions[provId] && p.regions[provId].name ? p.regions[provId] : effRegion(p, provId));
   const provName = provF ? ((provR && provR.name) || ((App.ui.lang === "ru" && provF.nameRu) ? provF.nameRu : provF.name)) : null;
   const roads = Object.values(p.roads || {}).filter((r) => r.from === id || r.to === id);
   const world = window.World && World.active();
@@ -245,9 +261,9 @@ function ObjectCard({ id }) {
             {p.stateOrder.map((sid) => p.states[sid] ? <option key={sid} value={sid}>{p.states[sid].name}</option> : null)}
           </select></label>
         <label className="field"><span className="field-label">{t("obj.founded")}</span>
-          <input className="input" inputMode="numeric" value={o.founded == null ? "" : o.founded} onChange={(e) => set({ founded: e.target.value === "" ? null : +e.target.value })}></input></label>
+          <YearInput value={o.founded} onChange={(y) => set({ founded: y })}></YearInput></label>
         <label className="field"><span className="field-label">{t("obj.destroyed")}</span>
-          <input className="input" inputMode="numeric" value={o.destroyed == null ? "" : o.destroyed} onChange={(e) => set({ destroyed: e.target.value === "" ? null : +e.target.value })}></input></label>
+          <YearInput value={o.destroyed} onChange={(y) => set({ destroyed: y })}></YearInput></label>
       </div>
       <div className="wp-field">
         <span className="field-label">{t("obj.importance")}</span>

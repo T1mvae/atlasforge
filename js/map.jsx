@@ -511,6 +511,19 @@ function MapView() {
   const riverEditRef = useRef(null);    // custom world: new course while a river end is dragged
   const waterCutRef = useRef(null);     // custom world: a line being drawn across the water
   const touches = useRef(new Map());    // active touch pointers (pinch zoom / two-finger pan)
+  const lastPlaced = useRef(null);      // the place a finger just put down (a pinch that follows takes it back)
+  const lastDrawClick = useRef(null);   // split / draw: the previous click, to tell a double click
+  // the province under the pointer. Not e.target: a finger's pointer stays captured by the
+  // element it went down on, and labels and place icons lie over the provinces.
+  const ridAtPoint = (e) => {
+    if (!document.elementsFromPoint) return e.target.dataset ? e.target.dataset.id : null;
+    const els = document.elementsFromPoint(e.clientX, e.clientY);
+    for (let i = 0; i < els.length; i++) {
+      const el = els[i];
+      if (el.dataset && el.dataset.id && el.ownerSVGElement === svgRef.current) return el.dataset.id;
+    }
+    return null;
+  };
   const tapRef = useRef(null);          // multi-finger tap recognizer: { t0, max, moved, starts }
   const longPressRef = useRef(null);    // finger long-press (eyedropper) timer
   const autonomyCacheRef = useRef({});
@@ -607,11 +620,13 @@ function MapView() {
       zoomBy: (f) => {
         const v = view.current;
         const cx = MAP_W / 2, cy = MAP_H / 2;
-        setView(cx - (cx - v.x) * f, cy - (cy - v.y) * f, v.k * f);
+        const nk = Math.max(0.6, Math.min(90, v.k * f)); // at the limit the map must not slide away
+        f = nk / v.k;
+        setView(cx - (cx - v.x) * f, cy - (cy - v.y) * f, nk);
       },
       zoomTo: (b) => {
         const bw = Math.max(4, b[1][0] - b[0][0]), bh = Math.max(4, b[1][1] - b[0][1]);
-        const k = Math.min(60, 0.55 * Math.min(MAP_W / bw, MAP_H / bh));
+        const k = Math.max(0.6, Math.min(60, 0.55 * Math.min(MAP_W / bw, MAP_H / bh)));
         const cx = (b[0][0] + b[1][0]) / 2, cy = (b[0][1] + b[1][1]) / 2;
         setView(MAP_W / 2 - k * cx, MAP_H / 2 - k * cy, k);
       },
@@ -831,13 +846,28 @@ function MapView() {
         }
         else if (g0 && g0.mode === "paint") { young ? Actions.cancelStroke() : Actions.endStroke(); }
         else if (g0 && g0.mode === "wcut") { if (waterCutRef.current) waterCutRef.current.style.display = "none"; }
-        else if (g0 && (g0.mode === "label" || g0.mode === "lhandle")) { dragLabel.current = null; Actions.endStroke(); }
+        else if (g0 && (g0.mode === "label" || g0.mode === "lhandle")) { dragLabel.current = null; g0.pending = null; Actions.endStroke(); }
+        else if (g0 && (g0.mode === "bdmove" || g0.mode === "bdresize" || g0.mode === "objdrag")) Actions.endStroke();
+        else if (g0 && g0.mode === "freehand") {
+          // the vertex the first finger put down belongs to the pinch, not to the outline
+          const gd = App.ui.geomDraw;
+          if (gd && young && g0.added) { gd.pts.length = Math.max(0, gd.pts.length - 1); App.emit(); }
+        }
+        // a place the first finger of this pinch just put down: take it back
+        const lp = lastPlaced.current;
+        if (lp && now - lp.t < 350 && App.project.objects && App.project.objects[lp.id]) {
+          Actions.undo();
+          Actions.ui({ card: null });
+        }
+        lastPlaced.current = null;
         const [a, b] = [...touches.current.values()];
         gesture.current = { mode: "pinch", dist: Math.hypot(a[0] - b[0], a[1] - b[1]), mid: clientToViewbox({ clientX: (a[0] + b[0]) / 2, clientY: (a[1] + b[1]) / 2 }) };
         return;
       }
     }
-    const rid = e.target.dataset ? e.target.dataset.id : null;
+    let rid = e.target.dataset ? e.target.dataset.id : null;
+    // painting through a country name or a place icon lying over the province
+    if (!rid && (tool === "paint" || tool === "erase" || tool === "fill")) rid = ridAtPoint(e);
     const regId = e.target.dataset ? e.target.dataset.regionId : null;
     const lblEl = e.target.closest ? e.target.closest("[data-label]") : null;
     const slblEl = e.target.closest ? e.target.closest("[data-slabel]") : null;
@@ -856,7 +886,7 @@ function MapView() {
     if (endEl && e.button === 0 && window.World && World.active() && App.ui.card && App.ui.card.kind === "river") {
       const ctm = svgRef.current.getScreenCTM();
       const tol = (e.pointerType === "touch" ? 18 : 12) / Math.max(0.0001, view.current.k * World.mapUnitsPerCell() * ((ctm && ctm.a) || 1));
-      if (World.endEditStart(App.ui.card.index, endEl.getAttribute("data-river-end"), World.mapToGrid(mapPt), tol)) {
+      if (World.endEditStart(World.riverIndexOf(App.ui.card), endEl.getAttribute("data-river-end"), World.mapToGrid(mapPt), tol)) {
         gesture.current = { mode: "riverEnd", pointerId: e.pointerId, end: endEl.getAttribute("data-river-end") };
         try { svgRef.current.setPointerCapture(e.pointerId); } catch (err) {}
       }
@@ -897,6 +927,8 @@ function MapView() {
         return;
       }
       if (objId) return;
+      // picking the second place of a road: a miss must not put down a new place or paint
+      if (tool === "place" || tool === "paint" || tool === "erase" || tool === "fill") return;
     }
     const objTools = tool === "select" || tool === "place" || tool === "pan" || tool === "label";
     if (objId && e.button === 0 && (objTools || fingerNav)) {
@@ -908,6 +940,7 @@ function MapView() {
     if (tool === "place" && e.button === 0 && !fingerNav) {
       const id = Actions.addObject(App.ui.placeType || "town", mapPt[0], mapPt[1]);
       Actions.ui({ card: { kind: "object", id }, selection: [] });
+      lastPlaced.current = e.pointerType === "touch" ? { id, t: performance.now() } : null;
       return;
     }
     if (fingerNav) {
@@ -967,11 +1000,16 @@ function MapView() {
       let gd = App.ui.geomDraw;
       if (!gd || gd.tool !== tool) gd = App.ui.geomDraw = { tool, pts: [] };
       const last = gd.pts[gd.pts.length - 1];
-      if (!last || Math.hypot(last[0] - pt[0], last[1] - pt[1]) > 1.5 / k) gd.pts.push(pt);
-      if (e.detail >= 2 && gd.pts.length >= (tool === "split" ? 2 : 3)) { finishGeomDraw(); return; }
+      const added = !last || Math.hypot(last[0] - pt[0], last[1] - pt[1]) > 1.5 / k;
+      if (added) gd.pts.push(pt);
+      // a double click finishes (pointerdown has no click count of its own)
+      const nowT = performance.now(), lc = lastDrawClick.current;
+      const dbl = lc && nowT - lc.t < 400 && Math.hypot(e.clientX - lc.x, e.clientY - lc.y) < 8;
+      lastDrawClick.current = dbl ? null : { t: nowT, x: e.clientX, y: e.clientY };
+      if (dbl && gd.pts.length >= (tool === "split" ? 2 : 3)) { finishGeomDraw(); return; }
       // hold and drag = freehand stroke; a plain click (even with a little
       // hand jitter) just adds one vertex — see the pointer-up handler
-      gesture.current = { mode: "freehand", tool, moved: false, len: 0, base: gd.pts.length };
+      gesture.current = { mode: "freehand", tool, moved: false, len: 0, base: gd.pts.length, added };
       try { svgRef.current.setPointerCapture(e.pointerId); } catch (err) {} // keep the stroke over overlays
       App.emit();
       return;
@@ -999,7 +1037,7 @@ function MapView() {
       return;
     }
 
-    if (tool === "paint" || tool === "erase") {
+    if ((tool === "paint" || tool === "erase") && e.button === 0) { // the middle button pans in every tool
       Actions.beginStroke();
       paintRegion(rid, tool === "erase");
       gesture.current = { mode: "paint", erase: tool === "erase" };
@@ -1135,7 +1173,7 @@ function MapView() {
     if (g.mode === "objdown" || g.mode === "objdrag") {
       const [vx, vy] = clientToViewbox(e);
       if (g.mode === "objdown" && Math.hypot(vx - g.vx, vy - g.vy) > 5) {
-        if (g.finger) { // a finger dragging from a place pans the map
+        if (g.finger || App.ui.tool === "pan") { // a finger, or the hand tool, dragging from a place pans the map
           gesture.current = { mode: "panning", vx: g.vx, vy: g.vy, lx: vx, ly: vy, panOk: true };
           svgRef.current.closest(".map-stage").classList.add("panning");
           return;
@@ -1231,7 +1269,7 @@ function MapView() {
       return;
     }
     if (g.mode === "paint") {
-      const rid = e.target.dataset ? e.target.dataset.id : null;
+      const rid = ridAtPoint(e);
       if (rid && rid !== g.last) { g.last = rid; paintRegion(rid, g.erase); }
       return;
     }
@@ -1339,6 +1377,7 @@ function MapView() {
     }
     if (g.mode === "objdrag") {
       try { svgRef.current.releasePointerCapture(e.pointerId); } catch (err) {}
+      if (window.Objects && Objects.rerouteRoads) Objects.rerouteRoads(g.id); // its roads come along (same undo step)
       Actions.endStroke();
       return;
     }
@@ -1414,6 +1453,7 @@ function MapView() {
       return;
     }
     if (g.mode === "down") {
+      if (e.type !== "pointerup") return; // a cancelled touch or a pointer that left is not a tap
       const tool = g.tool;
       if (tool === "label") {
         const [mx, my] = clientToMap(e);
@@ -1429,7 +1469,7 @@ function MapView() {
         const [mx, my] = clientToMap(e);
         const tolData = (g.finger || e.pointerType === "touch" ? 16 : 8) / Math.max(0.0001, k * World.mapUnitsPerCell() * (svgRef.current.getScreenCTM().a || 1));
         const rv = World.preview ? null : World.riverAt(World.mapToGrid([mx, my]), tolData);
-        if (rv) { Actions.ui({ card: { kind: "river", index: rv.index }, selection: [] }); return; }
+        if (rv) { Actions.ui({ card: { kind: "river", index: rv.index, rid: rv.id }, selection: [] }); return; }
         // water: the zone under the tap opens its card (once nothing is selected); after
         // "join with a neighbour" in a card, the tapped zone is joined to that one
         if (!g.rid && !g.regId && !World.preview && !World.cutPreview) {
@@ -1847,7 +1887,7 @@ function MapView() {
           {ready && worldOn && settings.showRivers !== false && (() => {
             const list = World.displayRivers();
             if (!list.length) return null;
-            const sel = App.ui.card && App.ui.card.kind === "river" ? App.ui.card.index : -1;
+            const sel = App.ui.card && App.ui.card.kind === "river" ? World.riverIndexOf(App.ui.card) : -1;
             return (
               <g id="world-rivers" pointerEvents="none">
                 {list.map((rv) => (
@@ -2085,7 +2125,7 @@ function MapView() {
           )}
           {/* ---- source (green) and mouth (blue) handles of the river whose card is open ---- */}
           {ready && worldOn && App.ui.card && App.ui.card.kind === "river" && !World.preview && (() => {
-            const rv = (project.world.rivers || [])[App.ui.card.index];
+            const rv = (project.world.rivers || [])[World.riverIndexOf(App.ui.card)];
             if (!rv || !rv.pts || rv.pts.length < 2) return null;
             const ctm = svgRef.current && svgRef.current.getScreenCTM();
             const per = view.current.k * ((ctm && ctm.a) || 1);

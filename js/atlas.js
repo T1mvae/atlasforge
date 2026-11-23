@@ -683,12 +683,13 @@
     };
     const listJoin = (arr) => arr.filter(Boolean).join(", ");
     const stateCells = {};
-    feats.forEach((f, i) => { const o = ownerOf(i); if (o) (stateCells[o] = stateCells[o] || []).push(i); });
+    // provinces with no land left (the terrain was repainted after the cut) say nothing about a state
+    feats.forEach((f, i) => { const o = ownerOf(i); if (o && an.cells[i].land > 0) (stateCells[o] = stateCells[o] || []).push(i); });
     const stateCentre = (sid) => {
       const st = p.states[sid];
       if (st.capitalRegion && idx[st.capitalRegion] != null) return cellC(idx[st.capitalRegion]);
       let sx = 0, sy = 0, sw = 0;
-      stateCells[sid].forEach((i) => { const c = an.cells[i]; sx += c.sx; sy += c.sy; sw += c.land; });
+      (stateCells[sid] || []).forEach((i) => { const c = an.cells[i]; sx += c.sx; sy += c.sy; sw += c.land; });
       return sw ? [sx / sw, sy / sw] : [0, 0];
     };
     const distTxt = (a, b) => {
@@ -997,7 +998,9 @@
             mine.forEach((a) => L.push("  - " + areaLine(a)));
           }
         }
-        objLines.filter((o) => o.owner === sid).slice(0, 40).forEach((o, k) => { if (!k) L.push(ru ? "- Города и места:" : "- Places:"); L.push("  - " + o.text); });
+        const places = objLines.filter((o) => o.owner === sid);
+        places.slice(0, 40).forEach((o, k) => { if (!k) L.push(ru ? "- Города и места:" : "- Places:"); L.push("  - " + o.text); });
+        if (places.length > 40) L.push(ru ? `  - …и ещё ${places.length - 40}` : `  - …and ${places.length - 40} more`);
         if (st.notes && String(st.notes).trim()) L.push((ru ? "- Заметки: " : "- Notes: ") + String(st.notes).trim().replace(/\s+/g, " "));
         L.push("");
       });

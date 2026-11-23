@@ -483,6 +483,18 @@ function StatesPanel() {
   }))));
 }
 
+// A colour picker fires on every move inside it: all of them are one undo step, closed
+// shortly after the last one.
+var liveColorTimer = null;
+function liveColor(write) {
+  Actions.beginStroke();
+  write();
+  clearTimeout(liveColorTimer);
+  liveColorTimer = setTimeout(function () {
+    return Actions.endStroke();
+  }, 700);
+}
+
 // ---------- form primitives ----------
 function Field(_ref) {
   var label = _ref.label,
@@ -811,8 +823,12 @@ function AutonomyPicker(_ref8) {
     className: "color-input",
     value: cur.color || "#c8c8c8",
     onChange: function onChange(e) {
-      return Actions.setAutonomy(cur.id, {
-        color: e.target.value
+      return liveColor(function () {
+        return Actions.setAutonomy(cur.id, {
+          color: e.target.value
+        }, {
+          undo: false
+        });
       });
     }
   }), /*#__PURE__*/React.createElement("button", {
@@ -1738,7 +1754,8 @@ function CatalogTab() {
       key: k,
       className: "chip" + (field === k ? " on" : ""),
       onClick: function onClick() {
-        return setField(k);
+        setField(k);
+        setQuery("");
       }
     }, t("catalog." + k));
   }));
@@ -1823,18 +1840,9 @@ function StateTab() {
   var p = App.project;
   var sid = App.ui.activeState;
   var s = sid ? p.states[sid] : null;
-  if (!s) return /*#__PURE__*/React.createElement("div", {
-    className: "props-body"
-  }, /*#__PURE__*/React.createElement("div", {
-    className: "muted"
-  }, t("state.none")));
-  var set = function set(patch) {
-    return Actions.setState(sid, patch, {
-      undo: false
-    });
-  };
-  var counts = stateStats();
   var capOptions = React.useMemo(function () {
+    // before the early return: hooks run on every render
+    if (!s) return [];
     var out = [],
       bm = App.basemap;
     for (var rid in p.regions) {
@@ -1851,6 +1859,17 @@ function StateTab() {
     });
     return out;
   }, [App.version, sid]);
+  if (!s) return /*#__PURE__*/React.createElement("div", {
+    className: "props-body"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "muted"
+  }, t("state.none")));
+  var set = function set(patch) {
+    return Actions.setState(sid, patch, {
+      undo: false
+    });
+  };
+  var counts = stateStats();
   return /*#__PURE__*/React.createElement("div", {
     className: "props-body"
   }, /*#__PURE__*/React.createElement(TextField, {
@@ -2266,8 +2285,12 @@ function TextStyleFields(_ref11) {
     className: "color-input",
     value: v.haloColor || d.haloColor || "#ffffff",
     onChange: function onChange(e) {
-      return set({
-        haloColor: e.target.value
+      return liveColor(function () {
+        return set({
+          haloColor: e.target.value
+        }, {
+          undo: false
+        });
       });
     }
   }), v.haloColor && /*#__PURE__*/React.createElement("button", {
@@ -2312,8 +2335,12 @@ function LabelFields(_ref12) {
     className: "color-input",
     value: l.color || "#222222",
     onChange: function onChange(e) {
-      return set({
-        color: e.target.value
+      return liveColor(function () {
+        return set({
+          color: e.target.value
+        }, {
+          undo: false
+        });
       });
     }
   })), /*#__PURE__*/React.createElement(TextStyleFields, {

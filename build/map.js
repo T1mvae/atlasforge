@@ -834,6 +834,19 @@ function MapView() {
   var riverEditRef = useRef(null); // custom world: new course while a river end is dragged
   var waterCutRef = useRef(null); // custom world: a line being drawn across the water
   var touches = useRef(new Map()); // active touch pointers (pinch zoom / two-finger pan)
+  var lastPlaced = useRef(null); // the place a finger just put down (a pinch that follows takes it back)
+  var lastDrawClick = useRef(null); // split / draw: the previous click, to tell a double click
+  // the province under the pointer. Not e.target: a finger's pointer stays captured by the
+  // element it went down on, and labels and place icons lie over the provinces.
+  var ridAtPoint = function ridAtPoint(e) {
+    if (!document.elementsFromPoint) return e.target.dataset ? e.target.dataset.id : null;
+    var els = document.elementsFromPoint(e.clientX, e.clientY);
+    for (var i = 0; i < els.length; i++) {
+      var el = els[i];
+      if (el.dataset && el.dataset.id && el.ownerSVGElement === svgRef.current) return el.dataset.id;
+    }
+    return null;
+  };
   var tapRef = useRef(null); // multi-finger tap recognizer: { t0, max, moved, starts }
   var longPressRef = useRef(null); // finger long-press (eyedropper) timer
   var autonomyCacheRef = useRef({});
@@ -972,12 +985,14 @@ function MapView() {
         var v = view.current;
         var cx = MAP_W / 2,
           cy = MAP_H / 2;
-        setView(cx - (cx - v.x) * f, cy - (cy - v.y) * f, v.k * f);
+        var nk = Math.max(0.6, Math.min(90, v.k * f)); // at the limit the map must not slide away
+        f = nk / v.k;
+        setView(cx - (cx - v.x) * f, cy - (cy - v.y) * f, nk);
       },
       zoomTo: function zoomTo(b) {
         var bw = Math.max(4, b[1][0] - b[0][0]),
           bh = Math.max(4, b[1][1] - b[0][1]);
-        var k = Math.min(60, 0.55 * Math.min(MAP_W / bw, MAP_H / bh));
+        var k = Math.max(0.6, Math.min(60, 0.55 * Math.min(MAP_W / bw, MAP_H / bh)));
         var cx = (b[0][0] + b[1][0]) / 2,
           cy = (b[0][1] + b[1][1]) / 2;
         setView(MAP_W / 2 - k * cx, MAP_H / 2 - k * cy, k);
@@ -1304,8 +1319,25 @@ function MapView() {
           if (waterCutRef.current) waterCutRef.current.style.display = "none";
         } else if (g0 && (g0.mode === "label" || g0.mode === "lhandle")) {
           dragLabel.current = null;
+          g0.pending = null;
           Actions.endStroke();
+        } else if (g0 && (g0.mode === "bdmove" || g0.mode === "bdresize" || g0.mode === "objdrag")) Actions.endStroke();else if (g0 && g0.mode === "freehand") {
+          // the vertex the first finger put down belongs to the pinch, not to the outline
+          var gd = App.ui.geomDraw;
+          if (gd && young && g0.added) {
+            gd.pts.length = Math.max(0, gd.pts.length - 1);
+            App.emit();
+          }
         }
+        // a place the first finger of this pinch just put down: take it back
+        var lp = lastPlaced.current;
+        if (lp && now - lp.t < 350 && App.project.objects && App.project.objects[lp.id]) {
+          Actions.undo();
+          Actions.ui({
+            card: null
+          });
+        }
+        lastPlaced.current = null;
         var _ref5 = _toConsumableArray(touches.current.values()),
           a = _ref5[0],
           b = _ref5[1];
@@ -1321,6 +1353,8 @@ function MapView() {
       }
     }
     var rid = e.target.dataset ? e.target.dataset.id : null;
+    // painting through a country name or a place icon lying over the province
+    if (!rid && (tool === "paint" || tool === "erase" || tool === "fill")) rid = ridAtPoint(e);
     var regId = e.target.dataset ? e.target.dataset.regionId : null;
     var lblEl = e.target.closest ? e.target.closest("[data-label]") : null;
     var slblEl = e.target.closest ? e.target.closest("[data-slabel]") : null;
@@ -1345,7 +1379,7 @@ function MapView() {
     if (endEl && e.button === 0 && window.World && World.active() && App.ui.card && App.ui.card.kind === "river") {
       var ctm = svgRef.current.getScreenCTM();
       var tol = (e.pointerType === "touch" ? 18 : 12) / Math.max(0.0001, view.current.k * World.mapUnitsPerCell() * (ctm && ctm.a || 1));
-      if (World.endEditStart(App.ui.card.index, endEl.getAttribute("data-river-end"), World.mapToGrid(mapPt), tol)) {
+      if (World.endEditStart(World.riverIndexOf(App.ui.card), endEl.getAttribute("data-river-end"), World.mapToGrid(mapPt), tol)) {
         gesture.current = {
           mode: "riverEnd",
           pointerId: e.pointerId,
@@ -1413,6 +1447,8 @@ function MapView() {
         return;
       }
       if (objId) return;
+      // picking the second place of a road: a miss must not put down a new place or paint
+      if (tool === "place" || tool === "paint" || tool === "erase" || tool === "fill") return;
     }
     var objTools = tool === "select" || tool === "place" || tool === "pan" || tool === "label";
     if (objId && e.button === 0 && (objTools || fingerNav)) {
@@ -1440,6 +1476,10 @@ function MapView() {
         },
         selection: []
       });
+      lastPlaced.current = e.pointerType === "touch" ? {
+        id: id,
+        t: performance.now()
+      } : null;
       return;
     }
     if (fingerNav) {
@@ -1534,14 +1574,24 @@ function MapView() {
     if ((tool === "split" || tool === "draw") && e.button === 0) {
       var k = view.current.k;
       var pt = window.GeomEdit ? GeomEdit.snap(mapPt, k) : mapPt;
-      var gd = App.ui.geomDraw;
-      if (!gd || gd.tool !== tool) gd = App.ui.geomDraw = {
+      var _gd = App.ui.geomDraw;
+      if (!_gd || _gd.tool !== tool) _gd = App.ui.geomDraw = {
         tool: tool,
         pts: []
       };
-      var last = gd.pts[gd.pts.length - 1];
-      if (!last || Math.hypot(last[0] - pt[0], last[1] - pt[1]) > 1.5 / k) gd.pts.push(pt);
-      if (e.detail >= 2 && gd.pts.length >= (tool === "split" ? 2 : 3)) {
+      var last = _gd.pts[_gd.pts.length - 1];
+      var added = !last || Math.hypot(last[0] - pt[0], last[1] - pt[1]) > 1.5 / k;
+      if (added) _gd.pts.push(pt);
+      // a double click finishes (pointerdown has no click count of its own)
+      var nowT = performance.now(),
+        lc = lastDrawClick.current;
+      var dbl = lc && nowT - lc.t < 400 && Math.hypot(e.clientX - lc.x, e.clientY - lc.y) < 8;
+      lastDrawClick.current = dbl ? null : {
+        t: nowT,
+        x: e.clientX,
+        y: e.clientY
+      };
+      if (dbl && _gd.pts.length >= (tool === "split" ? 2 : 3)) {
         finishGeomDraw();
         return;
       }
@@ -1552,7 +1602,8 @@ function MapView() {
         tool: tool,
         moved: false,
         len: 0,
-        base: gd.pts.length
+        base: _gd.pts.length,
+        added: added
       };
       try {
         svgRef.current.setPointerCapture(e.pointerId);
@@ -1601,7 +1652,8 @@ function MapView() {
       e.stopPropagation();
       return;
     }
-    if (tool === "paint" || tool === "erase") {
+    if ((tool === "paint" || tool === "erase") && e.button === 0) {
+      // the middle button pans in every tool
       Actions.beginStroke();
       paintRegion(rid, tool === "erase");
       gesture.current = {
@@ -1800,8 +1852,8 @@ function MapView() {
         vx = _clientToViewbox8[0],
         vy = _clientToViewbox8[1];
       if (g.mode === "objdown" && Math.hypot(vx - g.vx, vy - g.vy) > 5) {
-        if (g.finger) {
-          // a finger dragging from a place pans the map
+        if (g.finger || App.ui.tool === "pan") {
+          // a finger, or the hand tool, dragging from a place pans the map
           gesture.current = {
             mode: "panning",
             vx: g.vx,
@@ -1973,7 +2025,7 @@ function MapView() {
       return;
     }
     if (g.mode === "paint") {
-      var _rid = e.target.dataset ? e.target.dataset.id : null;
+      var _rid = ridAtPoint(e);
       if (_rid && _rid !== g.last) {
         g.last = _rid;
         paintRegion(_rid, g.erase);
@@ -2128,6 +2180,7 @@ function MapView() {
       try {
         svgRef.current.releasePointerCapture(e.pointerId);
       } catch (err) {}
+      if (window.Objects && Objects.rerouteRoads) Objects.rerouteRoads(g.id); // its roads come along (same undo step)
       Actions.endStroke();
       return;
     }
@@ -2242,6 +2295,7 @@ function MapView() {
       return;
     }
     if (g.mode === "down") {
+      if (e.type !== "pointerup") return; // a cancelled touch or a pointer that left is not a tap
       var tool = g.tool;
       if (tool === "label") {
         var _clientToMap17 = clientToMap(e),
@@ -2272,7 +2326,8 @@ function MapView() {
           Actions.ui({
             card: {
               kind: "river",
-              index: rv.index
+              index: rv.index,
+              rid: rv.id
             },
             selection: []
           });
@@ -2918,7 +2973,7 @@ function MapView() {
   })), ready && worldOn && settings.showRivers !== false && function () {
     var list = World.displayRivers();
     if (!list.length) return null;
-    var sel = App.ui.card && App.ui.card.kind === "river" ? App.ui.card.index : -1;
+    var sel = App.ui.card && App.ui.card.kind === "river" ? World.riverIndexOf(App.ui.card) : -1;
     return /*#__PURE__*/React.createElement("g", {
       id: "world-rivers",
       pointerEvents: "none"
@@ -3313,7 +3368,7 @@ function MapView() {
     strokeLinejoin: "round",
     vectorEffect: "non-scaling-stroke"
   })), ready && worldOn && App.ui.card && App.ui.card.kind === "river" && !World.preview && function () {
-    var rv = (project.world.rivers || [])[App.ui.card.index];
+    var rv = (project.world.rivers || [])[World.riverIndexOf(App.ui.card)];
     if (!rv || !rv.pts || rv.pts.length < 2) return null;
     var ctm = svgRef.current && svgRef.current.getScreenCTM();
     var per = view.current.k * (ctm && ctm.a || 1);

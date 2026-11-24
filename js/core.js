@@ -1115,53 +1115,85 @@
     return JSON.parse(JSON.stringify({ states: p.states, stateOrder: p.stateOrder, regions: p.regions, groups: p.groups || {}, labels: p.labels }));
   }
   // A state added to a year when later years already exist appears in those years too:
-  // the lands it was given in its own year (state.addedIn) since that year was opened
-  // become its lands in every later year where they belong to nobody. A year where the
-  // land is someone else's stops it for the years after. Never the other way round — a
-  // later year changes nothing in an earlier one — and only for states made in that year,
-  // not for lands added to older states.
-  let carried = null; // { names, years, lands } of the last run, for the toast
+  // it is put on their lists of states, and its lands in its own year become its lands in
+  // every later year where they belong to nobody. A year where the land is someone
+  // else's stops it for the years after. Never the other way round — a later year
+  // changes nothing in an earlier one — and only for states that are new: lands added
+  // to a state the later years have always had are not carried.
+  //   state.addedIn = the year a state was made in (Actions.addState). A state without
+  // the mark that exists in this year alone — in no earlier and no later one — is such a
+  // state too (made before the mark existed): it gets the mark here, and all its lands go.
+  //   In a later year the copy carries `carriedFrom`; lands go on only into years where
+  // the state is absent or is such a copy, so a state that has its own history there is
+  // left alone. After the first time only the lands given since the year was opened go
+  // (the diff against the year's snapshot): what was erased by hand later is not repainted.
+  let carried = null; // { names, years, lands, blocked } of the last run, for the toast
   function carryNewStatesForward(p) {
     const cur = p.currentYear, before = p.snapshots[cur];
     const later = p.years.filter((y) => y > cur && p.snapshots[y]).sort((a, b) => a - b);
     if (!before || !later.length) return;
+    const earlier = p.years.filter((y) => y < cur && p.snapshots[y]);
+    const inYear = (y, sid) => !!(p.snapshots[y].states && p.snapshots[y].states[sid]);
     const effIn = (regions, groups, rid) => {
       const r = regions && regions[rid];
       return r && r.group && groups && groups[r.group] ? groups[r.group] : r;
     };
-    const names = new Set(), years = new Set();
+    const names = new Set(), years = new Set(), blockedNames = new Set();
+    const allLands = new Set(); // states whose every land goes (first time)
     let lands = 0;
+    const putState = (s, sid, st) => {
+      if (!s.states) s.states = {};
+      if (s.states[sid]) return false;
+      s.states[sid] = Object.assign(JSON.parse(JSON.stringify(st)), { carriedFrom: cur });
+      s.stateOrder = (s.stateOrder || []).concat([sid]);
+      return true;
+    };
+    for (const sid in p.states) {
+      const st = p.states[sid];
+      if (!st) continue;
+      if (st.addedIn == null && !later.some((y) => inYear(y, sid)) && !earlier.some((y) => inYear(y, sid))) {
+        st.addedIn = cur;
+        allLands.add(sid);
+      }
+      if (st.addedIn !== cur) continue;
+      if (!(before.states && before.states[sid])) allLands.add(sid); // made during this visit
+      // the state itself: on the list of every later year, with or without lands
+      later.forEach((y) => { if (putState(p.snapshots[y], sid, st)) { names.add(st.name); years.add(y); } });
+    }
     for (const rid in p.regions) {
       const e = effIn(p.regions, p.groups, rid);
       const sid = e && e.owner;
       const st = sid && p.states[sid];
       if (!st || st.addedIn !== cur) continue;
-      const was = effIn(before.regions, before.groups, rid);
-      if (was && was.owner === sid) continue; // its land already when the year was opened
+      if (!allLands.has(sid)) {
+        const was = effIn(before.regions, before.groups, rid);
+        if (was && was.owner === sid) continue; // its land already when the year was opened
+      }
       for (const y of later) {
         const s = p.snapshots[y];
+        if (s.states && s.states[sid] && s.states[sid].carriedFrom !== cur) break; // its own history from here on
         const regs = s.regions || (s.regions = {});
         const rec = regs[rid];
-        if (rec && rec.group && s.groups && s.groups[rec.group]) break; // a merged group there: left alone
-        if (rec && rec.owner) { if (rec.owner === sid) continue; break; }
+        if (rec && rec.group && s.groups && s.groups[rec.group]) { blockedNames.add(st.name); break; } // a merged group there: left alone
+        if (rec && rec.owner) { if (rec.owner === sid) continue; blockedNames.add(st.name); break; }
         const next = JSON.parse(JSON.stringify(p.regions[rid] && !p.regions[rid].group ? p.regions[rid] : {}));
         delete next.group;
         regs[rid] = Object.assign(next, rec || {}, { owner: sid, status: "core", autonomyId: null, inherited: cur });
         delete regs[rid].claimants; delete regs[rid].occupiedFrom;
-        if (!s.states) s.states = {};
-        if (!s.states[sid]) {
-          s.states[sid] = JSON.parse(JSON.stringify(st));
-          s.stateOrder = (s.stateOrder || []).concat([sid]);
-        }
+        putState(s, sid, st);
         names.add(st.name); years.add(y); lands++;
       }
     }
-    if (lands) carried = { names: [...names], years: years.size, lands };
+    if (names.size || blockedNames.size) carried = { names: [...names], years: years.size, lands, blocked: [...blockedNames] };
   }
   function carriedToast() {
     const c = carried;
     carried = null;
-    if (c) Actions.toast(t("timeline.carried").replace("{s}", c.names.join(", ")).replace("{y}", c.years).replace("{n}", c.lands));
+    if (!c) return;
+    const parts = [];
+    if (c.names.length) parts.push(t(c.lands ? "timeline.carried" : "timeline.carriedList").replace("{s}", c.names.join(", ")).replace("{y}", c.years));
+    if (c.blocked.length) parts.push(t("timeline.carryBlocked").replace("{s}", c.blocked.join(", ")));
+    Actions.toast(parts.join(" "));
   }
   // the map on screen belongs to the current year: keep it there before leaving
   function keepCurrentYear(p) {
